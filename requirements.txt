@@ -1,3 +1,7 @@
-PySide6
+termcolor
 pycryptodome
 pyinstaller
+requests
+prettytable
+pydantic
+pipx

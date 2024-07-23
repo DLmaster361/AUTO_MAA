@@ -1,0 +1,28 @@
+{
+    "Default": {
+        "TimeSet.set1": "False",
+        "TimeSet.run1": "00:00",
+        "TimeSet.set2": "False",
+        "TimeSet.run2": "00:00",
+        "TimeSet.set3": "False",
+        "TimeSet.run3": "00:00",
+        "TimeSet.set4": "False",
+        "TimeSet.run4": "00:00",
+        "TimeSet.set5": "False",
+        "TimeSet.run5": "00:00",
+        "TimeSet.set6": "False",
+        "TimeSet.run6": "00:00",
+        "TimeSet.set7": "False",
+        "TimeSet.run7": "00:00",
+        "TimeSet.set8": "False",
+        "TimeSet.run8": "00:00",
+        "TimeSet.set9": "False",
+        "TimeSet.run9": "00:00",
+        "TimeSet.set10": "False",
+        "TimeSet.run10": "00:00",
+        "MaaSet.path": "",
+        "TimeLimit.routine": 10,
+        "TimeLimit.annihilation": 40,
+        "TimesLimit.run": 3
+    }
+}

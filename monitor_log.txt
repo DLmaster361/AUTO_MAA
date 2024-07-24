@@ -1,0 +1,7 @@
+2024-05-26 23:46:58,753 - INFO - 监控进程时出错: argument of type 'NoneType' is not iterable
+2024-05-26 23:49:45,634 - INFO - 监控进程时出错: argument of type 'NoneType' is not iterable
+2024-05-26 23:53:41,103 - INFO - 监控进程时出错: argument of type 'NoneType' is not iterable
+2024-05-26 23:54:57,309 - INFO - 监控进程时出错: argument of type 'NoneType' is not iterable
+2024-05-26 23:55:16,371 - INFO - 监控进程时出错: argument of type 'NoneType' is not iterable
+2024-05-26 23:56:12,950 - INFO - 监控进程时出错: argument of type 'NoneType' is not iterable
+2024-05-26 23:57:12,952 - INFO - 发送日志到 QQ 时出错: name 'send_message_to_qq' is not defined

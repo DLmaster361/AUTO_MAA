@@ -1,0 +1,7 @@
+termcolor
+pycryptodome
+pyinstaller
+requests
+prettytable
+pydantic
+pipx

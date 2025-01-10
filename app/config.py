@@ -145,6 +145,7 @@ class AppConfig:
     def check_database(self) -> None:
         """检查用户数据库文件并处理数据库版本更新"""
 
+        last_version_str = "v1.3" # 最新数据版本
         # 生成用户数据库
         if not self.database_path.exists():
             db = sqlite3.connect(self.database_path)
@@ -153,71 +154,74 @@ class AppConfig:
                 "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
             )
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+            cur.execute("INSERT INTO version VALUES(?)", (last_version_str,))
             db.commit()
             cur.close()
             db.close()
 
+        
         # 数据库版本更新
         db = sqlite3.connect(self.database_path)
         cur = db.cursor()
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
-        # v1.0-->v1.1
-        if version[0][0] == "v1.0":
-            cur.execute("SELECT * FROM adminx WHERE True")
-            data = cur.fetchall()
-            cur.execute("DROP TABLE IF EXISTS adminx")
-            cur.execute(
-                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
-            )
-            for i in range(len(data)):
+        # 判断数据库是否是最新版 不是则更新
+        if version[0][0] != last_version_str:
+            # v1.0-->v1.1
+            if version[0][0] == "v1.0":
+                cur.execute("SELECT * FROM adminx WHERE True")
+                data = cur.fetchall()
+                cur.execute("DROP TABLE IF EXISTS adminx")
                 cur.execute(
-                    "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        data[i][0],  # 0 0 0
-                        data[i][1],  # 1 1 -
-                        "Official",  # 2 2 -
-                        data[i][2],  # 3 3 1
-                        data[i][3],  # 4 4 2
-                        data[i][4],  # 5 5 3
-                        data[i][5],  # 6 6 -
-                        data[i][6],  # 7 7 -
-                        data[i][7],  # 8 8 -
-                        "y",  # 9 - 4
-                        data[i][8],  # 10 9 5
-                        data[i][9],  # 11 10 -
-                        data[i][10],  # 12 11 6
-                        data[i][11],  # 13 12 7
-                        data[i][12],  # 14 - -
-                        "simple",  # 15 - -
-                        data[i][13],  # 16 - -
-                    ),
+                    "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
                 )
-            cur.execute("DELETE FROM version WHERE v = ?", ("v1.0",))
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
-            db.commit()
-        # v1.1-->v1.2
-        if version[0][0] == "v1.1":
-            cur.execute("SELECT * FROM adminx WHERE True")
-            data = cur.fetchall()
-            for i in range(len(data)):
-                cur.execute(
-                    "UPDATE adminx SET infrastructure = 'n' WHERE mode = ? AND uid = ?",
-                    (
-                        data[i][15],
-                        data[i][16],
-                    ),
-                )
-            cur.execute("DELETE FROM version WHERE v = ?", ("v1.1",))
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.2",))
-            db.commit()
-        # v1.2-->v1.3
-        if version[0][0] == "v1.2":
-            cur.execute("ALTER TABLE adminx RENAME COLUMN routines TO routine")
-            cur.execute("DELETE FROM version WHERE v = ?", ("v1.2",))
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
-            db.commit()
+                for i in range(len(data)):
+                    cur.execute(
+                        "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            data[i][0],  # 0 0 0
+                            data[i][1],  # 1 1 -
+                            "Official",  # 2 2 -
+                            data[i][2],  # 3 3 1
+                            data[i][3],  # 4 4 2
+                            data[i][4],  # 5 5 3
+                            data[i][5],  # 6 6 -
+                            data[i][6],  # 7 7 -
+                            data[i][7],  # 8 8 -
+                            "y",  # 9 - 4
+                            data[i][8],  # 10 9 5
+                            data[i][9],  # 11 10 -
+                            data[i][10],  # 12 11 6
+                            data[i][11],  # 13 12 7
+                            data[i][12],  # 14 - -
+                            "simple",  # 15 - -
+                            data[i][13],  # 16 - -
+                        ),
+                    )
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.0",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
+                db.commit()
+            # v1.1-->v1.2
+            if version[0][0] == "v1.1":
+                cur.execute("SELECT * FROM adminx WHERE True")
+                data = cur.fetchall()
+                for i in range(len(data)):
+                    cur.execute(
+                        "UPDATE adminx SET infrastructure = 'n' WHERE mode = ? AND uid = ?",
+                        (
+                            data[i][15],
+                            data[i][16],
+                        ),
+                    )
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.1",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.2",))
+                db.commit()
+            # v1.2-->v1.3
+            if version[0][0] == "v1.2":
+                cur.execute("ALTER TABLE adminx RENAME COLUMN routines TO routine")
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.2",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+                db.commit()
         cur.close()
         db.close()
 

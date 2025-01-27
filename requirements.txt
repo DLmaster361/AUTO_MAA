@@ -1,9 +1,0 @@
-plyer
-PySide6
-PySide6-Fluent-Widgets[full]
-psutil
-pywin32
-pyautogui
-pycryptodome
-requests
-nuitka

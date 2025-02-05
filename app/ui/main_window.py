@@ -53,6 +53,7 @@ from .setting import Setting
 from .member_manager import MemberManager
 from .queue_manager import QueueManager
 from .dispatch_center import DispatchCenter
+from .third_party_cli_manager import ThirdPartySoftwareManager
 
 
 class AUTO_MAA(MSFluentWindow):
@@ -75,6 +76,7 @@ class AUTO_MAA(MSFluentWindow):
         self.member_manager = MemberManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
+        self.third_party_cli = ThirdPartySoftwareManager(self)
 
         self.addSubInterface(
             self.setting,
@@ -102,6 +104,13 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.IOT,
             "调度中心",
             FluentIcon.IOT,
+            NavigationItemPosition.TOP,
+        )
+        self.addSubInterface(
+            self.third_party_cli,
+            FluentIcon.CODE,
+            "第三方软件",
+            FluentIcon.CODE,
             NavigationItemPosition.TOP,
         )
         self.stackedWidget.currentChanged.connect(

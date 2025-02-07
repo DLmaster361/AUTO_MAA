@@ -24,6 +24,7 @@ MAA功能组件
 v4.2
 作者：DLmaster_361
 """
+import sys
 
 from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop
@@ -187,17 +188,12 @@ class MaaManager(QObject):
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
                         # 添加静默进程标记
-                        if Config.global_config.get(
-                            Config.global_config.function_IfSilence
-                        ):
-                            with self.maa_set_path.open(
-                                mode="r", encoding="utf-8"
-                            ) as f:
-                                set = json.load(f)
-                            self.emulator_path = Path(
-                                set["Configurations"]["Default"]["Start.EmulatorPath"]
-                            )
-                            Config.silence_list.append(self.emulator_path)
+                        with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
+                            set = json.load(f)
+                        self.emulator_path = Path(
+                            set["Configurations"]["Default"]["Start.EmulatorPath"]
+                        )
+                        Config.silence_list.append(self.emulator_path)
                         # 记录是否超时的标记
                         self.if_time_out = False
 
@@ -253,10 +249,7 @@ class MaaManager(QObject):
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                                 )
                                 # 移除静默进程标记
-                                if Config.global_config.get(
-                                    Config.global_config.function_IfSilence
-                                ):
-                                    Config.silence_list.remove(self.emulator_path)
+                                Config.silence_list.remove(self.emulator_path)
                                 for _ in range(10):
                                     if self.isInterruptionRequested:
                                         break
@@ -282,7 +275,9 @@ class MaaManager(QObject):
                                 ):
                                     Config.silence_list.remove(self.emulator_path)
                                 self.data[user[2]][17] = 'n'
+
                                 # 推送异常通知
+                                self.data[user[2]][17] = 'n'
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
                                     f"用户 {user[0].replace('_', ' 今天的')}的{mode_book[j][5:7]}部分出现一次异常",
@@ -312,6 +307,7 @@ class MaaManager(QObject):
 
                 # 录入代理失败的用户
                 if not (run_book[0] and run_book[1]):
+                    self.data[user[2]][17] = 'n'
                     user[1] = "异常"
                     self.data[user[2]][17] = 'n'
 

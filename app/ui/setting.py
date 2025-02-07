@@ -111,7 +111,7 @@ class Setting(QWidget):
         while True:
 
             choice = InputMessageBox(
-                self.parent().parent().parent(),
+                self.window(),
                 "未检测到管理密钥，请设置您的管理密钥",
                 "管理密钥",
                 "密码",
@@ -123,7 +123,7 @@ class Setting(QWidget):
                 choice = MessageBox(
                     "警告",
                     "您没有设置管理密钥，无法使用本软件，请先设置管理密钥",
-                    self.parent().parent().parent(),
+                    self.window(),
                 )
                 choice.cancelButton.hide()
                 choice.buttonLayout.insertStretch(1)
@@ -138,7 +138,7 @@ class Setting(QWidget):
         while if_change:
 
             choice = InputMessageBox(
-                self,
+                self.window(),
                 "请输入旧的管理密钥",
                 "旧管理密钥",
                 "密码",
@@ -153,7 +153,7 @@ class Setting(QWidget):
                     while True:
 
                         choice = InputMessageBox(
-                            self,
+                            self.window(),
                             "请输入新的管理密钥",
                             "新管理密钥",
                             "密码",
@@ -173,14 +173,14 @@ class Setting(QWidget):
                             choice = MessageBox(
                                 "确认",
                                 "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                                self,
+                                self.window(),
                             )
                             if choice.exec():
                                 if_change = False
                                 break
 
                 else:
-                    choice = MessageBox("错误", "管理密钥错误", self)
+                    choice = MessageBox("错误", "管理密钥错误", self.window())
                     choice.cancelButton.hide()
                     choice.buttonLayout.insertStretch(1)
                     if choice.exec():
@@ -189,7 +189,7 @@ class Setting(QWidget):
                 choice = MessageBox(
                     "确认",
                     "您没有输入管理密钥，是否取消修改管理密钥？",
-                    self,
+                    self.window(),
                 )
                 if choice.exec():
                     break
@@ -261,7 +261,7 @@ class Setting(QWidget):
             choice = MessageBox(
                 "错误",
                 f"获取版本信息时出错：\n{err}",
-                self,
+                self.window(),
             )
             choice.cancelButton.hide()
             choice.buttonLayout.insertStretch(1)
@@ -297,7 +297,7 @@ class Setting(QWidget):
                 choice = MessageBox(
                     "版本更新",
                     f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
-                    self,
+                    self.window(),
                 )
                 if not choice.exec():
                     return None

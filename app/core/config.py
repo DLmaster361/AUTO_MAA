@@ -127,6 +127,8 @@ class AppConfig:
         self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
 
+        qconfig.load(self.config_path, self.global_config)
+
         config_list = self.search_config()
         for config in config_list:
             if config[0] == "Maa":
@@ -144,6 +146,7 @@ class AppConfig:
         if mode == "Maa":
             self.cur.execute(
                 "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int, today_status text)"
+
             )
             self.cur.execute("CREATE TABLE version(v text)")
             self.cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
@@ -159,7 +162,7 @@ class AppConfig:
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
             db.commit()
             cur.close()
             db.close()
@@ -388,7 +391,6 @@ class AppConfig:
             if version[0][0] == "v1.4" or if_streaming:
                 logger.info("数据文件版本更新：v1.4-->v1.5")
                 if_streaming = True
-
                 # 检查adminx表是否存在
                 cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='adminx'")
                 if not cur.fetchone():
@@ -398,17 +400,16 @@ class AppConfig:
                     cur.execute("SELECT * FROM adminx")
                     data = cur.fetchall()
 
+
                     # 重建表以包含新字段
                     cur.execute("DROP TABLE IF EXISTS adminx")
                     self.create_adminx_table(cur)
-
                     # 恢复数据
                     for row in data:
                         cur.execute(
                             "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             row + ("n",)  # 添加today_status默认值为'n'
                         )
-
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
                 db.commit()
@@ -537,6 +538,7 @@ class AppConfig:
 
         self.queue_config.set(self.queue_config.queueSet_Name, "")
         self.queue_config.set(self.queue_config.queueSet_Enabled, False)
+        self.queue_config.set(self.queue_config.queueSet_AfterAccomplish, "None")
 
         self.queue_config.set(self.queue_config.time_TimeEnabled_0, False)
         self.queue_config.set(self.queue_config.time_TimeSet_0, "00:00")
@@ -617,6 +619,12 @@ class QueueConfig(QConfig):
 
     queueSet_Name = ConfigItem("QueueSet", "Name", "")
     queueSet_Enabled = ConfigItem("QueueSet", "Enabled", False, BoolValidator())
+    queueSet_AfterAccomplish = OptionsConfigItem(
+        "QueueSet",
+        "AfterAccomplish",
+        "None",
+        OptionsValidator(["None", "KillSelf", "Sleep", "Hibernate", "Shutdown"]),
+    )
 
     time_TimeEnabled_0 = ConfigItem("Time", "TimeEnabled_0", False, BoolValidator())
     time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")

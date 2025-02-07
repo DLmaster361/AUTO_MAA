@@ -45,7 +45,7 @@ class MaaManager(QObject):
 
     question = Signal(str, str)
     question_response = Signal(bool)
-    update_user_info = Signal(list, list, list, list, list, list)
+    update_user_info = Signal(list, list, list, list, list, list, list)
     push_info_bar = Signal(str, str, str, int)
     create_user_list = Signal(list)
     update_user_list = Signal(list)
@@ -281,11 +281,12 @@ class MaaManager(QObject):
                                     Config.global_config.function_IfSilence
                                 ):
                                     Config.silence_list.remove(self.emulator_path)
+                                self.data[user[2]][17] = 'n'
                                 # 推送异常通知
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
-                                    f"用户 {user[0].replace("_", " 今天的")}的{mode_book[j][5:7]}部分出现一次异常",
-                                    f"{user[0].replace("_", " ")}的{mode_book[j][5:7]}出现异常",
+                                    f"用户 {user[0].replace('_', ' 今天的')}的{mode_book[j][5:7]}部分出现一次异常",
+                                    f"{user[0].replace('_', ' ')}的{mode_book[j][5:7]}出现异常",
                                     1,
                                 )
                                 for _ in range(10):
@@ -299,11 +300,12 @@ class MaaManager(QObject):
                         if self.data[user[2]][14] == 0 and self.data[user[2]][3] != -1:
                             self.data[user[2]][3] -= 1
                         self.data[user[2]][14] += 1
+                        self.data[user[2]][17] = 'y'
                         user[1] = "完成"
                         Notify.push_notification(
                             "成功完成一个自动代理任务！",
-                            f"已完成用户 {user[0].replace("_", " 今天的")}任务",
-                            f"已完成 {user[0].replace("_", " 的")}",
+                            f"已完成用户 {user[0].replace('_', ' 今天的')}任务",
+                            f"已完成 {user[0].replace('_', ' 的')}",
                             3,
                         )
                         break
@@ -311,6 +313,7 @@ class MaaManager(QObject):
                 # 录入代理失败的用户
                 if not (run_book[0] and run_book[1]):
                     user[1] = "异常"
+                    self.data[user[2]][17] = 'n'
 
                 self.update_user_list.emit(user_list)
 
@@ -489,7 +492,8 @@ class MaaManager(QObject):
             lasts = [self.data[_[2]][5] for _ in user_list]
             notes = [self.data[_[2]][13] for _ in user_list]
             numbs = [self.data[_[2]][14] for _ in user_list]
-            self.update_user_info.emit(modes, uids, days, lasts, notes, numbs)
+            today_status = [self.data[_[2]][17] for _ in user_list]
+            self.update_user_info.emit(modes, uids, days, lasts, notes, numbs, today_status)
 
             error_index = [_[2] for _ in user_list if _[1] == "异常"]
             over_index = [_[2] for _ in user_list if _[1] == "完成"]

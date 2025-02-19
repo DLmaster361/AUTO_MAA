@@ -197,6 +197,6 @@ def clean_old_logs(logs_directory: Path):
     logger.info(f"清理完成: {deleted_count} 个日期目录")
 
 
-# 运行代码
-logs_directory = Path(r"E:\Github\AUTO_MAA\maa_run_history\2025-02-19\1\aoxuan")
-analyze_maa_logs(logs_directory)
+# # 运行代码
+# logs_directory = Path(r"E:\Github\AUTO_MAA\maa_run_history\2025-02-19\1\aoxuan")
+# analyze_maa_logs(logs_directory)

@@ -585,8 +585,8 @@ class GlobalConfig(QConfig):
     # 日志管理
     function_IfEnableLog = ConfigItem("Function", "IfEnableLog", False, BoolValidator())
     function_LogRetentionDays = OptionsConfigItem(
-        "Function", "LogRetentionDays", "7 天",
-        OptionsValidator(["7 天", "15 天", "30 天", "60 天", "永不清理"])
+        "Function", "LogRetentionDays", "永不清理",
+        OptionsValidator(["7 天", "15 天", "30 天", "60 天","90 天","180 天","365 天", "永不清理"])
     )
 
 

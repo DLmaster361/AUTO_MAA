@@ -100,7 +100,7 @@ def analyze_single_log(log_file_path: Path, aggregated_data):
     stage_drops = {}
 
     for i, line in enumerate(logs):
-        drop_match = re.search(r"(\d+-\d+) 掉落统计:", line)
+        drop_match = re.search(r"([A-Z0-9\-]+) 掉落统计:", line)
         if drop_match:
             # 发现新关卡，保存前一个关卡数据
             if current_stage and stage_drops:
@@ -197,6 +197,6 @@ def clean_old_logs(logs_directory: Path):
     logger.info(f"清理完成: {deleted_count} 个日期目录")
 
 
-# # 运行代码
-# logs_directory = Path(r"E:\Github\AUTO_MAA\maa_run_history\2025-02-19\1\aoxuan")
+# # 运行代码（日志分析测试）
+# logs_directory = Path(r"E:\Github\AUTO_MAA\maa_run_history\2025-02-19\1\zky")
 # analyze_maa_logs(logs_directory)

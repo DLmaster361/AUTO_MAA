@@ -303,6 +303,11 @@ class MaaManager(QObject):
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.json",
                         )
 
+                        # 每周统计&每月统计
+                        Config.weekly_statistics()
+                        Config.monthly_statistics()
+
+
                         if (
                             Config.global_config.get(
                                 Config.global_config.notify_IfSendSixStar

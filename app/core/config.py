@@ -31,7 +31,7 @@ import json
 import sys
 import shutil
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from pathlib import Path
 from qfluentwidgets import (
@@ -705,6 +705,172 @@ class AppConfig:
         return history.get(
             key, {"Time": "0000-00-00 00:00", "History": "暂无历史运行记录"}
         )
+
+
+    def weekly_statistics(self) -> None:
+        """补全缺失的周统计，并更新当前周的每周统计"""
+
+        history_dir = self.app_path / "history"
+        weekly_dir = history_dir / "weekly"
+
+        users = self.get_users(history_dir)
+        earliest_date, latest_date = self.get_history_date_range(history_dir)
+
+        # 以最早的日期为起点，遍历每周
+        current_date = earliest_date
+        while current_date <= latest_date:
+            year, week_number, _ = current_date.isocalendar()
+            start_of_week = current_date - timedelta(days=current_date.weekday())  # 计算本周周一
+            end_of_week = start_of_week + timedelta(days=6)  # 计算本周周日
+
+            for user in users:
+                user_weekly_dir = weekly_dir / user
+                user_weekly_dir.mkdir(parents=True, exist_ok=True)
+                weekly_file = user_weekly_dir / f"{year}_week_{week_number}.json"
+
+                if not weekly_file.exists():  # 如果该周的统计文件缺失，则补充
+                    weekly_data = self.aggregate_history(user, start_of_week, end_of_week)
+                    with weekly_file.open("w", encoding="utf-8") as f:
+                        json.dump(weekly_data, f, ensure_ascii=False, indent=4)
+                    logger.info(f"补充用户 {user} 周统计: {weekly_file}")
+
+            # 继续下一周
+            current_date += timedelta(days=7)
+
+        # 统计当前周的数据，确保最新
+        today = datetime.today()
+        current_year, current_week, _ = today.isocalendar()
+
+        # 当前周的周一，时间设为 00:00:00
+        current_week_start = datetime(today.year, today.month, today.day) - timedelta(days=today.weekday())
+
+        # 统计到今天的 23:59:59
+        current_week_end = datetime(today.year, today.month, today.day, 23, 59, 59)
+
+        for user in users:
+            user_weekly_dir = weekly_dir / user
+            user_weekly_dir.mkdir(parents=True, exist_ok=True)
+            current_weekly_file = user_weekly_dir / f"{current_year}_week_{current_week}.json"
+
+            weekly_data = self.aggregate_history(user, current_week_start, current_week_end)
+            with current_weekly_file.open("w", encoding="utf-8") as f:
+                json.dump(weekly_data, f, ensure_ascii=False, indent=4)
+            logger.info(f"更新用户 {user} 本周统计: {current_weekly_file}")
+
+    def monthly_statistics(self) -> None:
+        """补全缺失的月统计，并更新当前月的每月统计"""
+
+        history_dir = self.app_path / "history"
+        monthly_dir = history_dir / "monthly"
+
+        users = self.get_users(history_dir)
+        earliest_date, latest_date = self.get_history_date_range(history_dir)
+
+        # 以最早的日期为起点，遍历每月
+        current_date = earliest_date.replace(day=1)  # 以每月1号为起点
+        while current_date <= latest_date:
+            year, month = current_date.year, current_date.month
+            start_of_month = current_date
+            end_of_month = (current_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(
+                days=1)  # 计算本月最后一天
+
+            for user in users:
+                user_monthly_dir = monthly_dir / user
+                user_monthly_dir.mkdir(parents=True, exist_ok=True)
+                monthly_file = user_monthly_dir / f"{year}_{month}.json"
+
+                if not monthly_file.exists():  # 如果该月的统计文件缺失，则补充
+                    monthly_data = self.aggregate_history(user, start_of_month, end_of_month)
+                    with monthly_file.open("w", encoding="utf-8") as f:
+                        json.dump(monthly_data, f, ensure_ascii=False, indent=4)
+                    logger.info(f"补充用户 {user} 月统计: {monthly_file}")
+
+            # 继续下一个月
+            next_month = (current_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            current_date = next_month
+
+        # 统计当前月的数据，确保最新
+        today = datetime.today()
+        current_year, current_month = today.year, today.month
+        current_month_start = today.replace(day=1)
+        # 统计到今天
+        current_month_end = today
+
+        for user in users:
+            user_monthly_dir = monthly_dir / user
+            user_monthly_dir.mkdir(parents=True, exist_ok=True)
+            current_monthly_file = user_monthly_dir / f"{current_year}_{current_month}.json"
+
+            monthly_data = self.aggregate_history(user, current_month_start, current_month_end)
+            with current_monthly_file.open("w", encoding="utf-8") as f:
+                json.dump(monthly_data, f, ensure_ascii=False, indent=4)
+            logger.info(f"更新用户 {user} 本月统计: {current_monthly_file}")
+
+    def aggregate_history(self, user: str, start_date: datetime, end_date: datetime) -> dict:
+        """遍历用户的 /history/{user}/ 目录，汇总 start_date 到 end_date 之间的所有历史数据"""
+
+        history_data = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": defaultdict(lambda: defaultdict(int)),
+        }
+
+        history_dir = self.app_path / "history"
+
+        for date_dir in history_dir.iterdir():
+            if not date_dir.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                file_date = datetime.strptime(date_dir.name, "%Y-%m-%d")
+                if not (start_date <= file_date <= end_date):
+                    continue  # 只统计在范围内的日期
+            except ValueError:
+                continue  # 忽略不符合日期格式的文件夹
+
+            user_dir = date_dir / user
+            if not user_dir.exists():
+                continue  # 该日期下没有该用户的记录，跳过
+
+            for json_file in user_dir.glob("*.json"):
+                with json_file.open("r", encoding="utf-8") as f:
+                    file_data = json.load(f)
+
+                # 合并公招统计
+                for star, count in file_data.get("recruit_statistics", {}).items():
+                    history_data["recruit_statistics"][star] += count
+
+                # 合并掉落统计
+                for stage, drops in file_data.get("drop_statistics", {}).items():
+                    for item, count in drops.items():
+                        history_data["drop_statistics"][stage][item] += count
+
+        return history_data
+
+    def get_history_date_range(self, history_dir: Path) -> tuple:
+        """获取历史记录的最早日期和最晚日期"""
+        dates = []
+        for date_dir in history_dir.iterdir():
+            if date_dir.is_dir():
+                try:
+                    file_date = datetime.strptime(date_dir.name, "%Y-%m-%d")
+                    dates.append(file_date)
+                except ValueError:
+                    continue  # 过滤掉非日期的文件夹
+
+        if not dates:
+            return datetime.today(), datetime.today()  # 如果没有历史数据，则返回今天
+
+        return min(dates), max(dates)
+
+    def get_users(self, history_dir: Path) -> list:
+        """获取所有用户的列表"""
+        users = set()
+        for date_dir in history_dir.iterdir():
+            if date_dir.is_dir():
+                for user_dir in date_dir.iterdir():
+                    if user_dir.is_dir():
+                        users.add(user_dir.name)  # 用户文件夹名就是用户名
+        return list(users)
 
     def clear_maa_config(self) -> None:
         """清空MAA配置"""

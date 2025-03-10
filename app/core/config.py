@@ -720,8 +720,13 @@ class AppConfig:
         current_date = earliest_date
         while current_date <= latest_date:
             year, week_number, _ = current_date.isocalendar()
-            start_of_week = current_date - timedelta(days=current_date.weekday())  # 计算本周周一
-            end_of_week = start_of_week + timedelta(days=6)  # 计算本周周日
+            # 计算本周周一 00:00:00
+            start_of_week = datetime(current_date.year, current_date.month, current_date.day) - timedelta(
+                days=current_date.weekday())
+            start_of_week = start_of_week.replace(hour=0, minute=0, second=0)
+
+            # 计算本周周日 23:59:59
+            end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59)
 
             for user in users:
                 user_weekly_dir = weekly_dir / user
@@ -741,8 +746,9 @@ class AppConfig:
         today = datetime.today()
         current_year, current_week, _ = today.isocalendar()
 
-        # 当前周的周一，时间设为 00:00:00
+        # 当前周的周一 00:00:00
         current_week_start = datetime(today.year, today.month, today.day) - timedelta(days=today.weekday())
+        current_week_start = current_week_start.replace(hour=0, minute=0, second=0)
 
         # 统计到今天的 23:59:59
         current_week_end = datetime(today.year, today.month, today.day, 23, 59, 59)
@@ -770,9 +776,12 @@ class AppConfig:
         current_date = earliest_date.replace(day=1)  # 以每月1号为起点
         while current_date <= latest_date:
             year, month = current_date.year, current_date.month
-            start_of_month = current_date
-            end_of_month = (current_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(
-                days=1)  # 计算本月最后一天
+            # 本月 1 号 00:00:00
+            start_of_month = current_date.replace(hour=0, minute=0, second=0)
+
+            # 本月最后一天 23:59:59
+            next_month = (current_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end_of_month = next_month - timedelta(seconds=1)
 
             for user in users:
                 user_monthly_dir = monthly_dir / user
@@ -792,9 +801,11 @@ class AppConfig:
         # 统计当前月的数据，确保最新
         today = datetime.today()
         current_year, current_month = today.year, today.month
-        current_month_start = today.replace(day=1)
-        # 统计到今天
-        current_month_end = today
+        # 本月 1 号 00:00:00
+        current_month_start = today.replace(day=1, hour=0, minute=0, second=0)
+
+        # 统计到今天的 23:59:59
+        current_month_end = today.replace(hour=23, minute=59, second=59)
 
         for user in users:
             user_monthly_dir = monthly_dir / user

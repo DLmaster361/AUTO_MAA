@@ -673,6 +673,9 @@ class AppConfig:
                 )
 
             except ValueError:
+                # 如果文件夹名为"monthly"或"weekly"，则跳过，不输出警告
+                if date_folder.name in ["monthly", "weekly"]:
+                    continue
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
         return {

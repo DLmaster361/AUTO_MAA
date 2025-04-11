@@ -1,0 +1,14 @@
+{
+    "proxy_list": [
+        "https://gitproxy.click/",
+        "https://cdn.moran233.xyz/",
+        "https://gh.llkk.cc/",
+        "https://github.akams.cn/",
+        "https://www.ghproxy.cn/",
+        "https://ghfast.top/"
+    ],
+    "download_dict": {
+        "官方下载站-jp": "https://jp-download.fearr.xyz/AUTO_MAA/",
+        "官方下载站-hw": "http://hwobs.fearr.xyz/releases/artifacts/"
+    }
+}

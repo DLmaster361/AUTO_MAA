@@ -1,87 +1,12 @@
 {
-    "明日方舟小助手": {
+    "MaaAssistantArknights 「明日方舟助手」": {
         "rid": "MAA",
         "os": "win",
         "arch": "x64"
     },
-    "明日方舟桌宠": {
-        "rid": "ArkPetsApp",
-        "os": "win",
-        "arch": ""
-    },
-    "三月七小助手": {
-        "rid": "March7thAssistant",
-        "os": "",
-        "arch": ""
-    },
-    "原神小助手": {
-        "rid": "BGI",
-        "os": "win",
-        "arch": "x64"
-    },
-    "绝区零一条龙": {
+    "ZenlessZoneZero-OneDragon 「绝区零一条龙」": {
         "rid": "ZZZ-OneDragon",
         "os": "",
         "arch": ""
-    },
-    "1999小助手": {
-        "rid": "M9A",
-        "os": "win",
-        "arch": "x64"
-    },
-    "星穹铁道小助手": {
-        "rid": "StarRailAssistant",
-        "os": "",
-        "arch": ""
-    },
-    "PCL2-CE": {
-        "rid": "PCL2-CE",
-        "os": "win",
-        "arch": "x64"
-    },
-    "代号鸢/如鸢小助手": {
-        "rid": "MaaYuan",
-        "os": "win",
-        "arch": "x64"
-    },
-    "新月同行小助手": {
-        "rid": "MNMA",
-        "os": "win",
-        "arch": "x64"
-    },
-    "战双帕弥什小助手": {
-        "rid": "MAA_Punish",
-        "os": "win",
-        "arch": "x64"
-    },
-    "痒痒鼠小助手": {
-        "rid": "MaaYYs",
-        "os": "",
-        "arch": ""
-    },
-    "战舰少女R小助手": {
-        "rid": "MaaJR",
-        "os": "win",
-        "arch": "x64"
-    },
-    "少女前线2：追放小助手": {
-        "rid": "MaaGF2Exilium",
-        "os": "win",
-        "arch": "x64"
-    },
-    "尘白禁区小助手": {
-        "rid": "MAA_SnowBreak",
-        "os": "win",
-        "arch": "x64"
-    },
-    "白荆回廊小助手": {
-        "rid": "MaaAshEchoes",
-        "os": "win",
-        "arch": "x64"
-    },
-    "炽焰天穹小助手": {
-        "rid": "Maa-HBR",
-        "os": "win",
-        "arch": "x64"
     }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect} from 'react';
 import {
     Card,
     Typography,
@@ -21,7 +21,7 @@ import {
     ExperimentOutlined
 } from '@ant-design/icons';
 
-const { Title, Paragraph } = Typography;
+const {Title, Paragraph} = Typography;
 
 // 主题管理类型
 type ThemeMode = 'system' | 'light' | 'dark';
@@ -96,15 +96,14 @@ const SettingsPage: React.FC = () => {
             window.dispatchEvent(new Event('resize'));
         }, 100);
 
-        const themeLabels = {
-            'light': '浅色',
-            'dark': '深色',
-            'system': '跟随系统'
-        };
+        // const themeLabels = {
+        //     'light': '浅色',
+        //     'dark': '深色',
+        //     'system': '跟随系统'
+        // };
 
-        message.success(`已切换到${themeLabels[theme]}模式`);
+        // message.success(`已切换到${themeLabels[theme]}模式`);
     };
-
 
 
     const handleResetSettings = () => {
@@ -123,12 +122,12 @@ const SettingsPage: React.FC = () => {
             key: 'appearance',
             label: (
                 <span>
-                    <SunOutlined />
+                    <SunOutlined/>
                     外观设置
                 </span>
             ),
             children: (
-                <div style={{ maxWidth: 600 }}>
+                <div style={{maxWidth: 600}}>
                     <Title level={4}>主题模式</Title>
                     <Paragraph type="secondary">
                         选择应用程序的外观主题。跟随系统将根据您的操作系统设置自动切换。
@@ -142,39 +141,39 @@ const SettingsPage: React.FC = () => {
                         <Space direction="vertical" size="middle">
                             <Radio value="system">
                                 <Space>
-                                    <DesktopOutlined />
+                                    <DesktopOutlined/>
                                     <span>跟随系统</span>
-                                    <span style={{  fontSize: '12px' }}>
+                                    <span style={{fontSize: '12px'}}>
                                         (当前: {isDarkMode ? '深色' : '浅色'})
                                     </span>
                                 </Space>
                             </Radio>
                             <Radio value="light">
                                 <Space>
-                                    <SunOutlined />
+                                    <SunOutlined/>
                                     <span>浅色模式</span>
                                 </Space>
                             </Radio>
                             <Radio value="dark">
                                 <Space>
-                                    <MoonOutlined />
+                                    <MoonOutlined/>
                                     <span>深色模式</span>
                                 </Space>
                             </Radio>
                         </Space>
                     </Radio.Group>
 
-                    <Divider />
+                    <Divider/>
 
                     <Title level={4}>启动设置</Title>
                     <Space direction="vertical" size="middle">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>开机自启动</span>
-                            <Switch checked={autoStart} onChange={setAutoStart} />
+                            <Switch checked={autoStart} onChange={setAutoStart}/>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>最小化到系统托盘</span>
-                            <Switch checked={minimizeToTray} onChange={setMinimizeToTray} />
+                            <Switch checked={minimizeToTray} onChange={setMinimizeToTray}/>
                         </div>
                     </Space>
                 </div>
@@ -184,15 +183,15 @@ const SettingsPage: React.FC = () => {
             key: 'schedule',
             label: (
                 <span>
-                    <SettingOutlined />
+                    <SettingOutlined/>
                     功能设置
                 </span>
             ),
             children: (
-                <div style={{ maxWidth: 600 }}>
+                <div style={{maxWidth: 600}}>
                     <Title level={4}>任务执行</Title>
-                    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space direction="vertical" size="large" style={{width: '100%'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>最大并发任务数</span>
                             <InputNumber
                                 min={1}
@@ -201,7 +200,7 @@ const SettingsPage: React.FC = () => {
                                 onChange={(value) => setMaxConcurrentTasks(value || 3)}
                             />
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>任务超时时间 (分钟)</span>
                             <InputNumber
                                 min={5}
@@ -212,16 +211,16 @@ const SettingsPage: React.FC = () => {
                         </div>
                     </Space>
 
-                    <Divider />
+                    <Divider/>
 
                     <Title level={4}>失败处理</Title>
-                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space direction="vertical" size="middle" style={{width: '100%'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>失败任务自动重试</span>
-                            <Switch checked={autoRetry} onChange={setAutoRetry} />
+                            <Switch checked={autoRetry} onChange={setAutoRetry}/>
                         </div>
                         {autoRetry && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                                 <span>重试次数</span>
                                 <InputNumber
                                     min={1}
@@ -239,25 +238,25 @@ const SettingsPage: React.FC = () => {
             key: 'notification',
             label: (
                 <span>
-                    <BellOutlined />
+                    <BellOutlined/>
                     通知设置
                 </span>
             ),
             children: (
-                <div style={{ maxWidth: 600 }}>
+                <div style={{maxWidth: 600}}>
                     <Title level={4}>任务通知</Title>
-                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space direction="vertical" size="middle" style={{width: '100%'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>任务完成通知</span>
-                            <Switch defaultChecked />
+                            <Switch defaultChecked/>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>任务失败通知</span>
-                            <Switch defaultChecked />
+                            <Switch defaultChecked/>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>系统错误通知</span>
-                            <Switch />
+                            <Switch/>
                         </div>
                     </Space>
                 </div>
@@ -267,28 +266,28 @@ const SettingsPage: React.FC = () => {
             key: 'advanced',
             label: (
                 <span>
-                    <ExperimentOutlined />
+                    <ExperimentOutlined/>
                     更新设置
                 </span>
             ),
             children: (
-                <div style={{ maxWidth: 600 }}>
+                <div style={{maxWidth: 600}}>
                     <Title level={4}>日志设置</Title>
-                    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space direction="vertical" size="large" style={{width: '100%'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>日志级别</span>
                             <Select
                                 defaultValue="INFO"
-                                style={{ width: 120 }}
+                                style={{width: 120}}
                                 options={[
-                                    { value: 'DEBUG', label: 'DEBUG' },
-                                    { value: 'INFO', label: 'INFO' },
-                                    { value: 'WARN', label: 'WARN' },
-                                    { value: 'ERROR', label: 'ERROR' },
+                                    {value: 'DEBUG', label: 'DEBUG'},
+                                    {value: 'INFO', label: 'INFO'},
+                                    {value: 'WARN', label: 'WARN'},
+                                    {value: 'ERROR', label: 'ERROR'},
                                 ]}
                             />
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>日志保留天数</span>
                             <InputNumber
                                 min={1}
@@ -298,12 +297,12 @@ const SettingsPage: React.FC = () => {
                         </div>
                     </Space>
 
-                    <Divider />
+                    <Divider/>
 
                     <Title level={4}>开发者选项</Title>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                         <span>启用调试模式</span>
-                        <Switch />
+                        <Switch/>
                     </div>
                 </div>
             ),
@@ -320,7 +319,7 @@ const SettingsPage: React.FC = () => {
             </div>
 
             <Card>
-                <Tabs defaultActiveKey="appearance" size="large" items={tabItems} />
+                <Tabs defaultActiveKey="appearance" size="large" items={tabItems}/>
             </Card>
         </div>
     );

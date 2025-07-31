@@ -23,6 +23,22 @@ export default defineConfig({
             }
           }
         }
+      },
+      {
+        entry: 'electron/preload.ts',
+        onstart(options) {
+          // preload脚本不需要启动
+        },
+        vite: {
+          build: {
+            sourcemap: true,
+            minify: false,
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['electron']
+            }
+          }
+        }
       }
     ]),
     renderer()

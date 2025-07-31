@@ -1,0 +1,210 @@
+/* 自定义标题栏样式 */
+.custom-title-bar {
+    display: flex;
+    align-items: center;
+    height: 32px;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    user-select: none;
+    -webkit-app-region: drag; /* 整个标题栏可拖拽 */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 左侧Logo和标题 */
+.title-bar-left {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 8px;
+    -webkit-app-region: no-drag; /* Logo区域不可拖拽 */
+}
+
+.title-bar-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(135deg, #1677ff 0%, #69b1ff 100%);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.title-bar-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.88);
+    white-space: nowrap;
+}
+
+/* 中间可拖拽区域 */
+.title-bar-drag-region {
+    flex: 1;
+    height: 100%;
+    -webkit-app-region: drag;
+}
+
+/* 右侧窗口控制按钮 */
+.title-bar-controls {
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag; /* 控制按钮区域不可拖拽 */
+}
+
+.title-bar-button {
+    width: 46px !important;
+    height: 32px !important;
+    border-radius: 0 !important;
+    border: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.15s ease !important;
+    color: rgba(0, 0, 0, 0.65) !important;
+    background: transparent !important;
+    position: relative;
+    overflow: hidden;
+}
+
+.title-bar-button:hover {
+    background: rgba(0, 0, 0, 0.05) !important;
+    color: rgba(0, 0, 0, 0.88) !important;
+}
+
+.title-bar-button:active {
+    background: rgba(0, 0, 0, 0.1) !important;
+}
+
+.title-bar-button:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* 关闭按钮特殊样式 */
+.close-button:hover {
+    background: #e81123 !important;
+    color: #fff !important;
+}
+
+.close-button:active {
+    background: #c50e1f !important;
+    color: #fff !important;
+}
+
+/* 按钮图标调整 */
+.minimize-button .anticon {
+    font-size: 12px;
+    transform: translateY(1px);
+}
+
+.maximize-button .anticon {
+    font-size: 11px;
+}
+
+.close-button .anticon {
+    font-size: 12px;
+}
+
+/* Windows风格的按钮悬停效果 */
+.title-bar-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s;
+}
+
+.title-bar-button:hover::before {
+    left: 100%;
+}
+
+/* 深色模式适配 */
+[data-theme="dark"] .custom-title-bar {
+    background: #141414 !important;
+    border-bottom-color: #303030 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .title-bar-title {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+
+[data-theme="dark"] .title-bar-button {
+    color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-theme="dark"] .title-bar-button:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+
+[data-theme="dark"] .title-bar-button:active {
+    background: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* 关闭按钮在深色模式下也保持红色 */
+[data-theme="dark"] .close-button:hover {
+    background: #e81123 !important;
+    color: #fff !important;
+}
+
+[data-theme="dark"] .close-button:active {
+    background: #c50e1f !important;
+    color: #fff !important;
+}
+
+/* 禁用按钮的默认样式 */
+.title-bar-button.ant-btn {
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: auto !important;
+}
+
+.title-bar-button.ant-btn:focus,
+.title-bar-button.ant-btn:active {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* 确保图标居中 */
+.title-bar-button .ant-btn-icon {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .custom-title-bar {
+        height: 28px;
+    }
+
+    .title-bar-logo {
+        width: 18px;
+        height: 18px;
+        font-size: 10px;
+    }
+
+    .title-bar-title {
+        font-size: 12px;
+    }
+
+    .title-bar-button {
+        width: 40px !important;
+        height: 28px !important;
+    }
+
+    .title-bar-button .anticon {
+        font-size: 10px;
+    }
+}

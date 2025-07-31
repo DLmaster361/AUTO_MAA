@@ -1,311 +1,305 @@
 /* 侧边栏样式 */
 .app-sidebar {
-  height: 100vh;
-  position: fixed !important;
-  left: 0;
-  top: 0;
-  z-index: 200;
-  box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
-  border-right: 1px solid #f0f0f0;
-  background: #fff;
-  transition: all 0.2s;
+    height: calc(100vh - 32px);
+    position: fixed !important;
+    left: 0;
+    top: 32px; /* 为标题栏留出空间 */
+    z-index: 200;
+    box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
+    border-right: 1px solid #f0f0f0;
+    background: #fff;
+    transition: all 0.2s;
 }
 
 .app-sidebar.ant-layout-sider {
-  position: fixed !important;
+    position: fixed !important;
 }
 
 .app-sidebar .ant-layout-sider-children {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 /* Logo 区域 */
 .sidebar-logo {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
-  background: #fff;
-  min-height: 56px;
-  transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    min-height: 56px;
+    transition: all 0.2s;
 }
 
 .app-sidebar.ant-layout-sider-collapsed .sidebar-logo {
-  padding: 12px 16px;
-  justify-content: center;
+    padding: 12px 16px;
+    justify-content: center;
 }
 
 .logo-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 16px;
-  flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 16px;
+    flex-shrink: 0;
 }
 
 .logo-text {
-  margin-left: 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+    margin-left: 10px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .logo-title {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .logo-subtitle {
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.45);
-  line-height: 1.2;
-  white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 /* 侧边栏内容 */
 .sidebar-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* 主要菜单 */
 .main-menu {
-  flex: 1;
-  border-right: none;
-  padding: 8px 0;
+    flex: 1;
+    border-right: none;
+    padding: 8px 0;
 }
 
 .main-menu .ant-menu-item {
-  margin: 0 8px 4px 8px;
-  width: calc(100% - 16px);
-  border-radius: 6px;
-  height: 40px;
-  line-height: 40px;
-  display: flex;
-  align-items: center;
-  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    margin: 0 8px 4px 8px;
+    width: calc(100% - 16px);
+    border-radius: 6px;
+    height: 40px;
+    line-height: 40px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 .main-menu .ant-menu-item:hover {
-  background-color: rgba(22, 119, 255, 0.06);
-  color: #1677ff;
+    background-color: rgba(22, 119, 255, 0.06);
+    color: #1677ff;
 }
 
 .main-menu .ant-menu-item-selected {
-  background-color: #1677ff !important;
-  color: #fff !important;
-  font-weight: 500;
+    background-color: #1677ff !important;
+    color: #fff !important;
+    font-weight: 500;
 }
 
 .main-menu .ant-menu-item-selected::after {
-  display: none;
+    display: none;
 }
 
 .main-menu .ant-menu-item .ant-menu-item-icon {
-  font-size: 16px;
-  margin-right: 10px;
-  transition: all 0.2s;
+    font-size: 16px;
+    margin-right: 10px;
+    transition: all 0.2s;
 }
 
 .main-menu .ant-menu-item-selected .ant-menu-item-icon {
-  color: #fff;
+    color: #fff;
 }
 
 /* 底部菜单 */
 .bottom-menu {
-  border-right: none;
-  border-top: 1px solid #f0f0f0;
-  padding: 8px 0 12px 0;
-  margin-top: auto;
+    border-right: none;
+    border-top: 1px solid #f0f0f0;
+    padding: 8px 0 12px 0;
+    margin-top: auto;
 }
 
 .bottom-menu .ant-menu-item {
-  margin: 0 8px 4px 8px;
-  width: calc(100% - 16px);
-  border-radius: 6px;
-  height: 40px;
-  line-height: 40px;
-  display: flex;
-  align-items: center;
-  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    margin: 0 8px 4px 8px;
+    width: calc(100% - 16px);
+    border-radius: 6px;
+    height: 40px;
+    line-height: 40px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 .bottom-menu .ant-menu-item:hover {
-  background-color: rgba(22, 119, 255, 0.06);
-  color: #1677ff;
+    background-color: rgba(22, 119, 255, 0.06);
+    color: #1677ff;
 }
 
 .bottom-menu .ant-menu-item-selected {
-  background-color: #1677ff !important;
-  color: #fff !important;
-  font-weight: 500;
+    background-color: #1677ff !important;
+    color: #fff !important;
+    font-weight: 500;
 }
 
 .bottom-menu .ant-menu-item-selected::after {
-  display: none;
+    display: none;
 }
 
 .bottom-menu .ant-menu-item .ant-menu-item-icon {
-  font-size: 16px;
-  margin-right: 10px;
-  transition: all 0.2s;
+    font-size: 16px;
+    margin-right: 10px;
+    transition: all 0.2s;
 }
 
 .bottom-menu .ant-menu-item-selected .ant-menu-item-icon {
-  color: #fff;
+    color: #fff;
 }
-
 
 
 /* 折叠状态样式 */
 .app-sidebar.ant-layout-sider-collapsed .main-menu .ant-menu-item,
 .app-sidebar.ant-layout-sider-collapsed .bottom-menu .ant-menu-item {
-  margin: 0 8px 4px 8px;
-  width: calc(100% - 16px);
-  padding: 0;
-  justify-content: center;
+    margin: 0 8px 4px 8px;
+    width: calc(100% - 16px);
+    padding: 0;
+    justify-content: center;
 }
 
 .app-sidebar.ant-layout-sider-collapsed .main-menu .ant-menu-item .ant-menu-item-icon,
 .app-sidebar.ant-layout-sider-collapsed .bottom-menu .ant-menu-item .ant-menu-item-icon {
-  margin-right: 0;
-  font-size: 18px;
+    margin-right: 0;
+    font-size: 18px;
 }
-
 
 
 /* 深色主题支持 */
 [data-theme="dark"] .app-sidebar {
-  background: #141414 !important;
-  border-right-color: #303030;
-  box-shadow: 2px 0 8px 0 rgba(0, 0, 0, 0.2);
+    background: #141414 !important;
+    border-right-color: #303030;
+    box-shadow: 2px 0 8px 0 rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="dark"] .sidebar-logo {
-  background: #141414 !important;
-  border-bottom-color: #303030;
+    background: #141414 !important;
+    border-bottom-color: #303030;
 }
 
 [data-theme="dark"] .logo-subtitle {
-  color: rgba(255, 255, 255, 0.45);
+    color: rgba(255, 255, 255, 0.45);
 }
 
 [data-theme="dark"] .bottom-menu {
-  border-top-color: #303030;
+    border-top-color: #303030;
 }
 
 [data-theme="dark"] .main-menu .ant-menu-item,
 [data-theme="dark"] .bottom-menu .ant-menu-item {
-  color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.85);
 }
 
 [data-theme="dark"] .main-menu .ant-menu-item:hover,
 [data-theme="dark"] .bottom-menu .ant-menu-item:hover {
-  background-color: rgba(22, 119, 255, 0.1) !important;
-  color: #1677ff !important;
+    background-color: rgba(22, 119, 255, 0.1) !important;
+    color: #1677ff !important;
 }
 
 [data-theme="dark"] .main-menu .ant-menu-item-selected,
 [data-theme="dark"] .bottom-menu .ant-menu-item-selected {
-  background-color: #1677ff !important;
-  color: #fff !important;
+    background-color: #1677ff !important;
+    color: #fff !important;
 }
 
 /* 选中状态的特殊效果 */
 .main-menu .ant-menu-item-selected,
 .bottom-menu .ant-menu-item-selected {
-  position: relative;
-  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.15);
+    position: relative;
+    box-shadow: 0 2px 8px rgba(22, 119, 255, 0.15);
 }
 
 .main-menu .ant-menu-item-selected::after,
 .bottom-menu .ant-menu-item-selected::after {
-  content: '';
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 12px;
-  background: #fff;
-  border-radius: 2px;
-  opacity: 0.8;
+    content: '';
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 12px;
+    background: #fff;
+    border-radius: 2px;
+    opacity: 0.8;
 }
 
 /* 折叠状态下的选中效果 */
 .app-sidebar.ant-layout-sider-collapsed .main-menu .ant-menu-item-selected::after,
 .app-sidebar.ant-layout-sider-collapsed .bottom-menu .ant-menu-item-selected::after {
-  right: 50%;
-  transform: translate(50%, -50%);
-  bottom: 4px;
-  top: auto;
-  width: 12px;
-  height: 3px;
+    right: 50%;
+    transform: translate(50%, -50%);
+    bottom: 4px;
+    top: auto;
+    width: 12px;
+    height: 3px;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .app-sidebar {
-    position: fixed;
-    z-index: 1001;
-    transform: translateX(-100%);
-    transition: transform 0.3s ease;
-  }
-  
-  .app-sidebar.mobile-visible {
-    transform: translateX(0);
-  }
-  
-  .sidebar-logo {
-    padding: 10px 14px;
-    min-height: 50px;
-  }
-  
-  .logo-icon {
-    width: 24px;
-    height: 24px;
-    font-size: 14px;
-  }
-  
-  .logo-title {
-    font-size: 13px;
-  }
-  
-  .logo-subtitle {
-    font-size: 10px;
-  }
-  
-  .main-menu .ant-menu-item,
-  .bottom-menu .ant-menu-item {
-    height: 36px;
-    line-height: 36px;
-  }
-  
-  .main-menu .ant-menu-item .ant-menu-item-icon,
-  .bottom-menu .ant-menu-item .ant-menu-item-icon {
-    font-size: 14px;
-  }
-  
-  .theme-switch-container {
-    padding: 10px 8px 6px 8px;
-  }
-  
-  .theme-switch-full {
-    padding: 4px 8px;
-    gap: 4px;
-  }
-  
-  .theme-icon {
-    font-size: 10px;
-  }
+    .app-sidebar {
+        position: fixed;
+        z-index: 1001;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .app-sidebar.mobile-visible {
+        transform: translateX(0);
+    }
+
+    .sidebar-logo {
+        padding: 10px 14px;
+        min-height: 50px;
+    }
+
+    .logo-icon {
+        width: 24px;
+        height: 24px;
+        font-size: 14px;
+    }
+
+    .logo-title {
+        font-size: 13px;
+    }
+
+    .logo-subtitle {
+        font-size: 10px;
+    }
+
+    .main-menu .ant-menu-item,
+    .bottom-menu .ant-menu-item {
+        height: 36px;
+        line-height: 36px;
+    }
+
+    .main-menu .ant-menu-item .ant-menu-item-icon,
+    .bottom-menu .ant-menu-item .ant-menu-item-icon {
+        font-size: 14px;
+    }
+
+    .theme-switch-container {
+        padding: 10px 8px 6px 8px;
+    }
+
+    .theme-switch-full {
+        padding: 4px 8px;
+        gap: 4px;
+    }
+
+    .theme-icon {
+        font-size: 10px;
+    }
 }

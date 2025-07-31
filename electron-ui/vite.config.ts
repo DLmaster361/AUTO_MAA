@@ -26,7 +26,7 @@ export default defineConfig({
       },
       {
         entry: 'electron/preload.ts',
-        onstart(options) {
+        onstart() {
           // preload脚本不需要启动
         },
         vite: {

@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {ConfigProvider, theme} from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import TitleBar from './components/TitleBar';
@@ -21,7 +21,7 @@ function App() {
         // 初始化主题
         const initializeTheme = () => {
             const savedTheme = localStorage.getItem('theme-mode') as 'system' | 'light' | 'dark';
-            let isDark = false;
+            let isDark: boolean;
 
             if (savedTheme && ['system', 'light', 'dark'].includes(savedTheme)) {
                 switch (savedTheme) {

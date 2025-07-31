@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:electron": "npm run build && electron-builder",
     "electron:build": "electron-builder",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -37,13 +38,29 @@
   },
   "build": {
     "appId": "com.auto-maa.electron",
+    "productName": "AUTO_MAA",
     "files": [
-      "dist",
-      "dist-electron",
-      "electron"
+      "dist/**/*",
+      "dist-electron/**/*",
+      "!node_modules",
+      "!src",
+      "!electron",
+      "!*.ts"
     ],
     "directories": {
-      "buildResources": "resources"
+      "buildResources": "resources",
+      "output": "release"
+    },
+    "extraMetadata": {
+      "main": "dist-electron/main.js"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/AUTO_MAA.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }

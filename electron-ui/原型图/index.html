@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AUTO_MAA 管理系统</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 左侧导航栏 -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>AUTO_MAA</h2>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item active" data-page="home">
+                    <span class="nav-icon">🏠</span>
+                    <span class="nav-text">首页</span>
+                </li>
+                <li class="nav-item" data-page="scripts">
+                    <span class="nav-icon">⚡</span>
+                    <span class="nav-text">脚本管理</span>
+                </li>
+                <li class="nav-item" data-page="schedule">
+                    <span class="nav-icon">📅</span>
+                    <span class="nav-text">计划表管理</span>
+                </li>
+                <li class="nav-item" data-page="queue">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-text">调度队列</span>
+                </li>
+                <li class="nav-item" data-page="center">
+                    <span class="nav-icon">🎯</span>
+                    <span class="nav-text">调度中心</span>
+                </li>
+                <li class="nav-item" data-page="history">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">历史记录</span>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">设置</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 首页 -->
+            <div class="page active" id="home">
+                <div class="page-header">
+                    <h1>首页</h1>
+                </div>
+                <div class="home-content">
+                    <iframe src="https://doc.automaa.xyz" frameborder="0" width="100%" height="600px">
+                        <p>您的浏览器不支持iframe，请访问 <a href="https://doc.automaa.xyz">https://doc.automaa.xyz</a></p>
+                    </iframe>
+                </div>
+            </div>
+
+            <!-- 脚本管理页面 -->
+            <div class="page" id="scripts">
+                <div class="page-header">
+                    <h1>脚本管理</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" onclick="addScript()">➕ 添加脚本</button>
+                        <button class="btn btn-danger" onclick="deleteScript()">🗑️ 删除脚本</button>
+                        <button class="btn btn-secondary" onclick="moveScriptUp()">⬆️</button>
+                        <button class="btn btn-secondary" onclick="moveScriptDown()">⬇️</button>
+                    </div>
+                </div>
+                
+                <div class="scripts-container">
+                    <div class="script-list">
+                        <div class="script-item selected">
+                            <div class="script-header">
+                                <span class="script-name">脚本1 - 日常任务</span>
+                                <button class="toggle-btn" onclick="toggleScript(this)">▼</button>
+                            </div>
+                            <div class="script-content expanded">
+                                <div class="run-section">
+                                    <h3>运行配置</h3>
+                                    <div class="run-options">
+                                        <label><input type="checkbox" checked> 自动运行</label>
+                                        <label><input type="checkbox"> 循环执行</label>
+                                        <select class="run-mode">
+                                            <option>普通模式</option>
+                                            <option>快速模式</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="script-item">
+                            <div class="script-header">
+                                <span class="script-name">脚本2 - 活动任务</span>
+                                <button class="toggle-btn" onclick="toggleScript(this)">▶️</button>
+                            </div>
+                            <div class="script-content">
+                                <div class="run-section">
+                                    <h3>运行配置</h3>
+                                    <div class="run-options">
+                                        <label><input type="checkbox"> 自动运行</label>
+                                        <label><input type="checkbox" checked> 循环执行</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 用户面板 -->
+                    <div class="user-panel">
+                        <div class="panel-header">
+                            <h3>用户管理</h3>
+                            <div class="user-actions">
+                                <button class="btn btn-sm btn-primary" onclick="addUser()">➕</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteUser()">➖</button>
+                                <button class="btn btn-sm btn-secondary" onclick="moveUserLeft()">⬅️</button>
+                                <button class="btn btn-sm btn-secondary" onclick="moveUserRight()">➡️</button>
+                            </div>
+                        </div>
+                        
+                        <div class="user-dashboard">
+                            <div class="user-preview">
+                                <div class="user-card active" data-user="1">
+                                    <div class="user-avatar">👤</div>
+                                    <div class="user-info">
+                                        <div class="user-name">用户1</div>
+                                        <div class="user-status online">在线</div>
+                                    </div>
+                                </div>
+                                <div class="user-card" data-user="2">
+                                    <div class="user-avatar">👤</div>
+                                    <div class="user-info">
+                                        <div class="user-name">用户2</div>
+                                        <div class="user-status offline">离线</div>
+                                    </div>
+                                </div>
+                                <div class="user-card" data-user="3">
+                                    <div class="user-avatar">👤</div>
+                                    <div class="user-info">
+                                        <div class="user-name">用户3</div>
+                                        <div class="user-status online">在线</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="user-detail">
+                                <h4>用户详细配置</h4>
+                                <div class="user-config">
+                                    <div class="config-group">
+                                        <label>用户名:</label>
+                                        <input type="text" value="用户1" class="form-input">
+                                    </div>
+                                    <div class="config-group">
+                                        <label>设备类型:</label>
+                                        <select class="form-select">
+                                            <option>Android</option>
+                                            <option>iOS</option>
+                                            <option>模拟器</option>
+                                        </select>
+                                    </div>
+                                    <div class="config-group">
+                                        <label>连接地址:</label>
+                                        <input type="text" value="127.0.0.1:5555" class="form-input">
+                                    </div>
+                                    <div class="config-group">
+                                        <label><input type="checkbox" checked> 启用自动连接</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 计划表管理页面 -->
+            <div class="page" id="schedule">
+                <div class="page-header">
+                    <h1>计划表管理</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" onclick="addSchedule()">➕ 添加计划</button>
+                        <button class="btn btn-warning" onclick="editSchedule()">✏️ 修改</button>
+                        <button class="btn btn-secondary" onclick="moveScheduleLeft()">⬅️</button>
+                        <button class="btn btn-secondary" onclick="moveScheduleRight()">➡️</button>
+                    </div>
+                </div>
+                
+                <div class="schedule-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>计划名称</th>
+                                <th>执行时间</th>
+                                <th>关联脚本</th>
+                                <th>执行用户</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="selected">
+                                <td>日常任务计划</td>
+                                <td>
+                                    <select class="time-select">
+                                        <option>每天 06:00</option>
+                                        <option>每天 12:00</option>
+                                        <option>每天 18:00</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="script-select">
+                                        <option>脚本1 - 日常任务</option>
+                                        <option>脚本2 - 活动任务</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="user-select">
+                                        <option>用户1</option>
+                                        <option>用户2</option>
+                                        <option>用户3</option>
+                                    </select>
+                                </td>
+                                <td><span class="status active">启用</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary">编辑</button>
+                                    <button class="btn btn-sm btn-danger">删除</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>活动任务计划</td>
+                                <td>
+                                    <select class="time-select">
+                                        <option>每天 20:00</option>
+                                        <option>每天 22:00</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="script-select">
+                                        <option>脚本2 - 活动任务</option>
+                                        <option>脚本1 - 日常任务</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="user-select">
+                                        <option>用户2</option>
+                                        <option>用户1</option>
+                                        <option>用户3</option>
+                                    </select>
+                                </td>
+                                <td><span class="status inactive">禁用</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary">编辑</button>
+                                    <button class="btn btn-sm btn-danger">删除</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 调度队列页面 -->
+            <div class="page" id="queue">
+                <div class="page-header">
+                    <h1>调度队列</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-success" onclick="startQueue()">▶️ 开始</button>
+                        <button class="btn btn-warning" onclick="pauseQueue()">⏸️ 暂停</button>
+                        <button class="btn btn-danger" onclick="stopQueue()">⏹️ 停止</button>
+                        <button class="btn btn-secondary" onclick="clearQueue()">🗑️ 清空</button>
+                    </div>
+                </div>
+                
+                <div class="queue-container">
+                    <div class="queue-stats">
+                        <div class="stat-card">
+                            <div class="stat-number">5</div>
+                            <div class="stat-label">等待中</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">2</div>
+                            <div class="stat-label">执行中</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">12</div>
+                            <div class="stat-label">已完成</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">1</div>
+                            <div class="stat-label">失败</div>
+                        </div>
+                    </div>
+                    
+                    <div class="queue-list">
+                        <div class="queue-item running">
+                            <div class="item-status">🔄</div>
+                            <div class="item-info">
+                                <div class="item-title">日常任务 - 用户1</div>
+                                <div class="item-detail">开始时间: 2024-01-15 06:00:00</div>
+                            </div>
+                            <div class="item-progress">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 65%"></div>
+                                </div>
+                                <span class="progress-text">65%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="queue-item waiting">
+                            <div class="item-status">⏳</div>
+                            <div class="item-info">
+                                <div class="item-title">活动任务 - 用户2</div>
+                                <div class="item-detail">预计开始: 2024-01-15 06:15:00</div>
+                            </div>
+                            <div class="item-actions">
+                                <button class="btn btn-sm btn-primary">优先</button>
+                                <button class="btn btn-sm btn-danger">取消</button>
+                            </div>
+                        </div>
+                        
+                        <div class="queue-item completed">
+                            <div class="item-status">✅</div>
+                            <div class="item-info">
+                                <div class="item-title">日常任务 - 用户3</div>
+                                <div class="item-detail">完成时间: 2024-01-15 05:45:00</div>
+                            </div>
+                            <div class="item-result">成功</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 调度中心页面 -->
+            <div class="page" id="center">
+                <div class="page-header">
+                    <h1>调度中心</h1>
+                </div>
+                
+                <div class="center-dashboard">
+                    <div class="dashboard-row">
+                        <div class="dashboard-card">
+                            <h3>系统状态</h3>
+                            <div class="status-indicator online">运行中</div>
+                            <div class="system-info">
+                                <p>CPU: 25%</p>
+                                <p>内存: 1.2GB / 8GB</p>
+                                <p>运行时间: 2天 5小时</p>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <h3>今日统计</h3>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-value">24</span>
+                                    <span class="stat-name">执行任务</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">22</span>
+                                    <span class="stat-name">成功</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">2</span>
+                                    <span class="stat-name">失败</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="dashboard-row">
+                        <div class="dashboard-card full-width">
+                            <h3>实时日志</h3>
+                            <div class="log-container">
+                                <div class="log-entry">
+                                    <span class="log-time">06:00:15</span>
+                                    <span class="log-level info">INFO</span>
+                                    <span class="log-message">开始执行日常任务 - 用户1</span>
+                                </div>
+                                <div class="log-entry">
+                                    <span class="log-time">06:00:20</span>
+                                    <span class="log-level info">INFO</span>
+                                    <span class="log-message">连接设备成功: 127.0.0.1:5555</span>
+                                </div>
+                                <div class="log-entry">
+                                    <span class="log-time">06:00:25</span>
+                                    <span class="log-level warn">WARN</span>
+                                    <span class="log-message">检测到游戏未启动，正在启动...</span>
+                                </div>
+                                <div class="log-entry">
+                                    <span class="log-time">06:00:30</span>
+                                    <span class="log-level info">INFO</span>
+                                    <span class="log-message">游戏启动成功，开始执行脚本</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 历史记录页面 -->
+            <div class="page" id="history">
+                <div class="page-header">
+                    <h1>历史记录</h1>
+                    <div class="header-actions">
+                        <input type="date" class="form-input" value="2024-01-15">
+                        <select class="form-select">
+                            <option>全部用户</option>
+                            <option>用户1</option>
+                            <option>用户2</option>
+                            <option>用户3</option>
+                        </select>
+                        <button class="btn btn-primary">查询</button>
+                        <button class="btn btn-secondary">导出</button>
+                    </div>
+                </div>
+                
+                <div class="history-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>执行时间</th>
+                                <th>脚本名称</th>
+                                <th>用户</th>
+                                <th>执行结果</th>
+                                <th>耗时</th>
+                                <th>详情</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2024-01-15 06:00:00</td>
+                                <td>日常任务</td>
+                                <td>用户1</td>
+                                <td><span class="result success">成功</span></td>
+                                <td>15分30秒</td>
+                                <td><button class="btn btn-sm btn-info">查看</button></td>
+                            </tr>
+                            <tr>
+                                <td>2024-01-15 05:45:00</td>
+                                <td>日常任务</td>
+                                <td>用户3</td>
+                                <td><span class="result success">成功</span></td>
+                                <td>12分45秒</td>
+                                <td><button class="btn btn-sm btn-info">查看</button></td>
+                            </tr>
+                            <tr>
+                                <td>2024-01-15 05:30:00</td>
+                                <td>活动任务</td>
+                                <td>用户2</td>
+                                <td><span class="result failed">失败</span></td>
+                                <td>2分15秒</td>
+                                <td><button class="btn btn-sm btn-info">查看</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 设置页面 -->
+            <div class="page" id="settings">
+                <div class="page-header">
+                    <h1>设置</h1>
+                </div>
+                
+                <div class="settings-container">
+                    <div class="settings-nav">
+                        <div class="settings-nav-item active" data-tab="general">常规设置</div>
+                        <div class="settings-nav-item" data-tab="schedule">调度设置</div>
+                        <div class="settings-nav-item" data-tab="notification">通知设置</div>
+                        <div class="settings-nav-item" data-tab="advanced">高级设置</div>
+                    </div>
+                    
+                    <div class="settings-content">
+                        <div class="settings-tab active" id="general">
+                            <h3>常规设置</h3>
+                            <div class="setting-group">
+                                <label>语言设置:</label>
+                                <select class="form-select">
+                                    <option>简体中文</option>
+                                    <option>English</option>
+                                </select>
+                            </div>
+                            <div class="setting-group">
+                                <label>主题:</label>
+                                <select class="form-select">
+                                    <option>浅色主题</option>
+                                    <option>深色主题</option>
+                                    <option>自动</option>
+                                </select>
+                            </div>
+                            <div class="setting-group">
+                                <label><input type="checkbox" checked> 开机自启动</label>
+                            </div>
+                            <div class="setting-group">
+                                <label><input type="checkbox"> 最小化到系统托盘</label>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-tab" id="schedule">
+                            <h3>调度设置</h3>
+                            <div class="setting-group">
+                                <label>最大并发任务数:</label>
+                                <input type="number" value="3" min="1" max="10" class="form-input">
+                            </div>
+                            <div class="setting-group">
+                                <label>任务超时时间(分钟):</label>
+                                <input type="number" value="30" min="5" max="120" class="form-input">
+                            </div>
+                            <div class="setting-group">
+                                <label><input type="checkbox" checked> 失败任务自动重试</label>
+                            </div>
+                            <div class="setting-group">
+                                <label>重试次数:</label>
+                                <input type="number" value="3" min="1" max="5" class="form-input">
+                            </div>
+                        </div>
+                        
+                        <div class="settings-tab" id="notification">
+                            <h3>通知设置</h3>
+                            <div class="setting-group">
+                                <label><input type="checkbox" checked> 任务完成通知</label>
+                            </div>
+                            <div class="setting-group">
+                                <label><input type="checkbox" checked> 任务失败通知</label>
+                            </div>
+                            <div class="setting-group">
+                                <label><input type="checkbox"> 系统错误通知</label>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-tab" id="advanced">
+                            <h3>高级设置</h3>
+                            <div class="setting-group">
+                                <label>日志级别:</label>
+                                <select class="form-select">
+                                    <option>INFO</option>
+                                    <option>DEBUG</option>
+                                    <option>WARN</option>
+                                    <option>ERROR</option>
+                                </select>
+                            </div>
+                            <div class="setting-group">
+                                <label>日志保留天数:</label>
+                                <input type="number" value="30" min="1" max="365" class="form-input">
+                            </div>
+                            <div class="setting-group">
+                                <label><input type="checkbox"> 启用调试模式</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-actions">
+                        <button class="btn btn-primary">保存设置</button>
+                        <button class="btn btn-secondary">重置默认</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

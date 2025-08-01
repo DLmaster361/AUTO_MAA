@@ -1,0 +1,192 @@
+{
+  "sidebar": {
+    "home": "Home",
+    "scripts": "Scripts",
+    "schedule": "Schedule",
+    "queue": "Queue",
+    "center": "Center",
+    "history": "History",
+    "settings": "Settings",
+    "title": "AUTO_MAA",
+    "subtitle": "Next_NG"
+  },
+  "pages": {
+    "home": {
+      "title": "Home",
+      "welcome": "Welcome to AUTO_MAA",
+      "description": "This is a modern desktop application that provides an intuitive user interface for the AUTO_MAA project."
+    },
+    "scripts": {
+      "title": "Script Management",
+      "description": "Script management functionality will be displayed here",
+      "addScript": "Add Script",
+      "editScript": "Edit Script",
+      "scriptSettings": "Script Settings",
+      "userManagement": "User Management",
+      "addUser": "Add User",
+      "editUser": "Edit User",
+      "scriptName": "Script Name",
+      "scriptDescription": "Script Description",
+      "status": "Status",
+      "userCount": "User Count",
+      "lastRun": "Last Run",
+      "actions": "Actions",
+      "running": "Running",
+      "stopped": "Stopped",
+      "active": "Active",
+      "inactive": "Inactive",
+      "username": "Username",
+      "accountId": "Account ID",
+      "server": "Server",
+      "lastLogin": "Last Login",
+      "basicInfo": "Basic Info",
+      "advancedConfig": "Advanced Config",
+      "basicSettings": "Basic Settings",
+      "masterName": "Master Name",
+      "maaDirectory": "MAA Directory",
+      "maaGlobalConfig": "MAA Global Config",
+      "run": "Run",
+      "selectFolder": "Select Folder",
+      "userConfigMode": "User Config Mode",
+      "farmingMode": "Farming Mode",
+      "maxRetries": "Max Retries",
+      "connectionMode": "Connection Mode",
+      "password": "Password",
+      "clientType": "Client Type",
+      "stageSelection": "Stage Selection",
+      "officialServer": "Official Server",
+      "biliServer": "Bilibili Server",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "closed": "Closed",
+      "opened": "Opened",
+      "auto": "AUTO",
+      "official": "Official",
+      "other": "Other",
+      "confirmDeleteScript": "Are you sure to delete this script?",
+      "confirmDeleteUser": "Are you sure to delete this user?",
+      "scriptAdded": "Script added",
+      "scriptUpdated": "Script updated",
+      "scriptDeleted": "Script deleted",
+      "scriptStarted": "Script started",
+      "scriptStopped": "Script stopped",
+      "userAdded": "User added",
+      "userUpdated": "User updated",
+      "userDeleted": "User deleted",
+      "manageUsers": "Manage users for script \"{name}\"",
+      "neverRun": "Never run",
+      "neverLogin": "Never login",
+      "pleaseEnterScriptName": "Please enter script name",
+      "pleaseEnterScriptDescription": "Please enter script description",
+      "pleaseEnterUsername": "Please enter username",
+      "pleaseEnterAccountId": "Please enter account ID",
+      "pleaseSelectServer": "Please select server",
+      "pleaseEnterPassword": "Please enter password",
+      "pleaseSelectMaaConfig": "Please select MAA global config file",
+      "update": "Update",
+      "start": "Start",
+      "stop": "Stop"
+    },
+    "schedule": {
+      "title": "Schedule Management",
+      "description": "Schedule management functionality will be displayed here"
+    },
+    "queue": {
+      "title": "Task Queue",
+      "description": "Task queue functionality will be displayed here"
+    },
+    "center": {
+      "title": "Control Center",
+      "description": "Control center functionality will be displayed here"
+    },
+    "history": {
+      "title": "History",
+      "description": "History functionality will be displayed here"
+    },
+    "settings": {
+      "title": "Settings",
+      "tabs": {
+        "appearance": "Appearance",
+        "function": "Function",
+        "notification": "Notification",
+        "advanced": "Advanced"
+      },
+      "appearance": {
+        "theme": {
+          "title": "Theme Mode",
+          "description": "Choose the appearance theme of the application. Follow system will automatically switch based on your operating system settings.",
+          "system": "Follow System",
+          "light": "Light Mode",
+          "dark": "Dark Mode",
+          "current": "Current"
+        },
+        "startup": {
+          "title": "Startup Settings",
+          "autoStart": "Auto start on boot",
+          "minimizeToTray": "Minimize to system tray"
+        },
+        "language": {
+          "title": "Language Settings",
+          "description": "Select the display language of the application",
+          "chinese": "中文",
+          "english": "English"
+        }
+      },
+      "function": {
+        "title": "Function Settings",
+        "execution": {
+          "title": "Task Execution",
+          "maxConcurrent": "Max concurrent tasks",
+          "timeout": "Task timeout (minutes)"
+        },
+        "failure": {
+          "title": "Failure Handling",
+          "autoRetry": "Auto retry failed tasks",
+          "retryCount": "Retry count"
+        }
+      },
+      "notification": {
+        "title": "Notification Settings",
+        "taskComplete": "Task completion notification",
+        "taskFailed": "Task failure notification",
+        "systemError": "System error notification"
+      },
+      "advanced": {
+        "title": "Advanced Settings",
+        "log": {
+          "title": "Log Settings",
+          "level": "Log level",
+          "retention": "Log retention days"
+        },
+        "developer": {
+          "title": "Developer Options",
+          "debugMode": "Enable debug mode",
+          "devTools": "Developer Tools",
+          "openF12": "Open"
+        }
+      },
+      "actions": {
+        "reset": "Reset to Default",
+        "resetSuccess": "Settings have been reset to default values",
+        "devToolsOpened": "Developer tools opened",
+        "devToolsUnavailable": "Developer tools are only available in desktop app",
+        "languageChanged": "Language changed, some content requires app restart to take effect"
+      }
+    }
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "search": "Search",
+    "refresh": "Refresh"
+  }
+}

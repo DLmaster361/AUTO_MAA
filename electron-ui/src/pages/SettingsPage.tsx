@@ -341,10 +341,10 @@ const SettingsPage: React.FC = () => {
 
                     <Title level={4}>{t('pages.settings.advanced.developer.title')}</Title>
                     <Space direction="vertical" size="middle" style={{width: '100%'}}>
-                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>{t('pages.settings.advanced.developer.debugMode')}</span>
-                            <Switch/>
-                        </div>
+                        {/*<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>*/}
+                        {/*    <span>{t('pages.settings.advanced.developer.debugMode')}</span>*/}
+                        {/*    <Switch/>*/}
+                        {/*</div>*/}
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>{t('pages.settings.advanced.developer.devTools')}</span>
                             <Button

@@ -1,0 +1,192 @@
+{
+    "sidebar": {
+        "home": "首页",
+        "scripts": "脚本管理",
+        "schedule": "计划管理",
+        "queue": "调度队列",
+        "center": "调度中心",
+        "history": "历史记录",
+        "settings": "设置",
+        "title": "AUTO_MAA",
+        "subtitle": "Next_NG"
+    },
+    "pages": {
+        "home": {
+            "title": "首页",
+            "welcome": "欢迎使用 AUTO_MAA",
+            "description": "这是一个现代化的桌面应用程序，为 AUTO_MAA 项目提供直观的用户界面。"
+        },
+        "scripts": {
+            "title": "脚本管理",
+            "description": "这里将显示脚本管理功能",
+            "addScript": "添加脚本",
+            "editScript": "编辑脚本",
+            "scriptSettings": "脚本设置",
+            "userManagement": "用户管理",
+            "addUser": "添加用户",
+            "editUser": "编辑用户",
+            "scriptName": "脚本名称",
+            "scriptDescription": "脚本描述",
+            "status": "状态",
+            "userCount": "用户数量",
+            "lastRun": "最后运行",
+            "actions": "操作",
+            "running": "运行中",
+            "stopped": "已停止",
+            "active": "启用",
+            "inactive": "禁用",
+            "username": "用户名",
+            "accountId": "账号ID",
+            "server": "服务器",
+            "lastLogin": "最后登录",
+            "basicInfo": "基本信息",
+            "advancedConfig": "高级配置",
+            "basicSettings": "基本设置",
+            "masterName": "主控名称",
+            "maaDirectory": "MAA目录",
+            "maaGlobalConfig": "MAA全局配置",
+            "run": "运行",
+            "selectFolder": "选择文件夹",
+            "userConfigMode": "用户配置模式",
+            "farmingMode": "刷理大数",
+            "maxRetries": "最大重试次数",
+            "connectionMode": "连接模式",
+            "password": "密码",
+            "clientType": "客户端类型",
+            "stageSelection": "关卡选择",
+            "officialServer": "官服",
+            "biliServer": "B服",
+            "enabled": "启用",
+            "disabled": "禁用",
+            "closed": "关闭",
+            "opened": "开启",
+            "auto": "AUTO",
+            "official": "官方",
+            "other": "其他",
+            "confirmDeleteScript": "确定删除这个脚本吗？",
+            "confirmDeleteUser": "确定删除这个用户吗？",
+            "scriptAdded": "脚本已添加",
+            "scriptUpdated": "脚本已更新",
+            "scriptDeleted": "脚本已删除",
+            "scriptStarted": "脚本已启动",
+            "scriptStopped": "脚本已停止",
+            "userAdded": "用户已添加",
+            "userUpdated": "用户已更新",
+            "userDeleted": "用户已删除",
+            "manageUsers": "管理脚本 \"{name}\" 的用户",
+            "neverRun": "从未运行",
+            "neverLogin": "从未登录",
+            "pleaseEnterScriptName": "请输入脚本名称",
+            "pleaseEnterScriptDescription": "请输入脚本描述",
+            "pleaseEnterUsername": "请输入用户名",
+            "pleaseEnterAccountId": "请输入账号ID",
+            "pleaseSelectServer": "请选择服务器",
+            "pleaseEnterPassword": "请输入密码",
+            "pleaseSelectMaaConfig": "请选择MAA全局配置文件",
+            "update": "更新",
+            "start": "启动",
+            "stop": "停止"
+        },
+        "schedule": {
+            "title": "计划管理",
+            "description": "这里将显示计划管理功能"
+        },
+        "queue": {
+            "title": "调度队列",
+            "description": "这里将显示调度队列功能"
+        },
+        "center": {
+            "title": "调度中心",
+            "description": "这里将显示调度中心功能"
+        },
+        "history": {
+            "title": "历史记录",
+            "description": "这里将显示历史记录功能"
+        },
+        "settings": {
+            "title": "设置",
+            "tabs": {
+                "appearance": "外观设置",
+                "function": "功能设置",
+                "notification": "通知设置",
+                "advanced": "高级设置"
+            },
+            "appearance": {
+                "theme": {
+                    "title": "主题模式",
+                    "description": "选择应用程序的外观主题。跟随系统将根据您的操作系统设置自动切换。",
+                    "system": "跟随系统",
+                    "light": "浅色模式",
+                    "dark": "深色模式",
+                    "current": "当前"
+                },
+                "startup": {
+                    "title": "启动设置",
+                    "autoStart": "开机自启动",
+                    "minimizeToTray": "最小化到系统托盘"
+                },
+                "language": {
+                    "title": "语言设置",
+                    "description": "选择应用程序的显示语言",
+                    "chinese": "中文",
+                    "english": "English"
+                }
+            },
+            "function": {
+                "title": "功能设置",
+                "execution": {
+                    "title": "任务执行",
+                    "maxConcurrent": "最大并发任务数",
+                    "timeout": "任务超时时间 (分钟)"
+                },
+                "failure": {
+                    "title": "失败处理",
+                    "autoRetry": "失败任务自动重试",
+                    "retryCount": "重试次数"
+                }
+            },
+            "notification": {
+                "title": "通知设置",
+                "taskComplete": "任务完成通知",
+                "taskFailed": "任务失败通知",
+                "systemError": "系统错误通知"
+            },
+            "advanced": {
+                "title": "高级设置",
+                "log": {
+                    "title": "日志设置",
+                    "level": "日志级别",
+                    "retention": "日志保留天数"
+                },
+                "developer": {
+                    "title": "开发者选项",
+                    "debugMode": "启用调试模式",
+                    "devTools": "开发者工具",
+                    "openF12": "打开"
+                }
+            },
+            "actions": {
+                "reset": "重置默认",
+                "resetSuccess": "设置已重置为默认值",
+                "devToolsOpened": "开发者工具已打开",
+                "devToolsUnavailable": "开发者工具仅在桌面应用中可用",
+                "languageChanged": "语言已切换，部分内容需要重启应用后生效"
+            }
+        }
+    },
+    "common": {
+        "loading": "加载中...",
+        "error": "错误",
+        "success": "成功",
+        "warning": "警告",
+        "info": "信息",
+        "confirm": "确认",
+        "cancel": "取消",
+        "save": "保存",
+        "delete": "删除",
+        "edit": "编辑",
+        "add": "添加",
+        "search": "搜索",
+        "refresh": "刷新"
+    }
+}

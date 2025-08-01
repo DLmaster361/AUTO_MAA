@@ -55,6 +55,37 @@ electron.ipcMain.handle("open-dev-tools", () => {
     mainWindow.webContents.openDevTools();
   }
 });
+electron.ipcMain.handle("select-directory", async () => {
+  if (mainWindow) {
+    const { dialog } = require("electron");
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"],
+      title: "选择MAA目录",
+      buttonLabel: "选择"
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+  }
+  return null;
+});
+electron.ipcMain.handle("select-file", async (event, filters = []) => {
+  if (mainWindow) {
+    const { dialog } = require("electron");
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openFile"],
+      title: "选择文件",
+      buttonLabel: "选择",
+      filters: filters.length > 0 ? filters : [
+        { name: "All Files", extensions: ["*"] }
+      ]
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+  }
+  return null;
+});
 electron.app.whenReady().then(createWindow);
 electron.app.on("window-all-closed", () => {
   if (process.platform !== "darwin") electron.app.quit();

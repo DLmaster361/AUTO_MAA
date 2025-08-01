@@ -21,7 +21,7 @@ import {
     ExperimentOutlined,
     GlobalOutlined
 } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
+import {useTranslation} from 'react-i18next';
 
 const {Title, Paragraph} = Typography;
 
@@ -29,7 +29,7 @@ const {Title, Paragraph} = Typography;
 type ThemeMode = 'system' | 'light' | 'dark';
 
 const SettingsPage: React.FC = () => {
-    const { t, i18n } = useTranslation();
+    const {t, i18n} = useTranslation();
     const [currentTheme, setCurrentTheme] = useState<ThemeMode>('system');
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [currentLanguage, setCurrentLanguage] = useState(i18n.language);
@@ -347,8 +347,8 @@ const SettingsPage: React.FC = () => {
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span>{t('pages.settings.advanced.developer.devTools')}</span>
-                            <Button 
-                                type="primary" 
+                            <Button
+                                type="primary"
                                 onClick={() => {
                                     if (window.electronAPI) {
                                         window.electronAPI.openDevTools().catch(console.error);

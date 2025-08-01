@@ -225,12 +225,10 @@ html, body, #root {
 }
 
 [data-theme="dark"] .ant-table {
-    background: #141414;
     color: rgba(255, 255, 255, 0.85);
 }
 
 [data-theme="dark"] .ant-tabs-tab-active {
-    background: #141414;
     color: rgba(255, 255, 255, 0.85);
 }
 

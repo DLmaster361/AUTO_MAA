@@ -1,5 +1,5 @@
 import React from 'react';
-import {Layout, Menu} from 'antd';
+import { Layout, Menu } from 'antd';
 import {
     HomeOutlined,
     ThunderboltOutlined,
@@ -9,10 +9,11 @@ import {
     HistoryOutlined,
     SettingOutlined,
 } from '@ant-design/icons';
-import type {MenuProps} from 'antd';
+import type { MenuProps } from 'antd';
+import { useTranslation } from 'react-i18next';
 import './Sidebar.css';
 
-const {Sider} = Layout;
+const { Sider } = Layout;
 
 interface SidebarProps {
     collapsed?: boolean;
@@ -23,36 +24,45 @@ interface SidebarProps {
 type MenuItem = Required<MenuProps>['items'][number];
 
 const Sidebar: React.FC<SidebarProps> = ({
-                                             collapsed = false,
-                                             selectedKey = 'home',
-                                             onMenuSelect,
-                                         }) => {
+    selectedKey = 'home',
+    onMenuSelect,
+}) => {
+    const { t } = useTranslation();
+    
+    // 侧边栏一直显示，不再响应屏幕尺寸变化
+    const finalCollapsed = false;
+    
     // 主要菜单项（靠上）
     const mainMenuItems: MenuItem[] = [
         {
             key: 'home',
-            icon: <HomeOutlined/>,
-            label: '首页',
+            icon: <HomeOutlined />,
+            label: t('sidebar.home'),
+            title: t('sidebar.home'),
         },
         {
             key: 'scripts',
-            icon: <ThunderboltOutlined/>,
-            label: '脚本管理',
+            icon: <ThunderboltOutlined />,
+            label: t('sidebar.scripts'),
+            title: t('sidebar.scripts'),
         },
         {
             key: 'schedule',
-            icon: <CalendarOutlined/>,
-            label: '计划管理',
+            icon: <CalendarOutlined />,
+            label: t('sidebar.schedule'),
+            title: t('sidebar.schedule'),
         },
         {
             key: 'queue',
-            icon: <UnorderedListOutlined/>,
-            label: '调度队列',
+            icon: <UnorderedListOutlined />,
+            label: t('sidebar.queue'),
+            title: t('sidebar.queue'),
         },
         {
             key: 'center',
-            icon: <DashboardOutlined/>,
-            label: '调度中心',
+            icon: <DashboardOutlined />,
+            label: t('sidebar.center'),
+            title: t('sidebar.center'),
         },
     ];
 
@@ -60,13 +70,15 @@ const Sidebar: React.FC<SidebarProps> = ({
     const bottomMenuItems: MenuItem[] = [
         {
             key: 'history',
-            icon: <HistoryOutlined/>,
-            label: '历史记录',
+            icon: <HistoryOutlined />,
+            label: t('sidebar.history'),
+            title: t('sidebar.history'),
         },
         {
             key: 'settings',
-            icon: <SettingOutlined/>,
-            label: '设置',
+            icon: <SettingOutlined />,
+            label: t('sidebar.settings'),
+            title: t('sidebar.settings'),
         },
     ];
 
@@ -76,30 +88,33 @@ const Sidebar: React.FC<SidebarProps> = ({
 
     return (
         <Sider
-            collapsed={collapsed}
+            collapsed={finalCollapsed}
             width={200}
-            collapsedWidth={56}
+            collapsedWidth={80}
             className="app-sidebar"
             theme="light"
         >
-             {/*Logo 区域*/}
+            {/* Logo 区域 */}
             <div className="sidebar-logo">
-              <div className="logo-icon">
-                <img
-                  src="/AUTO_MAA.ico"
-                  alt="AUTO_MAA Logo"
-                  style={{ width: '100%', height: '100%' }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              </div>
-              {!collapsed && (
-                <div className="logo-text">
-                  <span className="logo-title">AUTO_MAA</span>
-                    <span className="logo-subtitle">Next_NG</span>
+                <div className="logo-icon">
+                    <img
+                        src="/AUTO_MAA.ico"
+                        alt="AUTO_MAA Logo"
+                        style={{ width: '24px', height: '24px' }}
+                        onError={(e) => {
+                            // 如果图标加载失败，显示默认图标
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.setAttribute('style', 'display: flex');
+                        }}
+                    />
+                    <ThunderboltOutlined style={{ display: 'none' }} />
                 </div>
-              )}
+                {!finalCollapsed && (
+                    <div className="logo-text">
+                        <span className="logo-title">{t('sidebar.title')}</span>
+                        <span className="logo-subtitle">{t('sidebar.subtitle')}</span>
+                    </div>
+                )}
             </div>
 
             {/* 主要菜单 */}
@@ -120,8 +135,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onClick={handleMenuClick}
                     className="bottom-menu"
                 />
-
-
             </div>
         </Sider>
     );

@@ -1,6 +1,9 @@
 import {useEffect, useState} from 'react';
 import {ConfigProvider, theme} from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import enUS from 'antd/locale/en_US';
+import { useTranslation } from 'react-i18next';
+import './i18n';
 import Sidebar from './components/Sidebar';
 import HomePage from './pages/HomePage';
 import ScriptsPage from './pages/ScriptsPage';
@@ -14,6 +17,12 @@ import './App.css';
 function App() {
     const [currentPage, setCurrentPage] = useState('home');
     const [isDarkMode, setIsDarkMode] = useState(false);
+    const { i18n } = useTranslation();
+    
+    // 获取当前语言对应的 Ant Design locale
+    const getAntdLocale = () => {
+        return i18n.language === 'en-US' ? enUS : zhCN;
+    };
 
     // 初始化和监听主题变化
     useEffect(() => {
@@ -113,7 +122,7 @@ function App() {
 
     return (
         <ConfigProvider
-            locale={zhCN}
+            locale={getAntdLocale()}
             theme={{
                 algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
                 token: {

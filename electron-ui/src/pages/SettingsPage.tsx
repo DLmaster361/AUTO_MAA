@@ -18,8 +18,10 @@ import {
     DesktopOutlined,
     BellOutlined,
     SettingOutlined,
-    ExperimentOutlined
+    ExperimentOutlined,
+    GlobalOutlined
 } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 const {Title, Paragraph} = Typography;
 
@@ -27,8 +29,10 @@ const {Title, Paragraph} = Typography;
 type ThemeMode = 'system' | 'light' | 'dark';
 
 const SettingsPage: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const [currentTheme, setCurrentTheme] = useState<ThemeMode>('system');
     const [isDarkMode, setIsDarkMode] = useState(false);
+    const [currentLanguage, setCurrentLanguage] = useState(i18n.language);
 
     // 其他设置状态
     const [autoStart, setAutoStart] = useState(true);
@@ -48,7 +52,7 @@ const SettingsPage: React.FC = () => {
         // 检查当前是否为深色模式
         const checkDarkMode = () => {
             const currentThemeValue = savedTheme || 'system';
-            let isDark = false;
+            let isDark: boolean;
 
             switch (currentThemeValue) {
                 case 'dark':
@@ -74,7 +78,7 @@ const SettingsPage: React.FC = () => {
         setCurrentTheme(theme);
         localStorage.setItem('theme-mode', theme);
 
-        let isDark = false;
+        let isDark: boolean;
         switch (theme) {
             case 'dark':
                 isDark = true;
@@ -106,6 +110,13 @@ const SettingsPage: React.FC = () => {
     };
 
 
+    const handleLanguageChange = (language: string) => {
+        setCurrentLanguage(language);
+        i18n.changeLanguage(language);
+        localStorage.setItem('language', language);
+        message.success(t('pages.settings.actions.languageChanged'));
+    };
+
     const handleResetSettings = () => {
         setAutoStart(true);
         setMinimizeToTray(false);
@@ -114,7 +125,8 @@ const SettingsPage: React.FC = () => {
         setAutoRetry(true);
         setRetryCount(3);
         handleThemeChange('system');
-        message.success('设置已重置为默认值');
+        handleLanguageChange('zh-CN');
+        message.success(t('pages.settings.actions.resetSuccess'));
     };
 
     const tabItems = [
@@ -123,14 +135,14 @@ const SettingsPage: React.FC = () => {
             label: (
                 <span>
                     <SunOutlined/>
-                    外观设置
+                    {t('pages.settings.tabs.appearance')}
                 </span>
             ),
             children: (
                 <div style={{maxWidth: 600}}>
-                    <Title level={4}>主题模式</Title>
+                    <Title level={4}>{t('pages.settings.appearance.theme.title')}</Title>
                     <Paragraph type="secondary">
-                        选择应用程序的外观主题。跟随系统将根据您的操作系统设置自动切换。
+                        {t('pages.settings.appearance.theme.description')}
                     </Paragraph>
 
                     <Radio.Group
@@ -142,22 +154,22 @@ const SettingsPage: React.FC = () => {
                             <Radio value="system">
                                 <Space>
                                     <DesktopOutlined/>
-                                    <span>跟随系统</span>
+                                    <span>{t('pages.settings.appearance.theme.system')}</span>
                                     <span style={{fontSize: '12px'}}>
-                                        (当前: {isDarkMode ? '深色' : '浅色'})
+                                        ({t('pages.settings.appearance.theme.current')}: {isDarkMode ? t('pages.settings.appearance.theme.dark') : t('pages.settings.appearance.theme.light')})
                                     </span>
                                 </Space>
                             </Radio>
                             <Radio value="light">
                                 <Space>
                                     <SunOutlined/>
-                                    <span>浅色模式</span>
+                                    <span>{t('pages.settings.appearance.theme.light')}</span>
                                 </Space>
                             </Radio>
                             <Radio value="dark">
                                 <Space>
                                     <MoonOutlined/>
-                                    <span>深色模式</span>
+                                    <span>{t('pages.settings.appearance.theme.dark')}</span>
                                 </Space>
                             </Radio>
                         </Space>
@@ -165,14 +177,42 @@ const SettingsPage: React.FC = () => {
 
                     <Divider/>
 
-                    <Title level={4}>启动设置</Title>
+                    <Title level={4}>{t('pages.settings.appearance.language.title')}</Title>
+                    <Paragraph type="secondary">
+                        {t('pages.settings.appearance.language.description')}
+                    </Paragraph>
+
+                    <Radio.Group
+                        value={currentLanguage}
+                        onChange={(e) => handleLanguageChange(e.target.value)}
+                        size="large"
+                    >
+                        <Space direction="vertical" size="middle">
+                            <Radio value="zh-CN">
+                                <Space>
+                                    <GlobalOutlined/>
+                                    <span>{t('pages.settings.appearance.language.chinese')}</span>
+                                </Space>
+                            </Radio>
+                            <Radio value="en-US">
+                                <Space>
+                                    <GlobalOutlined/>
+                                    <span>{t('pages.settings.appearance.language.english')}</span>
+                                </Space>
+                            </Radio>
+                        </Space>
+                    </Radio.Group>
+
+                    <Divider/>
+
+                    <Title level={4}>{t('pages.settings.appearance.startup.title')}</Title>
                     <Space direction="vertical" size="middle">
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>开机自启动</span>
+                            <span>{t('pages.settings.appearance.startup.autoStart')}</span>
                             <Switch checked={autoStart} onChange={setAutoStart}/>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>最小化到系统托盘</span>
+                            <span>{t('pages.settings.appearance.startup.minimizeToTray')}</span>
                             <Switch checked={minimizeToTray} onChange={setMinimizeToTray}/>
                         </div>
                     </Space>
@@ -180,19 +220,19 @@ const SettingsPage: React.FC = () => {
             ),
         },
         {
-            key: 'schedule',
+            key: 'function',
             label: (
                 <span>
                     <SettingOutlined/>
-                    功能设置
+                    {t('pages.settings.tabs.function')}
                 </span>
             ),
             children: (
                 <div style={{maxWidth: 600}}>
-                    <Title level={4}>任务执行</Title>
+                    <Title level={4}>{t('pages.settings.function.execution.title')}</Title>
                     <Space direction="vertical" size="large" style={{width: '100%'}}>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>最大并发任务数</span>
+                            <span>{t('pages.settings.function.execution.maxConcurrent')}</span>
                             <InputNumber
                                 min={1}
                                 max={10}
@@ -201,7 +241,7 @@ const SettingsPage: React.FC = () => {
                             />
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>任务超时时间 (分钟)</span>
+                            <span>{t('pages.settings.function.execution.timeout')}</span>
                             <InputNumber
                                 min={5}
                                 max={120}
@@ -213,15 +253,15 @@ const SettingsPage: React.FC = () => {
 
                     <Divider/>
 
-                    <Title level={4}>失败处理</Title>
+                    <Title level={4}>{t('pages.settings.function.failure.title')}</Title>
                     <Space direction="vertical" size="middle" style={{width: '100%'}}>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>失败任务自动重试</span>
+                            <span>{t('pages.settings.function.failure.autoRetry')}</span>
                             <Switch checked={autoRetry} onChange={setAutoRetry}/>
                         </div>
                         {autoRetry && (
                             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                                <span>重试次数</span>
+                                <span>{t('pages.settings.function.failure.retryCount')}</span>
                                 <InputNumber
                                     min={1}
                                     max={5}
@@ -239,23 +279,23 @@ const SettingsPage: React.FC = () => {
             label: (
                 <span>
                     <BellOutlined/>
-                    通知设置
+                    {t('pages.settings.tabs.notification')}
                 </span>
             ),
             children: (
                 <div style={{maxWidth: 600}}>
-                    <Title level={4}>任务通知</Title>
+                    <Title level={4}>{t('pages.settings.notification.title')}</Title>
                     <Space direction="vertical" size="middle" style={{width: '100%'}}>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>任务完成通知</span>
+                            <span>{t('pages.settings.notification.taskComplete')}</span>
                             <Switch defaultChecked/>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>任务失败通知</span>
+                            <span>{t('pages.settings.notification.taskFailed')}</span>
                             <Switch defaultChecked/>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>系统错误通知</span>
+                            <span>{t('pages.settings.notification.systemError')}</span>
                             <Switch/>
                         </div>
                     </Space>
@@ -267,15 +307,15 @@ const SettingsPage: React.FC = () => {
             label: (
                 <span>
                     <ExperimentOutlined/>
-                    更新设置
+                    {t('pages.settings.tabs.advanced')}
                 </span>
             ),
             children: (
                 <div style={{maxWidth: 600}}>
-                    <Title level={4}>日志设置</Title>
+                    <Title level={4}>{t('pages.settings.advanced.log.title')}</Title>
                     <Space direction="vertical" size="large" style={{width: '100%'}}>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>日志级别</span>
+                            <span>{t('pages.settings.advanced.log.level')}</span>
                             <Select
                                 defaultValue="INFO"
                                 style={{width: 120}}
@@ -288,7 +328,7 @@ const SettingsPage: React.FC = () => {
                             />
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>日志保留天数</span>
+                            <span>{t('pages.settings.advanced.log.retention')}</span>
                             <InputNumber
                                 min={1}
                                 max={365}
@@ -299,26 +339,26 @@ const SettingsPage: React.FC = () => {
 
                     <Divider/>
 
-                    <Title level={4}>开发者选项</Title>
+                    <Title level={4}>{t('pages.settings.advanced.developer.title')}</Title>
                     <Space direction="vertical" size="middle" style={{width: '100%'}}>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>启用调试模式</span>
+                            <span>{t('pages.settings.advanced.developer.debugMode')}</span>
                             <Switch/>
                         </div>
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                            <span>开发者工具（可用，非占位符）</span>
+                            <span>{t('pages.settings.advanced.developer.devTools')}</span>
                             <Button 
                                 type="primary" 
                                 onClick={() => {
                                     if (window.electronAPI) {
                                         window.electronAPI.openDevTools().catch(console.error);
-                                        message.success('开发者工具已打开');
+                                        message.success(t('pages.settings.actions.devToolsOpened'));
                                     } else {
-                                        message.warning('开发者工具仅在桌面应用中可用');
+                                        message.warning(t('pages.settings.actions.devToolsUnavailable'));
                                     }
                                 }}
                             >
-                                打开 F12
+                                {t('pages.settings.advanced.developer.openF12')}
                             </Button>
                         </div>
                     </Space>
@@ -330,9 +370,9 @@ const SettingsPage: React.FC = () => {
     return (
         <div>
             <div className="page-header">
-                <Title level={2} className="page-title">设置</Title>
+                <Title level={2} className="page-title">{t('pages.settings.title')}</Title>
                 <div className="page-actions">
-                    <Button onClick={handleResetSettings}>重置默认</Button>
+                    <Button onClick={handleResetSettings}>{t('pages.settings.actions.reset')}</Button>
                 </div>
             </div>
 

@@ -11,10 +11,10 @@ function createWindow() {
   mainWindow = new electron.BrowserWindow({
     width: 1200,
     height: 800,
-    frame: false,
-    // 隐藏默认标题栏
-    titleBarStyle: "hidden",
-    // 隐藏标题栏
+    icon: path.join(__dirname, "../public/AUTO_MAA.ico"),
+    // 设置应用图标
+    autoHideMenuBar: true,
+    // 隐藏菜单栏（file、edit等）
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -50,23 +50,9 @@ function createWindow() {
     mainWindow = null;
   });
 }
-electron.ipcMain.handle("window-minimize", () => {
+electron.ipcMain.handle("open-dev-tools", () => {
   if (mainWindow) {
-    mainWindow.minimize();
-  }
-});
-electron.ipcMain.handle("window-maximize", () => {
-  if (mainWindow) {
-    if (mainWindow.isMaximized()) {
-      mainWindow.restore();
-    } else {
-      mainWindow.maximize();
-    }
-  }
-});
-electron.ipcMain.handle("window-close", () => {
-  if (mainWindow) {
-    mainWindow.close();
+    mainWindow.webContents.openDevTools();
   }
 });
 electron.app.whenReady().then(createWindow);

@@ -20,12 +20,11 @@ html, body, #root {
     flex-direction: column;
 }
 
-/* 应用主体（标题栏下方的内容） */
+/* 应用主体 */
 .app-body {
     flex: 1;
     display: flex;
-    margin-top: 32px; /* 为标题栏留出空间 */
-    height: calc(100vh - 32px);
+    height: 100vh;
 }
 
 /* 主内容区域 */
@@ -35,7 +34,7 @@ html, body, #root {
     padding: 24px;
     overflow-y: auto;
     background: #f5f5f5;
-    min-height: calc(100vh - 32px);
+    min-height: 100vh;
     transition: margin-left 0.2s;
 }
 

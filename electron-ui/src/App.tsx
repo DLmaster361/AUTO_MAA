@@ -1,7 +1,6 @@
 import {useEffect, useState} from 'react';
 import {ConfigProvider, theme} from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import HomePage from './pages/HomePage';
 import ScriptsPage from './pages/ScriptsPage';
@@ -164,7 +163,6 @@ function App() {
             }}
         >
             <div className="app-container">
-                <TitleBar/>
                 <div className="app-body">
                     <Sidebar
                         selectedKey={currentPage}

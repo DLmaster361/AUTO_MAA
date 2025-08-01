@@ -300,10 +300,28 @@ const SettingsPage: React.FC = () => {
                     <Divider/>
 
                     <Title level={4}>开发者选项</Title>
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <span>启用调试模式</span>
-                        <Switch/>
-                    </div>
+                    <Space direction="vertical" size="middle" style={{width: '100%'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                            <span>启用调试模式</span>
+                            <Switch/>
+                        </div>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                            <span>开发者工具（可用，非占位符）</span>
+                            <Button 
+                                type="primary" 
+                                onClick={() => {
+                                    if (window.electronAPI) {
+                                        window.electronAPI.openDevTools().catch(console.error);
+                                        message.success('开发者工具已打开');
+                                    } else {
+                                        message.warning('开发者工具仅在桌面应用中可用');
+                                    }
+                                }}
+                            >
+                                打开 F12
+                            </Button>
+                        </div>
+                    </Space>
                 </div>
             ),
         },

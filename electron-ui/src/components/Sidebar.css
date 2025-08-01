@@ -1,9 +1,9 @@
 /* 侧边栏样式 */
 .app-sidebar {
-    height: calc(100vh - 32px);
+    height: 100vh;
     position: fixed !important;
     left: 0;
-    top: 32px; /* 为标题栏留出空间 */
+    top: 0;
     z-index: 200;
     box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
     border-right: 1px solid #f0f0f0;
@@ -54,14 +54,14 @@
 }
 
 .logo-title {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
     line-height: 1.2;
     white-space: nowrap;
 }
 
 .logo-subtitle {
-    font-size: 11px;
+    font-size: 14px;
     line-height: 1.2;
     white-space: nowrap;
 }

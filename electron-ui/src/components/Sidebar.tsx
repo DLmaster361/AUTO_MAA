@@ -82,24 +82,25 @@ const Sidebar: React.FC<SidebarProps> = ({
             className="app-sidebar"
             theme="light"
         >
-            {/* Logo 区域 */}
-            {/*<div className="sidebar-logo">*/}
-            {/*  <div className="logo-icon">*/}
-            {/*    <img*/}
-            {/*      src="/AUTO_MAA.ico"*/}
-            {/*      alt="AUTO_MAA Logo"*/}
-            {/*      style={{ width: '100%', height: '100%' }}*/}
-            {/*      onError={(e) => {*/}
-            {/*        e.currentTarget.style.display = 'none';*/}
-            {/*      }}*/}
-            {/*    />*/}
-            {/*  </div>*/}
-            {/*  {!collapsed && (*/}
-            {/*    <div className="logo-text">*/}
-            {/*      <span className="logo-title">AUTO_MAA</span>*/}
-            {/*    </div>*/}
-            {/*  )}*/}
-            {/*</div>*/}
+             {/*Logo 区域*/}
+            <div className="sidebar-logo">
+              <div className="logo-icon">
+                <img
+                  src="/AUTO_MAA.ico"
+                  alt="AUTO_MAA Logo"
+                  style={{ width: '100%', height: '100%' }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </div>
+              {!collapsed && (
+                <div className="logo-text">
+                  <span className="logo-title">AUTO_MAA</span>
+                    <span className="logo-subtitle">Next_NG</span>
+                </div>
+              )}
+            </div>
 
             {/* 主要菜单 */}
             <div className="sidebar-content">

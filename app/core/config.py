@@ -30,6 +30,7 @@ import sys
 import time
 import uuid
 from collections import defaultdict
+from contextlib import suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
@@ -74,6 +75,8 @@ from app.models.config import (
     SrcUserConfig,
     TimeSet,
     Webhook,
+    ZzzOdConfig,
+    ZzzOdUserConfig,
 )
 from app.models.schema import PlanComboxConsumer
 from app.utils import get_logger, is_supervised, resource_path
@@ -769,6 +772,7 @@ class AppConfig(GlobalConfig):
             "OkNte",
             "HSR",
             "BetterGI",
+            "ZzzOd",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -782,7 +786,8 @@ class AppConfig(GlobalConfig):
         | OkwwConfig
         | OkNteConfig
         | HSRConfig
-        | BetterGIConfig,
+        | BetterGIConfig
+        | ZzzOdConfig,
     ]:
         """添加脚本配置"""
 
@@ -1092,7 +1097,8 @@ class AppConfig(GlobalConfig):
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig
-        | BetterGIUserConfig,
+        | BetterGIUserConfig
+        | ZzzOdUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1131,6 +1137,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         elif isinstance(script_config, BetterGIConfig):
             uid, config = await script_config.UserData.add(BetterGIUserConfig)
+        elif isinstance(script_config, ZzzOdConfig):
+            uid, config = await script_config.UserData.add(ZzzOdUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -1200,6 +1208,364 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
         return target_config_dir
+
+    def _zzzod_script_config(self, script_id: str) -> ZzzOdConfig:
+        """解析 ZZZ-OD 脚本配置并拒绝跨类型 ID 访问。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, ZzzOdConfig):
+            raise TypeError("脚本配置类型错误, 不是 ZZZ-OD 类型")
+        return script_config
+
+    def _zzzod_root(self, script_config: ZzzOdConfig) -> Path:
+        """返回 zzz-od 安装根目录并校验有效。"""
+
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        if not root.is_dir():
+            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
+        return root
+
+    def get_zzzod_instances(self, script_id: str) -> list[dict]:
+        """列出 zzz-od 实例（供用户配置「快速导入」选择来源实例）。"""
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        from app.task.ZzzOd.tools import list_instances
+
+        return [
+            {
+                "idx": int(item.get("idx", 0)),
+                "name": str(item.get("name", "")),
+                "active": bool(item.get("active")),
+                "active_in_od": bool(item.get("active_in_od")),
+            }
+            for item in list_instances(root)
+        ]
+
+    def _zzzod_user(
+        self, script_id: str, user_id: str
+    ) -> tuple[ZzzOdConfig, Path, ZzzOdUserConfig, uuid.UUID]:
+        """解析 ZZZ-OD 脚本/安装目录/用户配置对象，拒绝无效 ID。"""
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        uid = uuid.UUID(user_id)
+        if uid not in script_config.UserData:
+            raise ValueError("用户不存在")
+        return script_config, root, script_config.UserData[uid], uid
+
+    async def get_zzzod_app_config(
+        self,
+        script_id: str,
+        user_id: str,
+        app_id: str,
+        instance_idx: int | None = None,
+    ) -> dict:
+        """任务级配置（字段元数据 + 当前值）。
+
+        instance_idx 给定时（直控模式）读取该原生实例的 per-app YAML；
+        否则读取用户绑定槽（未分配槽时取元数据默认值）。
+        """
+
+        from app.task.ZzzOd.tools import get_task_app_fields, read_app_config
+
+        fields_meta = get_task_app_fields(app_id)
+        if fields_meta is None:
+            raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
+
+        if instance_idx is not None:
+            root, _ = self._zzzod_native_instance(script_id, instance_idx)
+            slot = int(instance_idx)
+        else:
+            _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
+            slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        current = read_app_config(root, slot, app_id) if slot > 0 else {}
+
+        fields = []
+        for meta in fields_meta:
+            options = meta.get("options") or []
+            default = str(options[0]["value"]) if options else ""
+            value = current.get(meta["field"], default)
+            fields.append(
+                {
+                    "field": str(meta["field"]),
+                    "title": str(meta["title"]),
+                    "value": None if value is None else str(value),
+                    "options": [
+                        {"label": str(o["label"]), "value": str(o["value"])}
+                        for o in options
+                    ],
+                }
+            )
+        return {"appId": app_id, "fields": fields}
+
+    async def save_zzzod_app_config(
+        self,
+        script_id: str,
+        user_id: str,
+        app_id: str,
+        values: dict,
+        instance_idx: int | None = None,
+    ) -> dict:
+        """保存任务级配置到目标位置（字段白名单校验后写入）。
+
+        instance_idx 给定时（直控模式）直接写该原生实例的 per-app YAML；
+        否则写用户绑定槽（首次编辑会自动分配绑定槽）。
+        """
+
+        from app.task.ZzzOd.tools import get_task_app_fields, write_app_config
+
+        fields_meta = get_task_app_fields(app_id)
+        if fields_meta is None:
+            raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
+        allowed = {str(m["field"]) for m in fields_meta}
+        unknown = {str(k) for k in values} - allowed
+        if unknown:
+            raise ValueError(f"不支持的配置字段: {', '.join(sorted(unknown))}")
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        patch = {str(k): str(v) for k, v in values.items()}
+
+        if instance_idx is not None:
+            self._zzzod_native_instance(script_id, instance_idx)
+            slot = int(instance_idx)
+            config = write_app_config(root, slot, app_id, patch)
+            logger.info(
+                f"ZZZ-OD 实例 {slot:02d} 任务 {app_id} 配置已由直控页面保存: {values}"
+            )
+            return config
+
+        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
+
+        _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
+        used = collect_used_slot_idxs(exclude_uids={uid})
+        slot = await ensure_user_slot(root, user_cfg, used)
+        config = write_app_config(root, slot, app_id, patch)
+        logger.info(
+            f"ZZZ-OD 用户 {uid} 任务 {app_id} 配置已保存到槽 {slot:02d}: {values}"
+        )
+        return config
+
+    async def list_zzzod_backups(
+        self, script_id: str, user_id: str, target: str
+    ) -> list[dict]:
+        """列出配置备份（时间倒序）。target=onedragon 原生配置 / mas 用户槽。"""
+
+        from app.task.ZzzOd.tools import list_mas_backups, list_onedragon_backups
+
+        if target == "onedragon":
+            return [{"time": ts} for ts in list_onedragon_backups(script_id)]
+        _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        if slot <= 0:
+            return []
+        return [{"time": ts} for ts in list_mas_backups(script_id, slot)]
+
+    def _zzzod_archive_backups(self, root: Path, script_id: str, user_cfg) -> None:
+        """归档点（MAS 运行注入前 / 配置会话基线注入前）的双视角快照。
+
+        一条龙原生配置（one_dragon.yml + 原生实例目录）与 MAS 用户槽各自
+        独立归档，内容无变化自动跳过；此时 zzz-od 尚未被本次 MAS 操作触碰。
+        """
+
+        from app.task.ZzzOd.tools import archive_mas_backup, archive_onedragon_backup
+
+        with suppress(Exception):
+            archive_onedragon_backup(script_id, root)
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        if slot > 0:
+            slot_dir = root / "config" / f"{slot:02d}"
+            with suppress(Exception):
+                archive_mas_backup(script_id, slot, slot_dir)
+
+    async def restore_zzzod_backup(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> int:
+        """把指定备份恢复到目标位置，返回关联槽 idx（-1 表示不涉及槽）。
+
+        - target="onedragon"：把一条龙原生配置备份（one_dragon.yml + 原生
+          实例目录）恢复到一条龙本身——只写回备份中的文件，MAS 槽目录永不
+          触碰；恢复前自动归档当前原生配置，误恢复可找回；
+        - target="mas"：把 MAS 用户槽备份恢复到绑定槽，并从恢复后的槽内容
+          把账号字段与任务编排全量回填到 MAS 本页字段（表单随即刷新）——
+          配队等 MAS 不管的内容随槽内容回到该时点。
+        """
+
+        from app.task.ZzzOd.tools import (
+            instance_dir,
+            read_app_group,
+            read_game_account,
+            restore_mas_backup,
+            restore_onedragon_backup,
+        )
+
+        _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
+
+        if target == "onedragon":
+            restore_onedragon_backup(script_id, ts, root)
+            logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
+            return -1
+
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        if slot <= 0:
+            raise ValueError("该用户还没有生成过配置备份")
+        restore_mas_backup(script_id, slot, ts, root / "config" / f"{slot:02d}")
+
+        # 恢复后的槽内容 = 该时点的 MAS 配置；把 MAS 管理的字段全量回填本页
+        import json
+
+        slot_dir = instance_dir(root, slot)
+        account = read_game_account(slot_dir)
+        enabled_apps = [
+            {"app_id": str(item["app_id"]), "enabled": True}
+            for item in read_app_group(slot_dir)
+            if item.get("enabled") and str(item.get("app_id") or "").strip()
+        ]
+        await user_cfg.set(
+            "Game", "GameRegion", str(account.get("game_region") or "cn")
+        )
+        await user_cfg.set("Game", "GamePath", str(account.get("game_path") or ""))
+        await user_cfg.set(
+            "Game", "GameLanguage", str(account.get("game_language") or "cn")
+        )
+        await user_cfg.set(
+            "Game", "BilibiliAccountName",
+            str(account.get("bilibili_account_name") or ""),
+        )
+        await user_cfg.set("Game", "Account", str(account.get("account") or ""))
+        await user_cfg.set("Game", "Password", str(account.get("password") or ""))
+        await user_cfg.set(
+            "OneDragon", "AppList", json.dumps(enabled_apps, ensure_ascii=False)
+        )
+        await self.ScriptConfig.save()
+        logger.info(
+            f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到 MAS 配置 "
+            f"(槽 {slot:02d} + 字段回填, 任务 {len(enabled_apps)} 项)"
+        )
+        return slot
+
+    def _zzzod_native_instance(
+        self, script_id: str, instance_idx: int
+    ) -> tuple[Path, dict]:
+        """解析 zzz-od 安装根目录与原生实例，校验实例存在（直控编辑目标）。"""
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+
+        from app.task.ZzzOd.tools import list_instances
+
+        instance = next(
+            (
+                item
+                for item in list_instances(root)
+                if int(item.get("idx", -1)) == int(instance_idx)
+            ),
+            None,
+        )
+        if instance is None:
+            raise ValueError(f"实例 {int(instance_idx):02d} 不存在")
+        return root, instance
+
+    async def get_zzzod_native_config(
+        self, script_id: str, instance_idx: int
+    ) -> dict:
+        """读取实例原生配置（账号字段 + 任务编排 + 运行实例），供直控页面表单渲染。
+
+        account 条目含默认值合并与可选项；tasks 为原生 app_list 与应用目录
+        合并后的任务卡片数据（enabled 保持原生状态）；instanceRun 为
+        one_dragon.yml 的 instance_run 原值（仅运行当前/全部实例）。
+        """
+
+        root, instance = self._zzzod_native_instance(script_id, instance_idx)
+        slot = int(instance_idx)
+
+        from app.task.ZzzOd.tools import (
+            get_task_app_fields,
+            list_app_catalog,
+            read_native_account_fields,
+            read_native_instance_run,
+            read_native_tasks,
+        )
+
+        catalog = [
+            {
+                **item,
+                "configurable": get_task_app_fields(str(item["app_id"]))
+                is not None,
+            }
+            for item in list_app_catalog(root)
+        ]
+        return {
+            "instanceIdx": slot,
+            "instanceName": str(instance.get("name", "")),
+            "account": read_native_account_fields(root, slot),
+            "tasks": read_native_tasks(root, slot, catalog),
+            "instanceRun": read_native_instance_run(root),
+        }
+
+    async def save_zzzod_native_config(
+        self,
+        script_id: str,
+        instance_idx: int,
+        account: dict | None = None,
+        tasks: list[dict] | None = None,
+        instance_run: str | None = None,
+    ) -> dict:
+        """把直控页面改动直接写回所选实例原生配置（可选增量，缺省字段不写回）。
+
+        账号字段白名单过滤 + 只写非默认值；任务编排只保留启用项；
+        instance_run 白名单校验。由调用方按需传参：任务开关/运行实例等
+        即时写入只传对应字段，避免把未确认的账号草稿一并落盘。
+        """
+
+        root, instance = self._zzzod_native_instance(script_id, instance_idx)
+        slot = int(instance_idx)
+
+        from app.task.ZzzOd.tools import (
+            save_native_account_fields,
+            save_native_instance_run,
+            save_native_tasks,
+        )
+
+        if account is not None:
+            save_native_account_fields(root, slot, account)
+        if tasks is not None:
+            save_native_tasks(root, slot, tasks)
+        if instance_run is not None:
+            save_native_instance_run(root, instance_run)
+        logger.info(f"ZZZ-OD 实例 {slot:02d} 原生配置已由直控页面保存")
+        return {
+            "instanceIdx": slot,
+            "instanceName": str(instance.get("name", "")),
+            "savedAccountCount": len(account) if account is not None else 0,
+        }
+
+    def ensure_zzzod_direct_backup(self, script_id: str) -> dict:
+        """直控前置保护：确保一条龙原生配置已有最新备份（指纹去重）。
+
+        对当前一条龙原生配置（one_dragon.yml + 原生实例目录，排除 MAS 槽）
+        与最近一份备份做指纹对比：无任何备份或内容已变化则立即归档——让
+        用户在直控页误操作改坏原生配置前，始终存在一个「切换时点」的恢复点。
+
+        Returns:
+            {"created": 是否本次新建, "time": 最新备份时间戳}。
+        """
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+
+        from app.task.ZzzOd.tools import (
+            archive_onedragon_backup,
+            list_onedragon_backups,
+        )
+
+        dest = archive_onedragon_backup(script_id, root)
+        times = list_onedragon_backups(script_id)
+        return {
+            "created": dest is not None,
+            "time": times[0] if times else "",
+        }
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]

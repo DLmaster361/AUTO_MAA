@@ -27,6 +27,7 @@ export namespace ScriptIndexItem {
         MAA_FWCONFIG = 'MaaFWConfig',
         HSRCONFIG = 'HSRConfig',
         BETTER_GICONFIG = 'BetterGIConfig',
+        ZZZ_OD_CONFIG = 'ZzzOdConfig',
     }
 }
 

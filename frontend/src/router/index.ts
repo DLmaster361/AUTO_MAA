@@ -129,6 +129,24 @@ const routes = [
     meta: { title: '编辑BetterGI脚本' },
   },
   {
+    path: '/scripts/:id/edit/zzzod',
+    name: 'ZzzOdScriptEdit',
+    component: () => import('../views/EditView/Script/ZzzOdScriptEdit.vue'),
+    meta: { title: '编辑ZZZ-OD脚本' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/zzzod',
+    name: 'ZzzOdUserAdd',
+    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
+    meta: { title: '添加ZZZ-OD用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/zzzod',
+    name: 'ZzzOdUserEdit',
+    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
+    meta: { title: '编辑ZZZ-OD用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),

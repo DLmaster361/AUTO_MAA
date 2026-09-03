@@ -81,6 +81,12 @@
                     alt="BetterGI"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'ZzzOd'"
+                    src="@/assets/zzz-od.ico"
+                    alt="ZZZ-OD"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -767,6 +773,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   OkNte: 'blue',
   HSR: 'purple',
   BetterGI: 'gold',
+  ZzzOd: 'volcano',
   General: 'green',
 }
 

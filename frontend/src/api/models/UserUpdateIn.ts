@@ -12,6 +12,7 @@ import type { MaaUserConfig } from './MaaUserConfig';
 import type { OkNteUserConfig } from './OkNteUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
+import type { ZzzOdUserConfig } from './ZzzOdUserConfig';
 export type UserUpdateIn = {
     /**
      * 所属脚本ID
@@ -24,6 +25,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig);
 };
 

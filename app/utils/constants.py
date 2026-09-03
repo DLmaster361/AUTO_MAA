@@ -44,6 +44,7 @@ TYPE_BOOK = {
     "MaaFWConfig": "MFW",
     "HSRConfig": "HSR",
     "BetterGIConfig": "BetterGI",
+    "ZzzOdConfig": "ZZZ-OD",
 }
 """配置类型映射表"""
 

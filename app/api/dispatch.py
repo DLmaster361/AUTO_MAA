@@ -71,6 +71,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             id=task.taskId,
             resume_from_script_id=task.resumeFromScriptId,
             user_id=task.userId,
+            view_only=task.viewOnly,
         )
     except Exception as e:
         return TaskCreateOut(

@@ -43,7 +43,8 @@ description: >-
    [M9A/MFAA](references/examples-m9a.md) ·
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
-   [HSR](references/examples-hsr.md)
+   [HSR](references/examples-hsr.md) ·
+   [ZzzOd](references/examples-zzzod.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
@@ -86,6 +87,7 @@ description: >-
 | General | 用户 / 直控 两态 |
 | MaaEnd | 脚本 / 用户 两态 |
 | OkNte | 两态（`Info.Mode` 脚本 / 用户） |
+| ZzzOd | 用户 / 直控 两态（用户=字段化注入绑定槽，直控=页面直编所选实例原生配置、运行原生裸跑） |
 | M9A | 不使用这套模式 |
 
 采用三态时：**脚本**=脚本级共享配置；**用户**=当前用户独立配置；**直控**=直接使用脚本原有配置、由原生 GUI 维护、不回写 MAS 独立配置。三态只决定 owner。

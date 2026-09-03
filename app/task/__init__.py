@@ -43,6 +43,7 @@ _LAZY_EXPORTS = {
     "OkNteManager": (".OkNte", "OkNteManager"),
     "HSRManager": (".HSR", "HSRManager"),
     "BetterGIManager": (".BetterGI", "BetterGIManager"),
+    "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
 }
 
@@ -69,5 +70,6 @@ __all__ = [
     "OkNteManager",
     "HSRManager",
     "BetterGIManager",
+    "ZzzOdManager",
     "MaaFWEmbeddedManager",
 ]

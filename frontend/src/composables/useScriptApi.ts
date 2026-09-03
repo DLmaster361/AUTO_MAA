@@ -9,6 +9,7 @@ import {
   type MaaFWAgentEnvPrepareOut,
   ScriptCreateIn,
   type ScriptReorderIn,
+  type ZzzOdUserConfig,
   HsrService,
   MaaFwService,
   Service,
@@ -45,6 +46,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
   BetterGI: ScriptCreateIn.type.BETTER_GI,
+  ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -58,6 +60,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
+  ZzzOdConfig: 'ZzzOd',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -1139,6 +1142,130 @@ export function useScriptApi() {
                         LastProxyStatus:
                           bettergiUserData.Data?.LastProxyStatus !== undefined
                             ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                      },
+                    }
+                  } else if (userIndex.type === 'ZzzOdUserConfig' && userData) {
+                    const zzzodUserData = userData as unknown as ZzzOdUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: zzzodUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          zzzodUserData.Info?.Name !== undefined
+                            ? zzzodUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          zzzodUserData.Info?.Status !== undefined
+                            ? zzzodUserData.Info.Status
+                            : true,
+                        Mode:
+                          zzzodUserData.Info?.Mode !== undefined
+                            ? zzzodUserData.Info.Mode
+                            : '用户',
+                        RemainedDay:
+                          zzzodUserData.Info?.RemainedDay !== undefined
+                            ? zzzodUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          zzzodUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? zzzodUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          zzzodUserData.Info?.ScriptBeforeTask !== undefined
+                            ? zzzodUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          zzzodUserData.Info?.IfScriptAfterTask !== undefined
+                            ? zzzodUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          zzzodUserData.Info?.ScriptAfterTask !== undefined
+                            ? zzzodUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          zzzodUserData.Info?.Notes !== undefined
+                            ? zzzodUserData.Info.Notes
+                            : '',
+                        Tag:
+                          zzzodUserData.Info?.Tag !== undefined
+                            ? zzzodUserData.Info.Tag
+                            : null,
+                      },
+                      Game: {
+                        GameRegion:
+                          zzzodUserData.Game?.GameRegion !== undefined
+                            ? zzzodUserData.Game.GameRegion
+                            : 'cn',
+                        GamePath:
+                          zzzodUserData.Game?.GamePath !== undefined
+                            ? zzzodUserData.Game.GamePath
+                            : '',
+                        GameLanguage:
+                          zzzodUserData.Game?.GameLanguage !== undefined
+                            ? zzzodUserData.Game.GameLanguage
+                            : 'cn',
+                        Account:
+                          zzzodUserData.Game?.Account !== undefined
+                            ? zzzodUserData.Game.Account
+                            : '',
+                        Password:
+                          zzzodUserData.Game?.Password !== undefined
+                            ? zzzodUserData.Game.Password
+                            : '',
+                        BilibiliAccountName:
+                          zzzodUserData.Game?.BilibiliAccountName !== undefined
+                            ? zzzodUserData.Game.BilibiliAccountName
+                            : '',
+                      },
+                      OneDragon: {
+                        AppList:
+                          zzzodUserData.OneDragon?.AppList !== undefined
+                            ? zzzodUserData.OneDragon.AppList
+                            : '[]',
+                      },
+                      Notify: {
+                        Enabled:
+                          zzzodUserData.Notify?.Enabled !== undefined
+                            ? zzzodUserData.Notify.Enabled
+                            : false,
+                        PushLogMode:
+                          zzzodUserData.Notify?.PushLogMode !== undefined
+                            ? zzzodUserData.Notify.PushLogMode
+                            : '汇总',
+                        IfSendStatistic:
+                          zzzodUserData.Notify?.IfSendStatistic !== undefined
+                            ? zzzodUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          zzzodUserData.Notify?.IfSendMail !== undefined
+                            ? zzzodUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          zzzodUserData.Notify?.ToAddress !== undefined
+                            ? zzzodUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          zzzodUserData.Notify?.IfServerChan !== undefined
+                            ? zzzodUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          zzzodUserData.Notify?.ServerChanKey !== undefined
+                            ? zzzodUserData.Notify.ServerChanKey
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          zzzodUserData.Data?.LastProxyDate !== undefined
+                            ? zzzodUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          zzzodUserData.Data?.ProxyTimes !== undefined
+                            ? zzzodUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          zzzodUserData.Data?.LastProxyStatus !== undefined
+                            ? zzzodUserData.Data.LastProxyStatus
                             : '未知',
                       },
                     }

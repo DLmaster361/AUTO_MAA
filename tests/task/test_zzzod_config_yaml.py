@@ -1,0 +1,444 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+#
+#   This file is part of AUTO-MAS.
+#
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License
+#   as published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+#
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#   GNU Affero General Public License for more details.
+#
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+"""ZZZ-OD YAML 契约与实例槽备份恢复原语的最小回归测试。
+
+用临时目录模拟 zzz-od 安装结构（config/one_dragon.yml 与实例目录），
+验证实例发现、instance_run 读写、账号/任务 YAML 读写（目录参数化）、
+实例槽备份恢复闭环与运行记录 diff 的纯逻辑。
+"""
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from app.task.ZzzOd.tools.backup_archive import (
+    _backup_onedragon_files,
+    _list_times,
+    archive_onedragon_backup,
+    onedragon_backup_root,
+)
+from app.task.ZzzOd.tools.catalog import list_app_catalog
+from app.task.ZzzOd.tools.native_config import (
+    NATIVE_INSTANCE_RUN_OPTIONS,
+    read_native_account_fields,
+    read_native_instance_run,
+    read_native_tasks,
+    save_native_account_fields,
+    save_native_instance_run,
+    save_native_tasks,
+)
+from app.task.ZzzOd.tools.zzz_od_config import (
+    INSTANCE_RUN_ALL,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_NOT_RUN,
+    RUN_STATUS_RUNNING,
+    RUN_STATUS_SUCCESS,
+    backup_instance,
+    clear_run_records,
+    diff_run_records,
+    find_active_instance,
+    find_free_instance_idx,
+    instance_dir,
+    list_instances,
+    read_app_group,
+    read_game_account,
+    restore_instance,
+    restore_instance_view,
+    snapshot_run_records,
+    validate_root,
+    write_app_group,
+    write_game_account,
+    write_instance_view,
+)
+from app.utils.io import read_file, write_file
+
+
+def _make_root(tmp_path: Path) -> Path:
+    """构造最小 zzz-od 安装结构：src 目录 + 单实例配置。"""
+    (tmp_path / "src").mkdir()
+    write_file(
+        tmp_path / "config" / "one_dragon.yml",
+        {
+            "instance_list": [
+                {
+                    "idx": 1,
+                    "name": "主号",
+                    "active": True,
+                    "active_in_od": True,
+                    "force_login_before_run": False,
+                }
+            ],
+            "instance_run": "仅运行当前",
+        },
+    )
+    write_file(
+        tmp_path / "config" / "01" / "game_account.yml",
+        {
+            "game_region": "cn",
+            "game_path": r"G:\Games\ZenlessZoneZero.exe",
+            "account": "主号账号",
+            "password": "主号密码",
+        },
+    )
+    write_file(
+        tmp_path / "config" / "01" / "game.yml",
+        {"full_screen": True},
+    )
+    write_file(
+        tmp_path / "config" / "01" / "one_dragon" / "_group.yml",
+        {"app_list": [{"app_id": "email", "enabled": True}]},
+    )
+    return tmp_path
+
+
+def test_validate_root_rejects_missing_src(tmp_path: Path) -> None:
+    try:
+        validate_root(tmp_path)
+        raise AssertionError("应当抛出 ValueError")
+    except ValueError:
+        pass
+
+
+def test_instance_discovery(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+
+    active = find_active_instance(root)
+    assert active is not None and active["idx"] == 1
+    assert [item["idx"] for item in list_instances(root)] == [1]
+
+
+def test_game_account_read_modify_write(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    config_dir = root / "config" / "01"
+    write_game_account(config_dir, {"account": "新账号", "use_custom_win_title": True})
+
+    account = read_game_account(config_dir)
+    assert account["account"] == "新账号"
+    assert account["game_region"] == "cn"
+    # 未知字段应保留
+    assert account["use_custom_win_title"] is True
+
+
+def test_app_group_write_normalizes(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    config_dir = root / "config" / "01"
+    write_app_group(
+        config_dir,
+        [
+            {"app_id": "coffee", "enabled": True},
+            {"app_id": "email", "enabled": False},
+            {"app_id": "  ", "enabled": True},  # 空 app_id 剔除
+        ],
+    )
+    assert read_app_group(config_dir) == [
+        {"app_id": "coffee", "enabled": True},
+        {"app_id": "email", "enabled": False},
+    ]
+
+
+def test_snapshot_and_diff_run_records(tmp_path: Path) -> None:
+    root = _make_root(tmp_path)
+    record_dir = root / "config" / "01" / "app_run_record"
+    write_file(record_dir / "email.yml", {"run_status": 0, "dt": "20260901"})
+    write_file(record_dir / "coffee.yml", {"run_status": RUN_STATUS_SUCCESS})
+
+    before = snapshot_run_records(root, 1)
+    assert before == {"email": RUN_STATUS_NOT_RUN, "coffee": RUN_STATUS_SUCCESS}
+
+    # 模拟运行：email 成功、coffee 保持成功、notify 新失败、daily 运行中
+    write_file(record_dir / "email.yml", {"run_status": RUN_STATUS_SUCCESS})
+    write_file(record_dir / "notify.yml", {"run_status": RUN_STATUS_FAILED})
+    write_file(record_dir / "daily_signin.yml", {"run_status": RUN_STATUS_RUNNING})
+
+    after = snapshot_run_records(root, 1)
+    diffs = dict((app_id, new) for app_id, _, new in diff_run_records(before, after))
+    assert diffs == {"email": RUN_STATUS_SUCCESS, "notify": RUN_STATUS_FAILED}
+    # 运行中与未变化的不进 diff
+
+
+def test_clear_run_records_and_backup_restore(tmp_path: Path) -> None:
+    """清运行记录 + 备份/恢复闭环（MAS 注入前后的现场保护）。"""
+    root = _make_root(tmp_path)
+    record_dir = root / "config" / "01" / "app_run_record"
+    write_file(record_dir / "email.yml", {"run_status": RUN_STATUS_SUCCESS})
+
+    # 模拟用户态注入：写账号字段 + 任务编排 + 清运行记录
+    slot_dir = instance_dir(root, 1)
+    write_game_account(slot_dir, {"account": "注入账号"})
+    write_app_group(slot_dir, [{"app_id": "coffee", "enabled": True}])
+    clear_run_records(root, 1)
+    assert read_game_account(slot_dir)["account"] == "注入账号"
+    assert snapshot_run_records(root, 1) == {}
+
+    # 备份/恢复闭环：注入前备份的原配置可原样恢复
+    backup_dir = tmp_path / "backup"
+    (root / "config" / "01.bak_seed").mkdir()
+    shutil.rmtree(root / "config" / "01")
+    write_file(root / "config" / "01" / "game_account.yml", {"account": "主号账号"})
+    backup_instance(root, 1, backup_dir)
+    write_game_account(slot_dir, {"account": "改过的账号"})
+    assert read_game_account(slot_dir)["account"] == "改过的账号"
+    restore_instance(root, 1, backup_dir)
+    assert read_game_account(slot_dir)["account"] == "主号账号"
+
+
+def test_find_free_instance_idx_with_used_set(tmp_path: Path) -> None:
+    """空闲 idx 分配：原生注册表与 MAS 已绑定槽（跨脚本）共同占位。"""
+    root = _make_root(tmp_path)
+    assert find_free_instance_idx(root) == 2  # 1 被原生实例占用
+    assert find_free_instance_idx(root, {2, 3}) == 4
+
+    register_slot_dir = instance_dir(root, 2)
+    register_slot_dir.mkdir(parents=True)
+    assert find_free_instance_idx(root, {2}) == 3
+
+
+def test_instance_view_write_restore_and_crash_recovery(tmp_path: Path) -> None:
+    """合成注册表视图：写入/恢复/闪退自愈闭环。
+
+    视图只含给定 MAS 槽（active_in_od=True、active 指向目标槽），
+    恢复后 one_dragon.yml 回到原生内容；sidecar 保证闪退后可自愈。
+    """
+    root = _make_root(tmp_path)
+    sidecar = root / "config" / "one_dragon.yml.mas-view.bak"
+
+    write_instance_view(root, [(2, "MAS-用户B"), (3, "MAS-用户C")], active_idx=2)
+
+    # 视图内容：仅 MAS 槽、全部参与一条龙、active 指向目标、运行范围为全部实例
+    instances = list_instances(root)
+    assert [(i["idx"], i["name"]) for i in instances] == [
+        (2, "MAS-用户B"),
+        (3, "MAS-用户C"),
+    ]
+    assert instances[0]["active"] is True
+    assert instances[1]["active"] is False
+    assert all(i["active_in_od"] for i in instances)
+    assert (read_file(root / "config" / "one_dragon.yml") or {}).get(
+        "instance_run"
+    ) == INSTANCE_RUN_ALL
+    assert sidecar.exists()
+
+    # 恢复：原生注册表（含原生 instance_run）原样回来，sidecar 清除
+    restore_instance_view(root)
+    assert [item["idx"] for item in list_instances(root)] == [1]
+    assert find_active_instance(root)["idx"] == 1
+    assert (read_file(root / "config" / "one_dragon.yml") or {}).get(
+        "instance_run"
+    ) == "仅运行当前"
+    assert not sidecar.exists()
+
+    # 幂等：无 sidecar 时再恢复不报错不变化
+    restore_instance_view(root)
+    assert [item["idx"] for item in list_instances(root)] == [1]
+
+
+def test_list_app_catalog_parses_const_files(tmp_path: Path) -> None:
+    app_dir = tmp_path / "src" / "zzz_od" / "application"
+    (app_dir / "email_app").mkdir(parents=True)
+    (app_dir / "email_app" / "email_app_const.py").write_text(
+        'APP_ID = "email"\nAPP_NAME = "邮件"\nDEFAULT_GROUP = True\nPRIORITY = 200\n',
+        encoding="utf-8",
+    )
+    (app_dir / "coffee").mkdir()
+    # 单引号写法也要能解析
+    (app_dir / "coffee" / "coffee_const.py").write_text(
+        "APP_ID = 'coffee'\nAPP_NAME = '咖啡店'\nDEFAULT_GROUP = False\n",
+        encoding="utf-8",
+    )
+    # 无 APP_ID 的非应用 const 文件应被过滤
+    (app_dir / "misc").mkdir()
+    (app_dir / "misc" / "not_app_const.py").write_text(
+        "SOME_VALUE = 1\n", encoding="utf-8"
+    )
+
+    apps = list_app_catalog(tmp_path)
+    assert [app["app_id"] for app in apps] == ["email", "coffee"]
+    assert apps[0]["app_name"] == "邮件"
+    assert apps[0]["default_group"] is True
+    assert apps[0]["priority"] == 200
+    assert apps[1]["priority"] == 9999  # 未写 PRIORITY 置底
+
+
+def test_list_app_catalog_missing_dir(tmp_path: Path) -> None:
+    try:
+        list_app_catalog(tmp_path)
+        raise AssertionError("应当抛出 ValueError")
+    except ValueError:
+        pass
+
+
+def test_native_account_fields_whitelist_and_write(tmp_path: Path) -> None:
+    """直控账号字段：字段集固定、白名单过滤、未知字段保留。"""
+    root = _make_root(tmp_path)
+    slot_dir = instance_dir(root, 1)
+
+    fields = read_native_account_fields(root, 1)
+    assert [f["key"] for f in fields] == [
+        "game_region",
+        "game_path",
+        "game_language",
+        "account",
+        "password",
+        "bilibili_account_name",
+    ]
+    by_key = {f["key"]: f for f in fields}
+    assert by_key["game_region"]["value"] == "cn"
+    assert by_key["account"]["value"] == "主号账号"
+    # 选项字段带可选项；自由输入字段无选项（供前端渲染下拉/输入切换）
+    assert len(by_key["game_region"]["options"]) > 0
+    assert by_key["account"]["options"] == []
+
+    # 未知字段拒绝
+    try:
+        save_native_account_fields(root, 1, {"unknown_field": "x"})
+        raise AssertionError("应当抛出 ValueError")
+    except ValueError:
+        pass
+
+    # 写回只改白名单字段，未知原生字段保留
+    write_game_account(slot_dir, {"use_custom_win_title": True})
+    save_native_account_fields(root, 1, {"account": "改后账号", "game_region": "cn_b"})
+    data = read_game_account(slot_dir)
+    assert data["account"] == "改后账号"
+    assert data["game_region"] == "cn_b"
+    assert data["use_custom_win_title"] is True
+
+
+def test_native_account_default_merge_and_default_skip(tmp_path: Path) -> None:
+    """直控账号字段与一条龙 GUI 同步：缺失字段合并默认值；默认值不落盘。"""
+    root = _make_root(tmp_path)
+    slot_dir = instance_dir(root, 1)
+
+    # 模拟 zzz-od 只持久化非默认字段的真实情况：game_region 缺失（=默认国服）
+    write_file(slot_dir / "game_account.yml", {"game_path": r"G:\Games\ZZZ.exe"})
+
+    fields = read_native_account_fields(root, 1)
+    by_key = {f["key"]: f for f in fields}
+    # 缺失字段合并默认值：区服/语言回退 cn，账号/密码/B服名为空串
+    assert by_key["game_region"]["value"] == "cn"
+    assert by_key["game_language"]["value"] == "cn"
+    assert by_key["account"]["value"] == ""
+    assert by_key["password"]["value"] == ""
+    assert by_key["bilibili_account_name"]["value"] == ""
+    assert by_key["game_path"]["value"] == r"G:\Games\ZZZ.exe"
+
+    # 保存时等于默认值的字段跳过不落盘（与 zzz-od 行为一致，避免文件被污染）
+    save_native_account_fields(
+        root,
+        1,
+        {
+            "game_region": "cn",
+            "game_language": "cn",
+            "account": "",
+            "game_path": r"G:\Games\ZZZ.exe",
+        },
+    )
+    data = read_game_account(slot_dir)
+    assert "game_region" not in data
+    assert "game_language" not in data
+    assert "account" not in data
+    assert data["game_path"] == r"G:\Games\ZZZ.exe"
+
+
+def test_native_tasks_merge_and_enabled_only_writeback(tmp_path: Path) -> None:
+    """直控任务编排：目录并入可选项（enabled 保持原生状态）；保存只写启用项。"""
+    root = _make_root(tmp_path)
+    catalog = [
+        {"app_id": "email", "app_name": "邮件", "default_group": True, "priority": 200},
+        {"app_id": "coffee", "app_name": "咖啡店", "default_group": True, "priority": 9999},
+    ]
+
+    # 原生 app_list 仅 email(启用)；coffee 未加入 → 并入为禁用可选项
+    tasks = read_native_tasks(root, 1, catalog)
+    assert [t["app_id"] for t in tasks] == ["email", "coffee"]
+    assert tasks[0]["enabled"] is True
+    assert tasks[1]["enabled"] is False
+    assert tasks[0]["app_name"] == "邮件"
+
+    # 关闭 email + 开启 coffee → _group.yml 只保留启用项且顺序为本次编排顺序
+    save_native_tasks(root, 1, tasks)
+    assert read_app_group(instance_dir(root, 1)) == [
+        {"app_id": "email", "enabled": True}
+    ]
+
+    tasks[0]["enabled"] = False
+    tasks[1]["enabled"] = True
+    save_native_tasks(root, 1, tasks)
+    app_list = read_app_group(instance_dir(root, 1))
+    assert app_list == [{"app_id": "coffee", "enabled": True}]
+
+
+def test_native_instance_run_read_write_whitelist(tmp_path: Path) -> None:
+    """直控运行实例：读原生 instance_run、白名单校验写回、缺失回退默认。"""
+    root = _make_root(tmp_path)  # 原生 fixture 的 instance_run = "仅运行当前"
+
+    assert read_native_instance_run(root) == "仅运行当前"
+
+    # 白名单外取值拒绝
+    try:
+        save_native_instance_run(root, "单实例")
+        raise AssertionError("应当抛出 ValueError")
+    except ValueError:
+        pass
+
+    save_native_instance_run(root, "全部实例")
+    assert read_native_instance_run(root) == INSTANCE_RUN_ALL
+
+    # 缺失时回退「仅运行当前」（原生新建注册表通常不落盘默认值）
+    write_file(root / "config" / "one_dragon.yml", {"instance_list": []})
+    assert read_native_instance_run(root) == NATIVE_INSTANCE_RUN_OPTIONS[0]
+
+
+def test_onedragon_backup_fingerprint_dedup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """直控前置备份：无备份即建、内容一致跳过、内容变化再建（指纹去重）。"""
+    root = _make_root(tmp_path)
+    # 备份根目录取 Path.cwd()/data，chdir 进 tmp 保证密封不污染真实 data
+    monkeypatch.chdir(tmp_path)
+    script_id = "s-0001"
+    od_root = onedragon_backup_root(script_id)
+
+    # 首次：无任何备份 → 立即归档
+    first = archive_onedragon_backup(script_id, root)
+    assert first is not None
+    assert first.is_dir()
+    assert (first / "one_dragon.yml").is_file()
+    assert (first / "1" / "game_account.yml").is_file()
+    # MAS 槽（名称带前缀）不进入原生备份
+    assert not any("MAS-" in rel for rel in _backup_onedragon_files(first))
+
+    # 内容一致：指纹相同 → 跳过（不新增时间戳）
+    assert archive_onedragon_backup(script_id, root) is None
+    assert len(_list_times(od_root)) == 1
+
+    # 内容变化：原生配置被改（如直控误操作改坏）→ 指纹不同 → 新建归档
+    write_game_account(instance_dir(root, 1), {"game_region": "us"})
+    second = archive_onedragon_backup(script_id, root)
+    assert second is not None
+    assert len(_list_times(od_root)) == 2
+    assert (second / "1" / "game_account.yml").read_text(encoding="utf-8").find(
+        "us"
+    ) != -1
+
+    # force=True：即使内容一致也强制归档（恢复前存底语义）
+    restored_marker = archive_onedragon_backup(script_id, root, force=True)
+    assert restored_marker is not None
+    assert len(_list_times(od_root)) == 3

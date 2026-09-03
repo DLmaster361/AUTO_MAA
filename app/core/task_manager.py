@@ -64,6 +64,7 @@ from .config import (
     OkNteConfig,
     OkwwConfig,
     SrcConfig,
+    ZzzOdConfig,
 )
 from .queue_cycle import (
     CycleEntry,
@@ -359,6 +360,8 @@ class Task(TaskExecuteBase):
             return task.HSRManager(script_item)
         if isinstance(script_config, BetterGIConfig):
             return task.BetterGIManager(script_item)
+        if isinstance(script_config, ZzzOdConfig):
+            return task.ZzzOdManager(script_item)
         if isinstance(script_config, MaaFWConfig):
             return task.MaaFWEmbeddedManager(script_item)
         return None
@@ -965,6 +968,7 @@ class _TaskManager:
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
+        view_only: bool = False,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -975,6 +979,8 @@ class _TaskManager:
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
+            view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
+                不注入基线也不回读字段，用于「查看历史备份」等预览场景。
 
         Returns:
             uuid.UUID: 任务 UID
@@ -1078,6 +1084,7 @@ class _TaskManager:
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
+                view_only=view_only and exec_mode == "ScriptConfig",
             )
             self.task_handler[task_uid] = Task(
                 self.task_info[task_uid],

@@ -21,6 +21,7 @@ ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段�
 - **绑定持久在用户配置**（`Info.SlotIdx`），idx 分配全局查重：原生实例 idx ∪ 所有 ZzzOd 脚本用户 SlotIdx（`collect_used_slot_idxs`，排除本次注入/会话用户）——槽目录跨脚本共享，idx 不唯一会互相覆盖。绑定有效性要求 idx 不与原生实例/其他用户冲突（无注册表可查名字，旧版 MAS- 前缀校验随持久注册一起废弃）。
 - **同脚本用户名唯一**（前端改名查重 + `check()` 兜底）：视图内槽名 `MAS-{用户名}`，重名会混；跨脚本重名由视图天然隔离。
 - 有效根目录哨兵：`find_launcher_exe` 按序找 `OneDragon-RuntimeLauncher.exe` / `OneDragon-Launcher.exe`（`.bak` 不算）；离线校验另见 `tools.zzz_od_config.validate_root`（src + config/one_dragon.yml）。
+- **启动器选择（用户字段 `Info.LauncherMode`，直控/用户两态通用）**：标签映射——集成=`OneDragon-RuntimeLauncher.exe`（WithRuntime 打包）、原始=`OneDragon-Launcher.exe`（旧安装器，外部 uv 拉起）。**自动**=优先 `Data.LauncherLastGood`（上次成功项），失败换另一个重试并记住下次成功的那个；原始/集成=固定（所选 exe 未安装回退默认顺序并告警）。**启动级失败靠日志证据判定**：两种启动器的一条龙运行日志都汇聚 `.log/log.txt`，启动器自身没起来（uv 缺失/同步失败早退）时该文件无应用层条目——以 `[application_launcher.py`/`[one_dragon_context.py`/`[application_factory_manager.py` 任一出现或运行记录有变化为「已启动」，避免把功能级失败误判成启动失败。原始启动器的框架日志另写 `python_launcher_framework.log`，不进 log.txt。
 
 ## 注入运行与判态
 

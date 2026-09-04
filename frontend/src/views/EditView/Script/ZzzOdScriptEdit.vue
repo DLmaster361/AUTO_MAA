@@ -279,9 +279,10 @@ const zzzodConfig = reactive<ZzzOdScriptConfigForm>({
 })
 
 // 账号切换方式（value 为后端 Game.AccountSwitch 取值，驱动逻辑需保持原样；label 走词表）
+// MAS账号切换尚未实现，先置灰不可选（后端 OptionsValidator 仍保留该值，落地后去掉 disabled 即可）
 const accountSwitchOptions = [
   { label: t('edit.zzzodAccountSwitchOd'), value: '一条龙内置' },
-  { label: t('edit.zzzodAccountSwitchMas'), value: 'MAS账号切换' },
+  { label: t('edit.zzzodAccountSwitchMas'), value: 'MAS账号切换', disabled: true },
 ]
 
 const rules = computed(() => ({

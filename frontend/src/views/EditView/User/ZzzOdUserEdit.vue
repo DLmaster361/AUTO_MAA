@@ -168,6 +168,51 @@
               </a-col>
             </a-row>
 
+            <!-- 一条龙启动器（直控/用户两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明） -->
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.zzzodLauncherMode') }}
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Info.LauncherMode"
+                    size="large"
+                    class="modern-select"
+                    :loading="launchersLoading"
+                    @change="saveField('Info.LauncherMode', formData.Info.LauncherMode)"
+                  >
+                    <a-select-option
+                      value="自动"
+                      :disabled="!launchersReady || !launchersUsable.smart"
+                    >
+                      <a-tooltip :title="t('edit.zzzodLauncherAutoHint')">
+                        <span>{{ t('edit.zzzodLauncherAuto') }}</span>
+                      </a-tooltip>
+                    </a-select-option>
+                    <a-select-option
+                      value="原始"
+                      :disabled="!launchersReady || !launchersUsable.original"
+                    >
+                      <a-tooltip :title="t('edit.zzzodLauncherOriginalHint')">
+                        <span>{{ t('edit.zzzodLauncherOriginal') }}</span>
+                      </a-tooltip>
+                    </a-select-option>
+                    <a-select-option
+                      value="集成"
+                      :disabled="!launchersReady || !launchersUsable.integrated"
+                    >
+                      <a-tooltip :title="t('edit.zzzodLauncherIntegratedHint')">
+                        <span>{{ t('edit.zzzodLauncherIntegrated') }}</span>
+                      </a-tooltip>
+                    </a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
             <!-- 直控：选择要直接编辑的一条龙实例（强绑定原生配置） -->
             <template v-if="formData.Info.Mode === '直控'">
               <a-row :gutter="24">
@@ -749,6 +794,7 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
     Status: true,
     Mode: '用户',
     SlotIdx: -1,
+    LauncherMode: '自动',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -967,6 +1013,37 @@ const loadInstances = async () => {
     logger.error(e instanceof Error ? e.message : String(e))
   } finally {
     instancesLoading.value = false
+  }
+}
+
+// ══ 一条龙启动器安装情况（两态通用下拉：未安装的选项禁用变灰）══
+const launchersLoading = ref(false)
+// 安装信息是否已拉取完成（拉失败视为都未安装，选项全部禁用）
+const launchersReady = ref(false)
+const launcherOriginal = ref(false)
+const launcherIntegrated = ref(false)
+const launchersUsable = computed(() => ({
+  smart: launcherOriginal.value || launcherIntegrated.value,
+  original: launcherOriginal.value,
+  integrated: launcherIntegrated.value,
+}))
+
+const loadLaunchers = async () => {
+  launchersLoading.value = true
+  try {
+    const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(
+      scriptId
+    )
+    if (resp.code !== 200) {
+      throw new Error(resp.message || t('edit.zzzodLauncherLoadFailed'))
+    }
+    launcherOriginal.value = resp.original_available
+    launcherIntegrated.value = resp.integrated_available
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    launchersLoading.value = false
+    launchersReady.value = true
   }
 }
 
@@ -1538,6 +1615,7 @@ onMounted(async () => {
   if (await loadScriptInfo()) {
     await loadUser()
     await loadInstances()
+    await loadLaunchers()
     await loadCatalog()
     // 已是直控模式的用户：同样确保原生配置已有最新备份（指纹去重，幂等）
     if (formData.Info.Mode === '直控') {

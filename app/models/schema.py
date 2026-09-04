@@ -268,6 +268,17 @@ class ZzzOdDirectBackupOut(OutBase):
     time: str = Field(..., description="最新一条龙原生配置备份时间戳（无备份时为空）")
 
 
+class ZzzOdLauncherOut(OutBase):
+    """ZZZ-OD 启动器可用性（独立配置侧切换原始/集成启动器用）"""
+
+    original_available: bool = Field(
+        ..., description="原始启动器（OneDragon-Launcher.exe）是否已安装"
+    )
+    integrated_available: bool = Field(
+        ..., description="集成启动器（OneDragon-RuntimeLauncher.exe）是否已安装"
+    )
+
+
 class MaaEndOptionsOut(OutBase):
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
@@ -1180,6 +1191,10 @@ class ZzzOdUserConfig_Info(BaseModel):
     SlotIdx: Optional[int] = Field(
         default=None,
         description="绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配并持久注册 MAS-{用户名} 实例）",
+    )
+    LauncherMode: Optional[Literal["自动", "原始", "集成"]] = Field(
+        default=None,
+        description="一条龙启动器（直控/用户两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）",
     )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     IfScriptBeforeTask: Optional[bool] = Field(

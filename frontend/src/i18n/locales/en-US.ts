@@ -1580,7 +1580,7 @@ export default {
     zzzodCloseGameOnFinish: 'Close the game after the run',
     zzzodAccountSwitch: 'Account switching',
     zzzodAccountSwitchHint:
-      'One-dragon built-in = inject every enabled user into instance slots and let the one-dragon multi-account run execute them in order with built-in account switching, covering all users in a single run. MAS switching = per-user cycles (inject that user config → run the one-dragon → finish, then next); MAS-driven switching arrives in a future version',
+      'One-dragon built-in = inject every enabled user into instance slots and let the one-dragon multi-account run execute them in order with built-in account switching, covering all users in a single run. MAS switching = per-user cycles (inject that user config → run the one-dragon → finish, then next); not yet available (greyed out)',
     zzzodAccountSwitchOd: 'One-dragon built-in',
     zzzodAccountSwitchMas: 'MAS switching',
     zzzodCloseGameOnFinishHint: 'zzz-od closes the game after the one-dragon run (recommended for multi-account runs)',
@@ -1592,6 +1592,17 @@ export default {
     zzzodTaskConfigSaveFailed: 'Could not save the task config',
     zzzodTaskConfigSaved: 'Task config saved',
     zzzodRestoreTitle: 'Config restore',
+    zzzodLauncherMode: 'OneDragon launcher',
+    zzzodLauncherAuto: 'Auto',
+    zzzodLauncherOriginal: 'Original',
+    zzzodLauncherIntegrated: 'Integrated',
+    zzzodLauncherAutoHint:
+      'Prefer the last successful launcher; on startup failure, retry with the other one and remember the next successful one',
+    zzzodLauncherOriginalHint:
+      'Always use the original launcher (OneDragon-Launcher.exe)',
+    zzzodLauncherIntegratedHint:
+      'Always use the integrated launcher (OneDragon-RuntimeLauncher.exe, bundled runtime)',
+    zzzodLauncherLoadFailed: 'Failed to load launcher availability',
     zzzodRestoreTargetOd: 'OneDragon config',
     zzzodRestoreTargetMas: 'MAS config',
     zzzodRestoreDesc:

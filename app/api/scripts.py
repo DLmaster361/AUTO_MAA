@@ -1665,6 +1665,29 @@ async def ensure_zzzod_direct_backup_api(
         )
 
 
+@router.get(
+    "/zzzod/launchers",
+    tags=["ZZZ-OD"],
+    summary="获取一条龙两种启动器的安装情况与默认项",
+    response_model=ZzzOdLauncherOut,
+    status_code=200,
+)
+async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
+    """渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。"""
+
+    try:
+        data = Config.get_zzzod_launchers(scriptId)
+        return ZzzOdLauncherOut(code=200, status="success", message="", **data)
+    except Exception as e:
+        return ZzzOdLauncherOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            original_available=False,
+            integrated_available=False,
+        )
+
+
 @router.post(
     "/zzzod/backup/restore",
     tags=["ZZZ-OD"],

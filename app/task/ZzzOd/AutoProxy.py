@@ -84,9 +84,22 @@ from .tools import (
 
 logger = get_logger("ZZZ-OD 自动代理")
 
-# 启动器 exe（从 RootPath 派生）：优先 WithRuntime 打包的 RuntimeLauncher，
-# 其次旧安装器模式的 Launcher；.bak 为启动器自更新残留，不参与发现。
-_ZZZOD_LAUNCHERS = ("OneDragon-RuntimeLauncher.exe", "OneDragon-Launcher.exe")
+# 启动器标签 → exe 文件名（集成=WithRuntime 打包的 RuntimeLauncher；原始=旧安装器
+# Launcher；.bak 为启动器自更新残留，不参与发现）。元组顺序即默认发现顺序（集成优先）
+_ZZZOD_LAUNCHER_BOOK = {
+    "集成": "OneDragon-RuntimeLauncher.exe",
+    "原始": "OneDragon-Launcher.exe",
+}
+
+_ZZZOD_LAUNCHERS = tuple(_ZZZOD_LAUNCHER_BOOK.values())
+
+# 启动器成功启动的证据：出现 zzz-od 应用层运行上下文即视为已启动（两种启动器的
+# 一条龙运行日志都汇聚 .log/log.txt；启动器自身未起来时该文件无任何应用层条目）
+_ZZZOD_LAUNCH_STARTED_MARKERS = (
+    "[application_launcher.py",
+    "[one_dragon_context.py",
+    "[application_factory_manager.py",
+)
 
 # zzz-od 统一日志（log_utils，按日期滚动，当天固定为 log.txt）
 _ZZZOD_REL_LOG = Path(".log") / "log.txt"
@@ -119,6 +132,56 @@ def find_launcher_exe(root: Path) -> Path:
         if path.is_file():
             return path
     raise ValueError(f"{root} 下未找到 OneDragon 启动器, 请确认绝区零一条龙安装目录")
+
+
+def find_launchers(root: Path) -> dict[str, Path]:
+    """返回安装根目录下实际安装的启动器（标签 → exe 路径，未安装的不在结果中）。"""
+
+    return {
+        label: root / name
+        for label, name in _ZZZOD_LAUNCHER_BOOK.items()
+        if (root / name).is_file()
+    }
+
+
+def resolve_launcher(
+    root: Path, mode: str, last_good: str = ""
+) -> tuple[Path, str]:
+    """按用户选择返回 (启动器 exe, 标签)。
+
+    - 自动：优先「上次成功」的启动器（``last_good``），否则按默认顺序（集成优先）；
+    - 原始/集成：固定用对应 exe，所选项未安装时回退默认顺序可用项并告警。
+
+    Raises:
+        ValueError: 安装根目录下没有任何启动器。
+    """
+
+    available = find_launchers(root)
+    if available.get(mode):
+        return available[mode], mode
+    if mode == "自动" and last_good in available:
+        return available[last_good], last_good
+    # 固定模式所选未安装或无记忆：按默认顺序取首个可用（集成优先）
+    for name in _ZZZOD_LAUNCHERS:
+        path = root / name
+        if path.is_file():
+            label = next(
+                (tag for tag, exe in _ZZZOD_LAUNCHER_BOOK.items() if exe == name),
+                name,
+            )
+            if mode in ("原始", "集成"):
+                logger.warning(
+                    f"所选{mode}启动器未安装，已回退使用{label}启动器"
+                )
+            return path, label
+    raise ValueError(f"{root} 下未找到 OneDragon 启动器, 请确认绝区零一条龙安装目录")
+
+
+def _other_launcher_label(root: Path, label: str) -> str | None:
+    """返回另一启动器的标签；未安装返回 None。"""
+
+    other = "原始" if label == "集成" else "集成"
+    return other if (root / _ZZZOD_LAUNCHER_BOOK[other]).is_file() else None
 
 
 async def ensure_user_slot(
@@ -253,6 +316,11 @@ def _snapshot_all_run_records(root: Path) -> dict[str, int]:
 class AutoProxyTask(TaskExecuteBase):
     """ZZZ-OD 自动代理：逐用户按三态来源拉起启动器 CLI 一条龙并监控"""
 
+    # 取消时等 final_task 完整收尾（SRC/MaaFW 同款）：不设此 flag 时外层取消会
+    # 立刻打断 shield 的 final_task，导致 kill_managed_process 没跑——取消任务后
+    # zzz-od 启动器/一行龙本体仍继续运行
+    wait_for_finalizer_on_cancel = True
+
     def __init__(
         self,
         script_info: ScriptItem,
@@ -285,6 +353,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event: asyncio.Event | None = None
         self.script_root_path: Path | None = None
         self.launcher_exe_path: Path | None = None
+        # 当前使用的启动器标签（原始/集成）、本任务启动时的模式快照（运行中途
+        # 改配置不影响本轮判定）与是否已切换过
+        self._launcher_label: str | None = None
+        self._launcher_mode = "自动"
+        self._launcher_switched = False
         self.script_log_path: Path | None = None
         self.log_monitor: LogMonitor | None = None
         # 注入现场（用户态共用）：绑定槽 → 备份目录（None=槽目录为本运行新建）
@@ -534,6 +607,17 @@ class AutoProxyTask(TaskExecuteBase):
             if self.script_config.get("Game", "CloseOnFinish"):
                 launcher_args.append("--close-game")
 
+            # 启动器选择：直控/用户统一按配置——自动=优先上次成功项，原始/集成=固定
+            # 对应项（未安装回退可用项）；直控默认「自动」时行为等同原强绑定默认顺序
+            self._launcher_mode = str(
+                self.cur_user_config.get("Info", "LauncherMode") or "自动"
+            )
+            self.launcher_exe_path, self._launcher_label = resolve_launcher(
+                self.script_root_path,
+                self._launcher_mode,
+                str(self.cur_user_config.get("Data", "LauncherLastGood") or ""),
+            )
+
             for i in range(run_limit):
                 if self.run_book:
                     break
@@ -604,6 +688,14 @@ class AutoProxyTask(TaskExecuteBase):
 
                 if self.cur_user_log.status == "Success!":
                     self.run_book = True
+                    if (
+                        self._launcher_label is not None
+                        and self._launcher_mode == "自动"
+                    ):
+                        # 自动模式：把本次成功使用的启动器记忆为下次优先项
+                        await self.cur_user_config.set(
+                            "Data", "LauncherLastGood", self._launcher_label
+                        )
                     if not self._is_multi_account():
                         self._collect_push_log(records_before, records_after)
                     self.script_info.log = "检测到 ZZZ-OD 已完成任务"
@@ -613,6 +705,11 @@ class AutoProxyTask(TaskExecuteBase):
                             "脚本后任务",
                         )
                     break
+
+                # 自动模式：启动器未能启动（无应用层日志且运行记录无变化）时，
+                # 自动切换到另一启动器并占用下一轮重试
+                if await self._maybe_switch_launcher(log):
+                    continue
 
                 logger.warning(
                     f"用户 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
@@ -679,6 +776,55 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.status = log_status
         if user_status is not None:
             self.cur_user_item.status = user_status
+
+    def _launch_evidence(self, log: str, records_changed: bool) -> bool:
+        """启动器是否已成功启动：出现应用层运行上下文日志或运行记录有变化即视为已启动。
+
+        两种启动器的一条龙运行日志都汇聚 .log/log.txt；启动器自身未能启动
+        （exe 缺失环境、同步失败早退等）时该文件没有任何应用层条目。
+        """
+
+        return records_changed or any(
+            marker in log for marker in _ZZZOD_LAUNCH_STARTED_MARKERS
+        )
+
+    async def _maybe_switch_launcher(self, log: str) -> bool:
+        """自动模式：判定启动器未能启动且另一启动器可用时，切换后占用下一轮重试。
+
+        返回 True 表示已切换（调用方 continue，切换本身消耗一轮重试额度）；
+        非自动 / 已切换过 / 无另一启动器 / 已有启动证据时不切换。
+        """
+
+        if self._launcher_mode != "自动":
+            return False
+        if self._launcher_switched or self._launcher_label is None:
+            return False
+
+        records_changed = False
+        if self._injected_slots:
+            slot0 = self._injected_slots[0][0]
+            records_changed = bool(
+                diff_run_records(
+                    self._slot_records_before.get(slot0, {}),
+                    snapshot_run_records(self.script_root_path, slot0),
+                )
+            )
+        if self._launch_evidence(log, records_changed):
+            return False
+
+        other = _other_launcher_label(self.script_root_path, self._launcher_label)
+        if other is None:
+            return False
+
+        self._launcher_label = other
+        self.launcher_exe_path = (
+            self.script_root_path / _ZZZOD_LAUNCHER_BOOK[other]
+        )
+        self._launcher_switched = True
+        logger.warning(
+            f"检测到 {other}启动器未能启动，已切换为另一启动器重试"
+        )
+        return True
 
     def _collect_push_log(self, records_before: dict, records_after: dict) -> None:
         """把任务粒度结果采集进 push_log（用户级 PushLogMode 控制是否采报）。"""

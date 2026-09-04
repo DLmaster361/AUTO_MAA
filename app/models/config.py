@@ -3713,6 +3713,15 @@ class ZzzOdUserConfig(ConfigBase):
         self.Info_SlotIdx = ConfigItem(
             "Info", "SlotIdx", -1, RangeValidator(-1, 999)
         )
+        ## 一条龙启动器选择（直控/用户两态通用）：
+        ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
+        ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
+        self.Info_LauncherMode = ConfigItem(
+            "Info",
+            "LauncherMode",
+            "自动",
+            OptionsValidator(["自动", "原始", "集成"]),
+        )
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
@@ -3771,6 +3780,13 @@ class ZzzOdUserConfig(ConfigBase):
             "LastProxyStatus",
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
+        )
+        ## 智能启动器模式最近一次成功运行的启动器（""=尚未记录；下次智能优先用它）
+        self.Data_LauncherLastGood = ConfigItem(
+            "Data",
+            "LauncherLastGood",
+            "",
+            OptionsValidator(["", "原始", "集成"]),
         )
 
         ## Notify ----------------------------------------------------------

@@ -1520,7 +1520,7 @@ export default {
     zzzodCloseGameOnFinish: '任务结束后关闭游戏',
     zzzodAccountSwitch: '账号切换方式',
     zzzodAccountSwitchHint:
-      '一条龙内置切换 = 把全部启用用户的配置注入各实例槽，由一条龙多账号运行依次执行并内部切换账号，单次运行覆盖所有用户；MAS账号切换 = 每个用户独立循环（注入该用户配置 → 运行一条龙 → 结束再下一个），MAS 侧主动切换能力后续版本接入',
+      '一条龙内置切换 = 把全部启用用户的配置注入各实例槽，由一条龙多账号运行依次执行并内部切换账号，单次运行覆盖所有用户；MAS账号切换 = 每个用户独立循环（注入该用户配置 → 运行一条龙 → 结束再下一个），暂未开放（选项置灰）',
     zzzodAccountSwitchOd: '一条龙内置切换',
     zzzodAccountSwitchMas: 'MAS账号切换',
     zzzodCloseGameOnFinishHint: '一条龙跑完后由 zzz-od 关闭游戏（多账号连续运行时建议开启）',
@@ -1532,6 +1532,17 @@ export default {
     zzzodTaskConfigSaveFailed: '保存任务配置失败',
     zzzodTaskConfigSaved: '任务配置已保存',
     zzzodRestoreTitle: '配置恢复',
+    zzzodLauncherMode: '一条龙启动器',
+    zzzodLauncherAuto: '自动',
+    zzzodLauncherOriginal: '原始',
+    zzzodLauncherIntegrated: '集成',
+    zzzodLauncherAutoHint:
+      '优先用上次成功的启动器；启动失败自动换另一个重试，并记住下一次成功的那个',
+    zzzodLauncherOriginalHint:
+      '固定用原始启动器（OneDragon-Launcher.exe，旧安装器版）',
+    zzzodLauncherIntegratedHint:
+      '固定用集成启动器（OneDragon-RuntimeLauncher.exe，自带运行时版本）',
+    zzzodLauncherLoadFailed: '获取启动器安装情况失败',
     zzzodRestoreTargetOd: '恢复一条龙配置',
     zzzodRestoreTargetMas: '恢复 MAS 配置',
     zzzodRestoreDesc:

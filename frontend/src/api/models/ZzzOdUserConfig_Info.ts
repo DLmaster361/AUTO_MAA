@@ -26,6 +26,10 @@ export type ZzzOdUserConfig_Info = {
      */
     SlotIdx?: (number | null);
     /**
+     * 一条龙启动器（直控/用户两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）
+     */
+    LauncherMode?: ('自动' | '原始' | '集成' | null);
+    /**
      * 剩余天数
      */
     RemainedDay?: (number | null);

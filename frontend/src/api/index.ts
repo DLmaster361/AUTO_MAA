@@ -355,6 +355,7 @@ export type { ZzzOdDirectBackupIn } from './models/ZzzOdDirectBackupIn';
 export type { ZzzOdDirectBackupOut } from './models/ZzzOdDirectBackupOut';
 export type { ZzzOdInstanceOut } from './models/ZzzOdInstanceOut';
 export type { ZzzOdInstancesOut } from './models/ZzzOdInstancesOut';
+export type { ZzzOdLauncherOut } from './models/ZzzOdLauncherOut';
 export type { ZzzOdNativeAccountField } from './models/ZzzOdNativeAccountField';
 export type { ZzzOdNativeConfigIn } from './models/ZzzOdNativeConfigIn';
 export type { ZzzOdNativeConfigOut } from './models/ZzzOdNativeConfigOut';

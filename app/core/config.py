@@ -1567,6 +1567,24 @@ class AppConfig(GlobalConfig):
             "time": times[0] if times else "",
         }
 
+    def get_zzzod_launchers(self, script_id: str) -> dict:
+        """返回 zzz-od 两种启动器的安装情况（启动器下拉/禁用未安装项用）。
+
+        Returns:
+            {"original_available": bool, "integrated_available": bool}
+        """
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+
+        from app.task.ZzzOd.AutoProxy import find_launchers
+
+        available = find_launchers(root)
+        return {
+            "original_available": "原始" in available,
+            "integrated_available": "集成" in available,
+        }
+
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:

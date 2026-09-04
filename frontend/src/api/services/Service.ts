@@ -130,6 +130,7 @@ import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
 import type { ZzzOdDirectBackupIn } from '../models/ZzzOdDirectBackupIn';
 import type { ZzzOdDirectBackupOut } from '../models/ZzzOdDirectBackupOut';
 import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
+import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -1157,6 +1158,27 @@ export class Service {
             url: '/api/scripts/zzzod/direct-backup/ensure',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取一条龙两种启动器的安装情况与默认项
+     * 渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。
+     * @param scriptId
+     * @returns ZzzOdLauncherOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdLauncherOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/launchers',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },

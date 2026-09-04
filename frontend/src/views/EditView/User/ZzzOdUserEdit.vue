@@ -667,11 +667,15 @@
                         : t('edit.zzzodRestoreViewHintOd')
                     "
                   >
-                    <a-button size="small" @click="handleRestoreView(item)">
+                    <a-button
+                      type="link"
+                      size="small"
+                      @click="handleRestoreView(item)"
+                    >
                       {{ t('edit.zzzodRestoreView') }}
                     </a-button>
                   </a-tooltip>
-                  <a-button size="small" danger @click="confirmRestore(item)">
+                  <a-button size="small" @click="confirmRestore(item)">
                     {{ t('edit.zzzodRestoreAction') }}
                   </a-button>
                 </a-space>
@@ -1785,6 +1789,17 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
+/* 恢复目标分段器：低频工具内的选择，选中态只用中性灰填充与主文字色，
+   不做白色浮起块/主题色高光（风险提示保留在一键恢复的确认弹窗里） */
+.restore-target-switch :deep(.ant-segmented-item-selected) {
+  background: var(--ant-color-fill-secondary);
+  box-shadow: none;
+}
+
+.restore-target-switch :deep(.ant-segmented-item-selected .ant-segmented-item-label) {
+  color: var(--ant-color-text);
+}
+
 .restore-desc {
   margin: 0 0 12px;
   color: var(--ant-color-text-secondary);
@@ -1792,7 +1807,7 @@ onUnmounted(() => {
 }
 
 .backup-time {
-  color: var(--ant-color-text);
+  color: var(--ant-color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 

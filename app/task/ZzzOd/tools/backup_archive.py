@@ -28,15 +28,24 @@
 - ``mas``：MAS 用户配置 = 绑定槽（MAS-xxx）目录整份快照——含本页注入的
   账号/任务编排与用户在原生 GUI 里维护的配队等；恢复到槽并回填本页字段。
 
-两类各自指纹去重（内容无变化跳过归档）、各自保留最近 :data:`KEEP_COUNT`
-份。
+时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
+``app.utils.config_archive`` 提供，本模块只保留 zzz-od 特有的文件集收集
+（排除 MAS 槽）、恢复语义（先清合成视图、恢复前强制归档当前）与归档目录
+布局。两类各自独立保留 :data:`KEEP_COUNT` 份。
 """
 
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 from app.utils import get_logger
+from app.utils.config_archive import (
+    archive_dir,
+    archive_files,
+    dir_files,
+    get_backup_dir,
+    list_times,
+    restore_dir,
+)
 
 from .zzz_od_config import (
     _one_dragon_file,
@@ -48,9 +57,7 @@ from .zzz_od_config import (
 logger = get_logger("ZZZ-OD 配置备份")
 
 KEEP_COUNT = 10
-"""每类保留的归档份数（超出清理最旧的）"""
-
-_TIME_FORMAT = "%Y%m%d-%H%M%S"
+"""每类保留的归档份数（超出清理最旧的；与公共原语默认一致）"""
 
 MAS_SLOT_PREFIX = "MAS-"
 """MAS 用户槽在注册表中的实例名前缀"""
@@ -74,27 +81,6 @@ def mas_backup_root(script_id: str, slot_idx: int) -> Path:
     return backup_root(script_id) / "mas" / f"{int(slot_idx):02d}"
 
 
-def _list_times(root: Path) -> list[str]:
-    """归档目录下全部时间戳，按时间倒序（目录名即时间戳）。"""
-
-    if not root.is_dir():
-        return []
-    return sorted((p.name for p in root.iterdir() if p.is_dir()), reverse=True)
-
-
-def _hash_files(files: dict[str, Path]) -> str:
-    """文件集指纹：相对键 + 内容的组合哈希（文件集合变化也算变化）。"""
-
-    import hashlib
-
-    digest = hashlib.sha256()
-    for rel in sorted(files):
-        path = files[rel]
-        digest.update(f"f:{rel}:{path.stat().st_size}:".encode())
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
-
-
 def _onedragon_files(root: Path) -> dict[str, Path]:
     """当前一条龙原生配置的文件集：one_dragon.yml + 注册表内原生实例目录。"""
 
@@ -116,16 +102,6 @@ def _onedragon_files(root: Path) -> dict[str, Path]:
     return files
 
 
-def _backup_onedragon_files(backup_dir: Path) -> dict[str, Path]:
-    """备份目录内的文件集（结构与当前侧对称：one_dragon.yml + {idx}/...）。"""
-
-    files: dict[str, Path] = {}
-    for path in sorted(backup_dir.rglob("*")):
-        if path.is_file():
-            files[path.relative_to(backup_dir).as_posix()] = path
-    return files
-
-
 # ══════════════════ 一条龙原生配置 ══════════════════
 
 
@@ -141,30 +117,12 @@ def archive_onedragon_backup(script_id: str, root: Path, force: bool = False) ->
     if not files:
         raise ValueError(f"一条龙原生配置不存在: {root}")
 
-    dest_root = onedragon_backup_root(script_id)
-    times = _list_times(dest_root)
-    if not force and times:
-        try:
-            latest = _backup_onedragon_files(dest_root / times[0])
-            if _hash_files(latest) == _hash_files(files):
-                logger.info("一条龙原生配置无变化，跳过归档")
-                return None
-        except OSError as e:
-            logger.warning(f"一条龙原生配置指纹对比失败，照常归档: {e}")
-
-    dest = dest_root / datetime.now().strftime(_TIME_FORMAT)
-    serial = 1
-    while dest.exists():  # 同秒内多次备份（理论罕见）顺延序号
-        serial += 1
-        dest = dest_root / f"{datetime.now().strftime(_TIME_FORMAT)}-{serial}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    for rel, path in files.items():
-        target = dest / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
-
-    for old in _list_times(dest_root)[KEEP_COUNT:]:
-        shutil.rmtree(dest_root / old, ignore_errors=True)
+    dest = archive_files(
+        files, onedragon_backup_root(script_id), force=force
+    )
+    if dest is None:
+        logger.info("一条龙原生配置无变化，跳过归档")
+        return None
 
     logger.info(f"一条龙原生配置已归档: {dest.name} ({len(files)} 个文件)")
     return dest
@@ -173,14 +131,13 @@ def archive_onedragon_backup(script_id: str, root: Path, force: bool = False) ->
 def list_onedragon_backups(script_id: str) -> list[str]:
     """一条龙原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return _list_times(onedragon_backup_root(script_id))
+    return list_times(onedragon_backup_root(script_id))
 
 
 def get_onedragon_backup_dir(script_id: str, ts: str) -> Path | None:
     """取指定时间戳的一条龙归档目录；不存在返回 None。"""
 
-    dest = onedragon_backup_root(script_id) / str(ts)
-    return dest if dest.is_dir() else None
+    return get_backup_dir(onedragon_backup_root(script_id), ts)
 
 
 def restore_onedragon_backup(script_id: str, ts: str, root: Path) -> None:
@@ -194,7 +151,7 @@ def restore_onedragon_backup(script_id: str, ts: str, root: Path) -> None:
     backup_dir = get_onedragon_backup_dir(script_id, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    backup_files = _backup_onedragon_files(backup_dir)
+    backup_files = dir_files(backup_dir)
     if not backup_files:
         raise ValueError(f"备份内容为空: {ts}")
 
@@ -234,68 +191,32 @@ def archive_mas_backup(
     存底）；跳过返回 ``None``，否则返回归档目录。
     """
 
-    slot_dir = Path(slot_dir)
-    if not slot_dir.is_dir():
-        raise ValueError(f"备份来源不存在: {slot_dir}")
-
-    dest_root = mas_backup_root(script_id, slot_idx)
-    times = _list_times(dest_root)
-    if not force and times:
-        try:
-            if _hash_files(_dir_files(dest_root / times[0])) == _hash_files(
-                _dir_files(slot_dir)
-            ):
-                logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
-                return None
-        except OSError as e:
-            logger.warning(f"槽 {slot_idx:02d} 备份指纹对比失败，照常归档: {e}")
-
-    dest = dest_root / datetime.now().strftime(_TIME_FORMAT)
-    serial = 1
-    while dest.exists():  # 同秒内多次备份（理论罕见）顺延序号
-        serial += 1
-        dest = dest_root / f"{datetime.now().strftime(_TIME_FORMAT)}-{serial}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(slot_dir, dest)
-
-    for old in _list_times(dest_root)[KEEP_COUNT:]:
-        shutil.rmtree(dest_root / old, ignore_errors=True)
+    dest = archive_dir(slot_dir, mas_backup_root(script_id, slot_idx), force=force)
+    if dest is None:
+        logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
+        return None
 
     logger.info(f"槽 {slot_idx:02d} MAS 配置已归档: {dest.name}")
     return dest
 
 
-def _dir_files(source: Path) -> dict[str, Path]:
-    """目录内全部文件集（相对路径 → 绝对路径）。"""
-
-    files: dict[str, Path] = {}
-    for path in sorted(source.rglob("*")):
-        if path.is_file():
-            files[path.relative_to(source).as_posix()] = path
-    return files
-
-
 def list_mas_backups(script_id: str, slot_idx: int) -> list[str]:
     """MAS 用户槽全部归档时间戳（倒序，最新在前）。"""
 
-    return _list_times(mas_backup_root(script_id, slot_idx))
+    return list_times(mas_backup_root(script_id, slot_idx))
 
 
 def get_mas_backup_dir(script_id: str, slot_idx: int, ts: str) -> Path | None:
     """取指定时间戳的 MAS 归档目录；不存在返回 None。"""
 
-    dest = mas_backup_root(script_id, slot_idx) / str(ts)
-    return dest if dest.is_dir() else None
+    return get_backup_dir(mas_backup_root(script_id, slot_idx), ts)
 
 
 def restore_mas_backup(script_id: str, slot_idx: int, ts: str, slot_dir: Path) -> None:
     """把归档恢复到 MAS 用户槽目录（恢复前自动归档当前，误恢复可找回）。"""
 
-    backup_dir = get_mas_backup_dir(script_id, slot_idx, ts)
-    if backup_dir is None:
-        raise ValueError(f"备份不存在: {ts}")
-    if Path(slot_dir).is_dir():
+    slot_dir = Path(slot_dir)
+    if slot_dir.is_dir():
         # 恢复前强制归档当前内容——「恢复前的配置」在列表里有明确的时间戳条目
-        archive_mas_backup(script_id, slot_idx, Path(slot_dir), force=True)
-    shutil.rmtree(Path(slot_dir), ignore_errors=True)
-    shutil.copytree(backup_dir, Path(slot_dir))
+        archive_mas_backup(script_id, slot_idx, slot_dir, force=True)
+    restore_dir(mas_backup_root(script_id, slot_idx), ts, slot_dir)

@@ -29,8 +29,6 @@ from pathlib import Path
 import pytest
 
 from app.task.ZzzOd.tools.backup_archive import (
-    _backup_onedragon_files,
-    _list_times,
     archive_onedragon_backup,
     onedragon_backup_root,
 )
@@ -67,6 +65,7 @@ from app.task.ZzzOd.tools.zzz_od_config import (
     write_game_account,
     write_instance_view,
 )
+from app.utils.config_archive import dir_files, list_times
 from app.utils.io import read_file, write_file
 
 
@@ -423,17 +422,17 @@ def test_onedragon_backup_fingerprint_dedup(
     assert (first / "one_dragon.yml").is_file()
     assert (first / "1" / "game_account.yml").is_file()
     # MAS 槽（名称带前缀）不进入原生备份
-    assert not any("MAS-" in rel for rel in _backup_onedragon_files(first))
+    assert not any("MAS-" in rel for rel in dir_files(first))
 
     # 内容一致：指纹相同 → 跳过（不新增时间戳）
     assert archive_onedragon_backup(script_id, root) is None
-    assert len(_list_times(od_root)) == 1
+    assert len(list_times(od_root)) == 1
 
     # 内容变化：原生配置被改（如直控误操作改坏）→ 指纹不同 → 新建归档
     write_game_account(instance_dir(root, 1), {"game_region": "us"})
     second = archive_onedragon_backup(script_id, root)
     assert second is not None
-    assert len(_list_times(od_root)) == 2
+    assert len(list_times(od_root)) == 2
     assert (second / "1" / "game_account.yml").read_text(encoding="utf-8").find(
         "us"
     ) != -1
@@ -441,4 +440,4 @@ def test_onedragon_backup_fingerprint_dedup(
     # force=True：即使内容一致也强制归档（恢复前存底语义）
     restored_marker = archive_onedragon_backup(script_id, root, force=True)
     assert restored_marker is not None
-    assert len(_list_times(od_root)) == 3
+    assert len(list_times(od_root)) == 3

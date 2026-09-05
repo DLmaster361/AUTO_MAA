@@ -9,6 +9,9 @@
 指纹去重 / 保留清理 → Web 或本地按时间倒序列出 → `restore_dir` 整目录回写 →
 专项执行恢复后语义（字段回填、重建视图、清残留）。
 
+> 上层「配置恢复」（列表 / 预览 / 一键恢复的服务与前端组件、会话遮罩）见
+> [config-restore.md](config-restore.md)；本文件只讲文件级快照/回写原语。
+
 参考实现：`app/task/ZzzOd/tools/backup_archive.py`（两条视角：一条龙原生配置
 = 文件集、MAS 用户槽 = 整目录）。
 

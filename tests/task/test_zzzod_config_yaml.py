@@ -48,6 +48,7 @@ from app.task.ZzzOd.tools.zzz_od_config import (
     RUN_STATUS_NOT_RUN,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCESS,
+    add_instance,
     backup_instance,
     clear_run_records,
     diff_run_records,
@@ -57,8 +58,13 @@ from app.task.ZzzOd.tools.zzz_od_config import (
     list_instances,
     read_app_group,
     read_game_account,
+    remove_instance,
+    rename_instance,
     restore_instance,
     restore_instance_view,
+    set_active_instance,
+    set_instance_active_in_od,
+    set_instance_force_login,
     snapshot_run_records,
     validate_root,
     write_app_group,
@@ -292,10 +298,10 @@ def test_native_account_fields_whitelist_and_write(tmp_path: Path) -> None:
     assert [f["key"] for f in fields] == [
         "game_region",
         "game_path",
-        "game_language",
         "account",
         "password",
         "bilibili_account_name",
+        "game_language",
     ]
     by_key = {f["key"]: f for f in fields}
     assert by_key["game_region"]["value"] == "cn"
@@ -384,8 +390,124 @@ def test_native_tasks_merge_and_enabled_only_writeback(tmp_path: Path) -> None:
     assert app_list == [{"app_id": "coffee", "enabled": True}]
 
 
+def test_native_instance_manage_add_rename_flag_remove(tmp_path: Path) -> None:
+    """直控实例管理：添加（避开占用槽）→ 参与开关 → 重命名 → 删除的闭环。"""
+    root = _make_root(tmp_path)  # 原生 instance_list 已含 idx=1
+
+    # 添加：最小空闲槽 = 2；默认参与全部实例、不活跃；目录与空 game_account 已建
+    idx = add_instance(root, "新实例", used_idxs={3})
+    assert idx == 2  # 1 被原生占用、3 被 used_idxs 占用 → 取 2
+    entries = {int(e["idx"]): e for e in list_instances(root)}
+    assert entries[2]["name"] == "新实例"
+    assert entries[2]["active_in_od"] is True
+    assert entries[2]["active"] is False
+    assert instance_dir(root, 2).is_dir()
+    assert (instance_dir(root, 2) / "game_account.yml").is_file()
+
+    # 参与「全部实例」开关
+    set_instance_active_in_od(root, 2, False)
+    assert {int(e["idx"]): e for e in list_instances(root)}[2]["active_in_od"] is False
+    set_instance_active_in_od(root, 2, True)
+
+    # 重命名（目录不受影响）
+    rename_instance(root, 2, "改名实例")
+    assert {int(e["idx"]): e for e in list_instances(root)}[2]["name"] == "改名实例"
+
+    # 删除：注册表条目与目录一起消失，原生实例不受影响
+    remove_instance(root, 2)
+    assert [int(e["idx"]) for e in list_instances(root)] == [1]
+    assert not instance_dir(root, 2).exists()
+
+
+def test_native_instance_manage_guards(tmp_path: Path) -> None:
+    """直控实例管理守卫：空名 / 不存在实例 / 最后实例 / MAS 绑定槽均拒绝。"""
+    root = _make_root(tmp_path)
+
+    try:
+        add_instance(root, "  ")
+        raise AssertionError("空名应被拒绝")
+    except ValueError:
+        pass
+
+    try:
+        rename_instance(root, 1, "")
+        raise AssertionError("空名应被拒绝")
+    except ValueError:
+        pass
+
+    try:
+        set_instance_active_in_od(root, 99, True)
+        raise AssertionError("不存在实例应被拒绝")
+    except ValueError:
+        pass
+
+    # 只有 1 个实例：不可删
+    try:
+        remove_instance(root, 1)
+        raise AssertionError("最后一个实例应被拒绝删除")
+    except ValueError:
+        pass
+
+    # 被 MAS 绑定槽保护：不可删
+    add_instance(root, "新实例")
+    try:
+        remove_instance(root, 2, protected_idxs={2})
+        raise AssertionError("MAS 绑定槽应被保护")
+    except ValueError:
+        pass
+
+    # 删除活跃实例后，剩余首个实例自动接管 active
+    assert find_active_instance(root)["idx"] == 1
+    set_instance_active_in_od(root, 2, False)
+    remove_instance(root, 2)
+    assert [int(e["idx"]) for e in list_instances(root)] == [1]
+
+
+def test_set_instance_force_login_writes_registry(tmp_path: Path) -> None:
+    """运行前切换账号开关：映射实例条目 force_login_before_run，不存在拒绝。"""
+    root = _make_root(tmp_path)  # 原生 fixture：force_login_before_run=False
+
+    set_instance_force_login(root, 1, True)
+    entry = next(e for e in list_instances(root) if int(e["idx"]) == 1)
+    assert entry["force_login_before_run"] is True
+
+    set_instance_force_login(root, 1, False)
+    entry = next(e for e in list_instances(root) if int(e["idx"]) == 1)
+    assert entry["force_login_before_run"] is False
+
+    try:
+        set_instance_force_login(root, 99, True)
+        raise AssertionError("不存在实例应被拒绝")
+    except ValueError:
+        pass
+
+
+def test_set_active_instance_moves_active_flag(tmp_path: Path) -> None:
+    """选择实例同步活跃：目标置 active，其余清 False；不存在实例拒绝。"""
+    root = _make_root(tmp_path)  # 原生 fixture：idx=1 active
+    add_instance(root, "第二个")
+    assert find_active_instance(root)["idx"] == 1
+
+    set_active_instance(root, 2)
+    assert find_active_instance(root)["idx"] == 2
+    by_idx = {int(e["idx"]): e for e in list_instances(root)}
+    assert by_idx[1]["active"] is False
+    assert by_idx[2]["active"] is True
+
+    # 切回实例 1
+    set_active_instance(root, 1)
+    assert find_active_instance(root)["idx"] == 1
+
+    try:
+        set_active_instance(root, 99)
+        raise AssertionError("不存在实例应被拒绝")
+    except ValueError:
+        pass
+
+
 def test_native_instance_run_read_write_whitelist(tmp_path: Path) -> None:
     """直控运行实例：读原生 instance_run、白名单校验写回、缺失回退默认。"""
+
     root = _make_root(tmp_path)  # 原生 fixture 的 instance_run = "仅运行当前"
 
     assert read_native_instance_run(root) == "仅运行当前"

@@ -110,10 +110,69 @@ class ZzzOdInstanceOut(BaseModel):
     name: str = Field(..., description="实例名称")
     active: bool = Field(..., description="是否为当前活跃实例")
     active_in_od: bool = Field(..., description="是否参与「全部实例」模式的一条龙")
+    force_login_before_run: bool = Field(
+        default=False,
+        description="运行前切换账号（一条龙原生能力：运行到该实例前强制登录其账号）",
+    )
 
 
 class ZzzOdInstancesOut(OutBase):
     data: List[ZzzOdInstanceOut] = Field(..., description="实例列表")
+
+
+class ZzzOdInstanceAddIn(BaseModel):
+    """直控：新建一条龙实例（分配最小空闲槽并注册）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    name: str = Field(..., description="实例名称（必填，创建后可在重命名中修改）")
+
+
+class ZzzOdInstanceRenameIn(BaseModel):
+    """直控：重命名实例（只改注册表 name，实例目录不变）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    name: str = Field(..., description="新实例名称")
+
+
+class ZzzOdInstanceFlagIn(BaseModel):
+    """直控：切换实例是否参与「全部实例」运行模式（active_in_od）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    activeInOd: bool = Field(..., description="是否参与「全部实例」模式")
+
+
+class ZzzOdInstanceActiveIn(BaseModel):
+    """直控：把所选实例设为当前活跃（「仅运行当前」运行的就是它）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+
+
+class ZzzOdInstanceForceLoginIn(BaseModel):
+    """直控：切换实例「运行前切换账号」（一条龙原生能力，MAS 不干涉）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    forceLogin: bool = Field(..., description="是否开启运行前切换账号")
+
+
+class ZzzOdInstanceRunModeIn(BaseModel):
+    """直控：设置运行实例（one_dragon.yml 全局 instance_run，与编辑所选实例无关）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceRun: str = Field(
+        ...,
+        description="运行实例取值（仅运行当前/全部实例；后端白名单校验，非法取值拒绝）",
+    )
+
+
+class ZzzOdInstanceDeleteIn(BaseModel):
+    """直控：删除实例（注册表条目 + 实例目录，受 MAS 绑定槽保护）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
 
 
 class ZzzOdCatalogItemOut(BaseModel):
@@ -276,6 +335,77 @@ class ZzzOdLauncherOut(OutBase):
     )
     integrated_available: bool = Field(
         ..., description="集成启动器（OneDragon-RuntimeLauncher.exe）是否已安装"
+    )
+
+
+class ZzzOdImportIn(BaseModel):
+    """基于一条龙已有实例快速生成当前用户配置（覆盖本用户账号与任务编排）。"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID（独立的用户级配置）")
+    instanceIdx: int = Field(
+        ..., description="来源母版实例下标（读取该实例的账号信息与已启用任务编排）"
+    )
+
+
+class ZzzOdImportOut(OutBase):
+    """导入结果：来源实例的账号字段与已启用任务编排已写入本用户，前端随后重新拉取用户数据。"""
+
+    instanceIdx: int = Field(..., description="来源实例下标（失败为 -1）")
+    instanceName: str = Field(..., description="来源实例名称")
+    importedAccountCount: int = Field(..., description="本次回填的账号字段数（仅非空值）")
+    importedTaskCount: int = Field(..., description="本次导入的已启用任务数")
+    slot: int = Field(
+        ..., description="用户绑定槽 idx（未绑定时 -1，此时无槽内容可备份）"
+    )
+
+
+class ZzzOdPreviewField(BaseModel):
+    """配置摘要中的账号字段"""
+
+    key: str = Field(..., description="game_account.yml 字段名")
+    value: str = Field(..., description="字段值（缺失合并默认值）")
+
+
+class ZzzOdPreviewTask(BaseModel):
+    """配置摘要中的任务编排条目"""
+
+    app_id: str = Field(..., description="应用ID")
+    app_name: str = Field(..., description="应用中文名")
+    enabled: bool = Field(..., description="是否启用")
+
+
+class ZzzOdPreviewInstance(BaseModel):
+    """一条龙备份摘要中的实例条目（可展开查看账号/任务明细）"""
+
+    idx: int = Field(..., description="实例下标")
+    name: str = Field(..., description="实例名称")
+    active: bool = Field(..., description="是否为当前活跃实例")
+    active_in_od: bool = Field(..., description="是否参与「全部实例」模式的一条龙")
+    account: List[ZzzOdPreviewField] = Field(
+        ..., description="该实例的账号字段（来自备份目录内 game_account.yml）"
+    )
+    tasks: List[ZzzOdPreviewTask] = Field(
+        ..., description="该实例的任务编排（来自备份目录内 _group.yml）"
+    )
+
+
+class ZzzOdBackupPreviewOut(OutBase):
+    """备份配置摘要（预览用，纯读不恢复）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: Literal["onedragon", "mas"] = Field(..., description="备份类别")
+    info: List[ZzzOdPreviewField] = Field(
+        ..., description="基本信息卡信息字段（mas 类备份；旧备份或 onedragon 为空）"
+    )
+    account: List[ZzzOdPreviewField] = Field(
+        ..., description="账号字段（mas 类备份；onedragon 为空）"
+    )
+    tasks: List[ZzzOdPreviewTask] = Field(
+        ..., description="任务编排（mas 类备份；onedragon 为空）"
+    )
+    instances: List[ZzzOdPreviewInstance] = Field(
+        ..., description="实例列表（onedragon 类备份，带可展开明细；mas 为空）"
     )
 
 

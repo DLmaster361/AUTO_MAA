@@ -48,6 +48,7 @@ from .AutoProxy import (
 from .tools import (
     archive_mas_backup,
     archive_onedragon_backup,
+    collect_mas_user_info,
     instance_dir,
     read_app_group,
     read_game_account,
@@ -129,6 +130,7 @@ class ScriptConfigTask(TaskExecuteBase):
                         self.script_info.script_id,
                         slot,
                         instance_dir(self.root_path, slot),
+                        meta=collect_mas_user_info(self.cur_user_config),
                     )
                 inject_user_fields(
                     self.root_path,
@@ -141,6 +143,9 @@ class ScriptConfigTask(TaskExecuteBase):
                     f"以 MAS 配置为基线)"
                 )
         else:
+            # 脚本级会话（直控「在一条龙内配置」入口）：先自愈崩溃残留的
+            # 合成视图，保证拉起的是完整原生实例列表，不做隔离与注入
+            restore_instance_view(self.root_path)
             logger.info(f"启动 zzz-od 原生设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
         # 无参数启动 = GUI 模式；启动器要求管理员权限，elevated 避免二次 UAC

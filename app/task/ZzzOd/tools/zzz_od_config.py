@@ -34,7 +34,7 @@ game_account.yml 与 one_dragon/_group.yml 写入当前活跃实例槽（备份 
 import shutil
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.utils.io import read_file, write_file
 
@@ -174,6 +174,165 @@ def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int
     while idx in used:
         idx += 1
     return idx
+
+
+def _registry_rmw(root: Path, mutator: Callable[[list[dict]], None]) -> None:
+    """锁内读-改-写 one_dragon.yml 的 instance_list（保留其他原生字段）。"""
+
+    with _YAML_LOCK:
+        data = read_file(_one_dragon_file(root)) or {}
+        entries = [
+            dict(item)
+            for item in (data.get("instance_list") or [])
+            if isinstance(item, dict)
+        ]
+        mutator(entries)
+        data["instance_list"] = entries
+        write_file(_one_dragon_file(root), data)
+
+
+def set_instance_active_in_od(root: Path, idx: int, value: bool) -> None:
+    """切换实例是否参与「全部实例」运行模式（active_in_od），立即落盘。
+
+    直控页实例管理用；只改目标实例的标志位，不触碰其他条目。
+    """
+
+    def mutate(entries: list[dict]) -> None:
+        entry = next(
+            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
+        )
+        if entry is None:
+            raise ValueError(f"实例 {int(idx):02d} 不存在")
+        entry["active_in_od"] = bool(value)
+
+    _registry_rmw(root, mutate)
+
+
+def set_instance_force_login(root: Path, idx: int, value: bool) -> None:
+    """切换实例「运行前切换账号」（force_login_before_run），立即落盘。
+
+    映射一条龙原生能力：开启后一条龙多账号运行到该实例前会强制登录其
+    账号完成切换。MAS 不干涉，开关状态完全由一条龙自己消费。
+    """
+
+    def mutate(entries: list[dict]) -> None:
+        entry = next(
+            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
+        )
+        if entry is None:
+            raise ValueError(f"实例 {int(idx):02d} 不存在")
+        entry["force_login_before_run"] = bool(value)
+
+    _registry_rmw(root, mutate)
+
+
+def set_active_instance(root: Path, idx: int) -> None:
+    """把指定实例设为当前活跃实例（active=True，其余清 False）。
+
+    zzz-od 的「仅运行当前」跑的就是活跃实例；直控页选择实例后调用，
+    让页面所选实例与实际运行实例保持一致。目标必须存在于原生注册表。
+    """
+
+    def mutate(entries: list[dict]) -> None:
+        target = next(
+            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
+        )
+        if target is None:
+            raise ValueError(f"实例 {int(idx):02d} 不存在")
+        for entry in entries:
+            entry["active"] = entry is target
+
+    _registry_rmw(root, mutate)
+
+
+def rename_instance(root: Path, idx: int, name: str) -> None:
+    """重命名实例（只改注册表 name，实例目录不变）。"""
+
+    name = str(name).strip()
+    if not name:
+        raise ValueError("实例名称不能为空")
+
+    def mutate(entries: list[dict]) -> None:
+        entry = next(
+            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
+        )
+        if entry is None:
+            raise ValueError(f"实例 {int(idx):02d} 不存在")
+        entry["name"] = name
+
+    _registry_rmw(root, mutate)
+
+
+def add_instance(
+    root: Path, name: str, used_idxs: set[int] | None = None
+) -> int:
+    """新建实例：分配最小空闲槽并注册到 one_dragon.yml。
+
+    - 槽分配避开原生注册表与 ``used_idxs``（跨脚本 MAS 已绑定槽）；
+    - 创建实例目录与空 game_account.yml（仅持久化非默认字段，缺失即默认）；
+    - 首个实例自动设为 active，新实例默认参与「全部实例」；
+    - 返回新实例 idx，供调用方选中并加载。
+
+    Raises:
+        ValueError: 名称为空，或目标槽已被其他实例占用。
+    """
+
+    name = str(name).strip()
+    if not name:
+        raise ValueError("实例名称不能为空")
+    idx = find_free_instance_idx(root, used_idxs)
+    slot_dir = instance_dir(root, idx)
+    slot_dir.mkdir(parents=True, exist_ok=True)
+    if not (slot_dir / "game_account.yml").is_file():
+        write_game_account(slot_dir, {})
+
+    def mutate(entries: list[dict]) -> None:
+        if any(int(e.get("idx", -1)) == idx for e in entries):
+            raise ValueError(f"实例 {idx:02d} 已被占用")
+        entries.append(
+            {
+                "idx": idx,
+                "name": name,
+                "active": not entries,  # 首个实例默认活跃
+                "active_in_od": True,
+            }
+        )
+
+    _registry_rmw(root, mutate)
+    return idx
+
+
+def remove_instance(
+    root: Path, idx: int, protected_idxs: set[int] | None = None
+) -> None:
+    """删除实例：先从注册表移除，再删除实例目录（幂等）。
+
+    保护：至少保留一个实例；``protected_idxs``（MAS 用户已绑定槽）不可删；
+    被删实例为当前活跃时把剩余首个实例设为 active。
+
+    Raises:
+        ValueError: 目标实例不存在 / 是最后一个实例 / 被 MAS 用户绑定。
+    """
+
+    protected = {int(i) for i in (protected_idxs or set())}
+
+    def mutate(entries: list[dict]) -> None:
+        if len(entries) <= 1:
+            raise ValueError("至少保留一个实例")
+        entry = next(
+            (e for e in entries if int(e.get("idx", -1)) == int(idx)), None
+        )
+        if entry is None:
+            raise ValueError(f"实例 {int(idx):02d} 不存在")
+        if idx in protected:
+            raise ValueError(f"实例 {int(idx):02d} 已被 MAS 用户绑定，不能删除")
+        remaining = [e for e in entries if int(e.get("idx", -1)) != idx]
+        if entry.get("active") and remaining:
+            remaining[0]["active"] = True
+        entries[:] = remaining
+
+    _registry_rmw(root, mutate)
+    shutil.rmtree(instance_dir(root, idx), ignore_errors=True)
 
 
 # ── 合成注册表视图（MAS 运行/配置会话期间临时替换 one_dragon.yml）──

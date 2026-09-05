@@ -253,7 +253,7 @@ interface ZzzOdRunForm {
 
 interface ZzzOdGameForm {
   CloseOnFinish: boolean
-  AccountSwitch: '一条龙内置' | 'MAS账号切换'
+  AccountSwitch: '不切换' | '一条龙内置' | 'MAS账号切换'
 }
 
 interface ZzzOdScriptConfigForm {

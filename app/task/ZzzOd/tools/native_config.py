@@ -59,6 +59,7 @@ def _native_default(key: str) -> str:
 
 # 直控账号字段元数据：key = game_account.yml 字段名；value 在读取时合并
 # DEFAULT_GAME_ACCOUNT 默认值（zzz-od 只持久化非默认字段，缺失即默认）。
+# 顺序即页面栅格顺序（两列一行）：账号/密码同行（多账号切换需要两者配套）。
 _NATIVE_ACCOUNT_FIELDS: list[dict[str, Any]] = [
     {
         "key": "game_region",
@@ -69,6 +70,9 @@ _NATIVE_ACCOUNT_FIELDS: list[dict[str, Any]] = [
         ],
     },
     {"key": "game_path", "title": "游戏路径", "options": []},
+    {"key": "account", "title": "账号", "options": []},
+    {"key": "password", "title": "密码", "options": []},
+    {"key": "bilibili_account_name", "title": "B服账号名", "options": []},
     {
         "key": "game_language",
         "title": "游戏语言",
@@ -77,9 +81,6 @@ _NATIVE_ACCOUNT_FIELDS: list[dict[str, Any]] = [
             for value, label in ZZZOD_GAME_LANGUAGE_LABELS.items()
         ],
     },
-    {"key": "account", "title": "账号", "options": []},
-    {"key": "password", "title": "密码", "options": []},
-    {"key": "bilibili_account_name", "title": "B服账号名", "options": []},
 ]
 
 # 直控任务页所需的应用目录并入字段（缺失时的兜底，与 list_app_catalog 一致）

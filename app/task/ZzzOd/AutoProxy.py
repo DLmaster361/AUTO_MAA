@@ -67,6 +67,7 @@ from .tools import (
     archive_onedragon_backup,
     backup_instance,
     clear_run_records,
+    collect_mas_user_info,
     diff_run_records,
     find_active_instance,
     find_free_instance_idx,
@@ -467,6 +468,7 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_info.script_id,
                     slot,
                     instance_dir(self.script_root_path, slot),
+                    meta=collect_mas_user_info(cfg),
                 )
                 self._injected_slots.append((slot, backup_dir))
             else:
@@ -677,7 +679,7 @@ class AutoProxyTask(TaskExecuteBase):
                 log = "".join(self.cur_user_log.content)
                 if self._is_multi_account():
                     await self._judge_multi(log)
-                elif self.mode == "直控":
+                elif self._is_bare_run():
                     records_after = _snapshot_all_run_records(self.script_root_path)
                     self._judge_final(records_before, records_after, log)
                 else:

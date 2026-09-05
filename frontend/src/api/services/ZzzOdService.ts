@@ -2,14 +2,25 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { OutBase } from '../models/OutBase';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
 import type { ZzzOdBackupListOut } from '../models/ZzzOdBackupListOut';
+import type { ZzzOdBackupPreviewOut } from '../models/ZzzOdBackupPreviewOut';
 import type { ZzzOdBackupRestoreIn } from '../models/ZzzOdBackupRestoreIn';
 import type { ZzzOdBackupRestoreOut } from '../models/ZzzOdBackupRestoreOut';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
 import type { ZzzOdDirectBackupIn } from '../models/ZzzOdDirectBackupIn';
 import type { ZzzOdDirectBackupOut } from '../models/ZzzOdDirectBackupOut';
+import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
+import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
+import type { ZzzOdInstanceActiveIn } from '../models/ZzzOdInstanceActiveIn';
+import type { ZzzOdInstanceAddIn } from '../models/ZzzOdInstanceAddIn';
+import type { ZzzOdInstanceDeleteIn } from '../models/ZzzOdInstanceDeleteIn';
+import type { ZzzOdInstanceFlagIn } from '../models/ZzzOdInstanceFlagIn';
+import type { ZzzOdInstanceForceLoginIn } from '../models/ZzzOdInstanceForceLoginIn';
+import type { ZzzOdInstanceRenameIn } from '../models/ZzzOdInstanceRenameIn';
+import type { ZzzOdInstanceRunModeIn } from '../models/ZzzOdInstanceRunModeIn';
 import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
@@ -34,6 +45,146 @@ export class ZzzOdService {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 新建一条龙实例（直控实例管理）
+     * 创建实例（最小空闲槽，避开原生与跨脚本 MAS 绑定槽），返回更新后的实例列表。
+     * @param requestBody
+     * @returns ZzzOdInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static addZzzodInstanceApiApiScriptsZzzodInstancesAddPost(
+        requestBody: ZzzOdInstanceAddIn,
+    ): CancelablePromise<ZzzOdInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重命名一条龙实例（直控实例管理）
+     * 只改注册表 name（实例目录不变），返回更新后的实例列表。
+     * @param requestBody
+     * @returns ZzzOdInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static renameZzzodInstanceApiApiScriptsZzzodInstancesRenamePost(
+        requestBody: ZzzOdInstanceRenameIn,
+    ): CancelablePromise<ZzzOdInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/rename',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 切换实例是否参与「全部实例」运行（直控实例管理）
+     * 切换 active_in_od 标志位，返回更新后的实例列表。
+     * @param requestBody
+     * @returns ZzzOdInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static setZzzodInstanceActiveInOdApiApiScriptsZzzodInstancesActiveInOdPost(
+        requestBody: ZzzOdInstanceFlagIn,
+    ): CancelablePromise<ZzzOdInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/active-in-od',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把所选实例设为当前活跃（直控「选择即运行」）
+     * 把目标实例设为注册表 active（其余清 False），返回更新后的实例列表。
+     * @param requestBody
+     * @returns ZzzOdInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static setZzzodActiveInstanceApiApiScriptsZzzodInstancesSetActivePost(
+        requestBody: ZzzOdInstanceActiveIn,
+    ): CancelablePromise<ZzzOdInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/set-active',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 切换实例「运行前切换账号」（直控实例管理；一条龙原生能力）
+     * 切换实例条目的 force_login_before_run（一条龙自己消费），返回更新后的实例列表。
+     * @param requestBody
+     * @returns ZzzOdInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static setZzzodInstanceForceLoginApiApiScriptsZzzodInstancesForceLoginPost(
+        requestBody: ZzzOdInstanceForceLoginIn,
+    ): CancelablePromise<ZzzOdInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/force-login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置运行实例（直控；one_dragon.yml 全局 instance_run）
+     * 白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setZzzodInstanceRunModeApiApiScriptsZzzodInstancesRunModePost(
+        requestBody: ZzzOdInstanceRunModeIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/run-mode',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）
+     * 删除注册表条目与实例目录，返回更新后的实例列表。
+     * @param requestBody
+     * @returns ZzzOdInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost(
+        requestBody: ZzzOdInstanceDeleteIn,
+    ): CancelablePromise<ZzzOdInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/instances/delete',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -237,6 +388,57 @@ export class ZzzOdService {
             url: '/api/scripts/zzzod/backup/restore',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）
+     * 把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
+     * 导入前状态可在「配置恢复」中找回。
+     * @param requestBody
+     * @returns ZzzOdImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importZzzodConfigApiApiScriptsZzzodImportPost(
+        requestBody: ZzzOdImportIn,
+    ): CancelablePromise<ZzzOdImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
+     * mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。
+     * @param scriptId
+     * @param userId
+     * @param time
+     * @param target
+     * @returns ZzzOdBackupPreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodBackupPreviewApiApiScriptsZzzodBackupPreviewGet(
+        scriptId: string,
+        userId: string,
+        time: string,
+        target: string = 'onedragon',
+    ): CancelablePromise<ZzzOdBackupPreviewOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/backup/preview',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'time': time,
+                'target': target,
+            },
             errors: {
                 422: `Validation Error`,
             },

@@ -46,11 +46,12 @@ from app.utils.config_archive import (
     list_times,
     restore_dir,
 )
+from app.utils.io import read_file, write_file
 
 from .zzz_od_config import (
     _one_dragon_file,
+    _view_sidecar_path,
     instance_dir,
-    list_instances,
     restore_instance_view,
 )
 
@@ -61,6 +62,44 @@ KEEP_COUNT = 10
 
 MAS_SLOT_PREFIX = "MAS-"
 """MAS 用户槽在注册表中的实例名前缀"""
+
+MAS_USER_INFO_FILE = "mas_user_info.yml"
+"""归档在 MAS 槽备份目录内的信息字段快照：基本信息卡中槽文件之外的字段。"""
+
+# 基本信息卡中随槽备份一并归档的 UserData 信息字段（槽目录只覆盖账号/任务编排）
+_MAS_INFO_FIELDS: tuple[str, ...] = (
+    "Name",
+    "Status",
+    "Mode",
+    "LauncherMode",
+    "RemainedDay",
+    "Notes",
+)
+
+
+def collect_mas_user_info(user_config) -> dict:
+    """从用户配置对象收集基本信息卡的信息字段（Name/Status/Mode/.../PushLogMode）。
+
+    槽备份只落盘账号与任务编排；用户名、启用状态、配置模式、启动器、剩余
+    天数、备注与节点详情推送存在 UserData 中，恢复/预览需要与槽快照同批
+    归档。字段缺失时跳过，保持与旧备份兼容。
+    """
+
+    info: dict = {}
+    for field in _MAS_INFO_FIELDS:
+        try:
+            value = user_config.get("Info", field)
+        except Exception:
+            value = None
+        if value is not None:
+            info[field] = value
+    try:
+        value = user_config.get("Notify", "PushLogMode")
+    except Exception:
+        value = None
+    if value is not None:
+        info["PushLogMode"] = value
+    return info
 
 
 def backup_root(script_id: str) -> Path:
@@ -81,14 +120,36 @@ def mas_backup_root(script_id: str, slot_idx: int) -> Path:
     return backup_root(script_id) / "mas" / f"{int(slot_idx):02d}"
 
 
+def native_registry_file(root: Path) -> Path:
+    """一条龙原生注册表源文件。
+
+    合成视图在盘时（会话/运行残留或闪退现场）``one_dragon.yml`` 是 MAS 的
+    视图，sidecar（``one_dragon.yml.mas-view.bak``）才是原生原件——备份一条
+    龙原生配置必须拍原件，杜绝把合成视图/MAS 槽混进一条龙备份；无 sidecar
+    时现场即原生。
+    """
+
+    sidecar = _view_sidecar_path(root)
+    if sidecar.exists():
+        return sidecar
+    return _one_dragon_file(root)
+
+
 def _onedragon_files(root: Path) -> dict[str, Path]:
-    """当前一条龙原生配置的文件集：one_dragon.yml + 注册表内原生实例目录。"""
+    """当前一条龙原生配置的文件集：one_dragon.yml（原生注册表）+ 注册表内原生实例目录。
+
+    注册表源走 :func:`native_registry_file`（视图在盘时读 sidecar 原件）；
+    实例目录按「一条龙原生注册表」逐 idx 收集，MAS- 前缀槽排除——与 final
+    架构一致：脚本级备份只含一条龙自己的内容，绝不带上 MAS 注入的槽。
+    """
 
     files: dict[str, Path] = {}
-    od_file = _one_dragon_file(root)
+    od_file = native_registry_file(root)
     if od_file.is_file():
+        # one_dragon.yml 条目始终指向原生注册表内容（sidecar 存在时取 sidecar）
         files["one_dragon.yml"] = od_file
-    for item in list_instances(root):
+    for raw in (read_file(od_file) or {}).get("instance_list") or []:
+        item = raw if isinstance(raw, dict) else {}
         if str(item.get("name") or "").startswith(MAS_SLOT_PREFIX):
             continue  # MAS 用户槽不属于一条龙原生配置
         idx = int(item.get("idx", -1))
@@ -183,18 +244,26 @@ def restore_onedragon_backup(script_id: str, ts: str, root: Path) -> None:
 
 
 def archive_mas_backup(
-    script_id: str, slot_idx: int, slot_dir: Path, force: bool = False
+    script_id: str,
+    slot_idx: int,
+    slot_dir: Path,
+    force: bool = False,
+    meta: dict | None = None,
 ) -> Path | None:
     """归档 MAS 用户槽目录整份（覆盖式加时间戳）。
 
     内容与最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前
-    存底）；跳过返回 ``None``，否则返回归档目录。
+    存底）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
+    信息字段快照（见 :data:`MAS_USER_INFO_FILE`），写入后 ``list/preview/
+    restore`` 可在不触碰当前配置的情况下还原该时点的基本信息卡内容。
     """
 
     dest = archive_dir(slot_dir, mas_backup_root(script_id, slot_idx), force=force)
     if dest is None:
         logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
         return None
+    if meta:
+        write_file(dest / MAS_USER_INFO_FILE, meta)
 
     logger.info(f"槽 {slot_idx:02d} MAS 配置已归档: {dest.name}")
     return dest
@@ -212,11 +281,21 @@ def get_mas_backup_dir(script_id: str, slot_idx: int, ts: str) -> Path | None:
     return get_backup_dir(mas_backup_root(script_id, slot_idx), ts)
 
 
-def restore_mas_backup(script_id: str, slot_idx: int, ts: str, slot_dir: Path) -> None:
-    """把归档恢复到 MAS 用户槽目录（恢复前自动归档当前，误恢复可找回）。"""
+def restore_mas_backup(
+    script_id: str,
+    slot_idx: int,
+    ts: str,
+    slot_dir: Path,
+    meta: dict | None = None,
+) -> None:
+    """把归档恢复到 MAS 用户槽目录（恢复前自动归档当前，误恢复可找回）。
+
+    ``meta`` 为恢复前当前信息字段快照，随归档一并存底（恢复动作自身会覆盖
+    UserData 的信息字段，需把覆盖前的值也留下）。
+    """
 
     slot_dir = Path(slot_dir)
     if slot_dir.is_dir():
         # 恢复前强制归档当前内容——「恢复前的配置」在列表里有明确的时间戳条目
-        archive_mas_backup(script_id, slot_idx, slot_dir, force=True)
+        archive_mas_backup(script_id, slot_idx, slot_dir, force=True, meta=meta)
     restore_dir(mas_backup_root(script_id, slot_idx), ts, slot_dir)

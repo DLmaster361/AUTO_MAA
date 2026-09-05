@@ -22,5 +22,9 @@ export type ZzzOdInstanceOut = {
      * 是否参与「全部实例」模式的一条龙
      */
     active_in_od: boolean;
+    /**
+     * 运行前切换账号（一条龙原生能力：运行到该实例前强制登录其账号）
+     */
+    force_login_before_run?: boolean;
 };
 

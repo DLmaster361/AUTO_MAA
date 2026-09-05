@@ -1401,6 +1401,197 @@ async def get_zzzod_instances_api(scriptId: str) -> ZzzOdInstancesOut:
         )
 
 
+def _zzzod_instances_response(instances: list[dict]) -> ZzzOdInstancesOut:
+    """把服务层实例列表包装为统一响应（供直控实例管理各操作复用）。"""
+
+    data = [ZzzOdInstanceOut(**item) for item in instances]
+    return ZzzOdInstancesOut(
+        code=200,
+        status="success",
+        message=f"共 {len(data)} 个实例",
+        data=data,
+    )
+
+
+@router.post(
+    "/zzzod/instances/add",
+    tags=["ZZZ-OD"],
+    summary="新建一条龙实例（直控实例管理）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def add_zzzod_instance_api(
+    body: ZzzOdInstanceAddIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """创建实例（最小空闲槽，避开原生与跨脚本 MAS 绑定槽），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.add_zzzod_instance(body.scriptId, body.name)
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/rename",
+    tags=["ZZZ-OD"],
+    summary="重命名一条龙实例（直控实例管理）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def rename_zzzod_instance_api(
+    body: ZzzOdInstanceRenameIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """只改注册表 name（实例目录不变），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.rename_zzzod_instance(
+                body.scriptId, body.instanceIdx, body.name
+            )
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/active-in-od",
+    tags=["ZZZ-OD"],
+    summary="切换实例是否参与「全部实例」运行（直控实例管理）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def set_zzzod_instance_active_in_od_api(
+    body: ZzzOdInstanceFlagIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """切换 active_in_od 标志位，返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.set_zzzod_instance_active_in_od(
+                body.scriptId, body.instanceIdx, body.activeInOd
+            )
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/set-active",
+    tags=["ZZZ-OD"],
+    summary="把所选实例设为当前活跃（直控「选择即运行」）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def set_zzzod_active_instance_api(
+    body: ZzzOdInstanceActiveIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """把目标实例设为注册表 active（其余清 False），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.set_zzzod_instance_active(body.scriptId, body.instanceIdx)
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/force-login",
+    tags=["ZZZ-OD"],
+    summary="切换实例「运行前切换账号」（直控实例管理；一条龙原生能力）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def set_zzzod_instance_force_login_api(
+    body: ZzzOdInstanceForceLoginIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """切换实例条目的 force_login_before_run（一条龙自己消费），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.set_zzzod_instance_force_login(
+                body.scriptId, body.instanceIdx, body.forceLogin
+            )
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/run-mode",
+    tags=["ZZZ-OD"],
+    summary="设置运行实例（直控；one_dragon.yml 全局 instance_run）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def set_zzzod_instance_run_mode_api(
+    body: ZzzOdInstanceRunModeIn = Body(...),
+) -> OutBase:
+    """白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。"""
+
+    try:
+        Config.set_zzzod_instance_run_mode(body.scriptId, body.instanceRun)
+        return OutBase()
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/zzzod/instances/delete",
+    tags=["ZZZ-OD"],
+    summary="删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def delete_zzzod_instance_api(
+    body: ZzzOdInstanceDeleteIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """删除注册表条目与实例目录，返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.delete_zzzod_instance(body.scriptId, body.instanceIdx)
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
 @router.get(
     "/zzzod/catalog",
     tags=["ZZZ-OD"],
@@ -1572,7 +1763,9 @@ async def save_zzzod_native_config_api(
             script.scriptId,
             script.instanceIdx,
             script.account,
-            script.tasks,
+            [t.model_dump() for t in script.tasks]
+            if script.tasks is not None
+            else None,
             script.instanceRun,
         )
         data = await Config.get_zzzod_native_config(
@@ -1718,6 +1911,77 @@ async def restore_zzzod_backup_api(
             message=f"{type(e).__name__}: {str(e)}",
             slot=-1,
             target=script.target,
+        )
+
+
+@router.post(
+    "/zzzod/import",
+    tags=["ZZZ-OD"],
+    summary="基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）",
+    response_model=ZzzOdImportOut,
+    status_code=200,
+)
+async def import_zzzod_config_api(
+    script: ZzzOdImportIn = Body(...),
+) -> ZzzOdImportOut:
+    """把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
+    导入前状态可在「配置恢复」中找回。"""
+
+    try:
+        data = await Config.import_zzzod_config(
+            script.scriptId, script.userId, script.instanceIdx
+        )
+        return ZzzOdImportOut(
+            code=200,
+            status="success",
+            message="已基于所选实例生成用户配置",
+            **data,
+        )
+    except Exception as e:
+        return ZzzOdImportOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            instanceIdx=-1,
+            instanceName="",
+            importedAccountCount=0,
+            importedTaskCount=0,
+            slot=-1,
+        )
+
+
+@router.get(
+    "/zzzod/backup/preview",
+    tags=["ZZZ-OD"],
+    summary="读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）",
+    response_model=ZzzOdBackupPreviewOut,
+    status_code=200,
+)
+async def get_zzzod_backup_preview_api(
+    scriptId: str, userId: str, time: str, target: str = "onedragon"
+) -> ZzzOdBackupPreviewOut:
+    """mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。"""
+
+    try:
+        data = Config.get_zzzod_backup_preview(
+            scriptId, userId, time, target=target
+        )
+        return ZzzOdBackupPreviewOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        return ZzzOdBackupPreviewOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,
+            account=[],
+            tasks=[],
+            instances=[],
         )
 
 

@@ -57,9 +57,10 @@ from app.log_box.logtype import LogType
 ZZZOD_PUSH_RULES: list[tuple[str, str]] = [
     # 实例段边界（idx 由后处理映射为账号名）
     (r"开始加载实例配置 (\d+)", r'"SEG:" + $((?:开始加载实例配置 )(\d+))'),
-    # 体力刷本成功（嵌入刷本后的最终电量；体力刷本为 zzz-od 电量应用的固定名）
+    # 体力刷本成功（返回状态自带刷本后的最终电量，resolve 据此在报告末尾
+    # 追加「🔋 剩余体力」独立行；体力刷本为 zzz-od 电量应用的固定名）
     (r"指令\[ 体力刷本 \] 执行成功 返回状态 剩余电量 (\d+)",
-     r'"OK:体力刷本|剩余电量🔋" + $((?:返回状态 剩余电量 )(\d+))'),
+     r'"OK:体力刷本|🔋" + $((?:返回状态 剩余电量 )(\d+))'),
     # 应用级成功（辅助指令由后处理按应用目录名过滤）
     (r"指令\[ (.+?) \] 执行成功", r'"OK:" + $((?:指令\[ )(.+?)(?= \] 执行成功))'),
     # 应用级失败（带返回状态原因；匹配正则保证两个提取片段都命中，
@@ -98,6 +99,7 @@ def make_zzzod_resolve(
     ) -> list[tuple[str, str, float]]:
         order: list[tuple[str | None, str]] = []
         states: dict[tuple[str | None, str], tuple[str, str | None, float]] = {}
+        battery: dict[str | None, tuple[int, float]] = {}
         seg_names: set[str] = set()
         current: str | None = None
 
@@ -120,6 +122,15 @@ def make_zzzod_resolve(
             if kind in ("OK", "FAIL") and node not in app_names:
                 # 辅助指令（返回大世界/进入游戏/切换账号等）不是应用节点
                 continue
+            if kind == "OK" and extra is not None and extra.startswith("🔋"):
+                # 体力刷本的最终电量：节点行照常输出（不带后缀），电量记录
+                # 下来在报告末尾追加独立行「🔋 剩余体力: N」（多账号按账号
+                # 归属，同账号取最后一次刷本后的值）
+                try:
+                    battery[current] = (int(extra[len("🔋"):]), ts)
+                except ValueError:
+                    pass
+                extra = None
             key = (current, node)
             if key in states:
                 order.remove(key)  # 移至末尾：保留最后一次出现顺序
@@ -134,12 +145,16 @@ def make_zzzod_resolve(
             status, extra, ts = states[(account, node)]
             if extra is None:
                 line = f"{status}: {node}"
-            elif status == "✅ 成功":
-                # OK 的 extra 为原样后缀（体力刷本的最终电量）
-                line = f"{status}: {node} {extra}"
             else:
-                # FAIL 的 extra 为返回状态原因
+                # extra 为返回状态原因（仅 FAIL）
                 line = f"{status}: {node}（{extra}）"
+            if multi and account:
+                line = f"【{account}】{line}"
+            output.append((LogType.NORMAL, line, ts))
+        # 剩余体力独立成行（对齐 ok-nte 的「⚡ 剩余体力」），追加在各账号
+        # 节点之后；汇总渲染时普通行位于状态聚合行之后，恰好收尾用户块
+        for account, (value, ts) in battery.items():
+            line = f"🔋 剩余体力: {value}"
             if multi and account:
                 line = f"【{account}】{line}"
             output.append((LogType.NORMAL, line, ts))

@@ -8,6 +8,7 @@ import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/e
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
+import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'
 
 const { t } = useI18n()
 
@@ -21,6 +22,7 @@ const exportingDataBackup = ref(false)
 const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
 const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
+const { exporting: exportingZzzOdLogs, exportZzzOdIssueReport } = useZzzOdIssueReport(logger)
 
 // Runtime 灰度开关：持久化设置 + 当前生效值与来源（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
@@ -216,6 +218,16 @@ const exportDataBackup = async () => {
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportOkNte') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingZzzOdLogs"
+              @click="exportZzzOdIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportZzzOd') }}
             </a-button>
           </a-space>
         </a-col>

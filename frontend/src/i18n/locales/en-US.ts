@@ -3155,6 +3155,7 @@ export default {
       issueSection: 'Specialized issue bundles',
       exportOkww: 'Export an OK-WW issue bundle',
       exportOkNte: 'Export an OK-NTE issue bundle',
+      exportZzzOd: 'Export a ZZZ-OD issue bundle',
       devSection: 'Developer options',
       openDevTools: 'Open DevTools',
       runtimeLaunchMode: 'Backend launch mode',

@@ -3089,6 +3089,7 @@ export default {
       issueSection: '专项问题包导出',
       exportOkww: '导出 OK-WW 问题包',
       exportOkNte: '导出 OK-NTE 问题包',
+      exportZzzOd: '导出 ZZZ-OD 问题包',
       devSection: '开发者选项',
       openDevTools: '打开开发者工具',
       runtimeLaunchMode: '后端运行方式',

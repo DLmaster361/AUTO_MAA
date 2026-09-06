@@ -28,6 +28,7 @@ MAS 侧用数据驱动的元数据表复刻常用任务；加任务 = 在 :data:
 
 - ``select`` — 下拉（静态 ``options`` 或 ``source`` 指向动态选项源）
 - ``bool`` — 开关；``number`` — 数字输入
+- ``team`` — 预备编队下拉（展示同 select，保存为 int 编队下标，-1=游戏内配队）
 - ``plan_list`` — 计划列表（任务卡片 ⚙ 打开大设置弹窗编辑），``columns``
   声明行内字段（级联列 type=cascade 按声明顺序钻取训练副本树），
   ``new_item`` 为新增行的默认值（与上游 dataclass 默认一致）
@@ -36,7 +37,12 @@ MAS 侧用数据驱动的元数据表复刻常用任务；加任务 = 在 :data:
 ``auto_battle`` 配队方案模板 / ``lost_void_challenge``、``hollow_zero_challenge``
 挑战配置模板 / ``compendium_lost_void``、``hollow_zero_missions`` 副本图层 /
 ``world_patrol_route_list`` 锄大地路线名单 / ``agent_names`` 代理人名 /
-``coffee_day_{1..7}`` 当日咖啡。静态 ``options`` 会前置合并（如「随机」「全部」）。
+``coffee_day_{1..7}`` 当日咖啡 / ``predefined_teams`` 预备编队（读目标槽
+team.yml，随槽而异）。静态 ``options`` 会前置合并（如「随机」「全部」）。
+
+``show_when`` 条件列支持单条件 dict 或条件列表（全部满足才显示），条件为
+``{field, value, not?}``：``not=True`` 表示「不等于该值」时显示（如合成电池
+分类下隐藏配队列）。
 
 任务卡片与 MAS 字段一样是**持久写绑定槽**（直控写指定原生实例）：注入
 （game_account + _group）不碰 per-app yml，恢复备份时随槽内容一起回到该时点。
@@ -218,12 +224,31 @@ _WORLD_PATROL_ROUTE_RETRY_OPTIONS = [
 # show_when 控制条件列（数据驱动，前端通用渲染）。
 
 # ChargePlanItem 的计划内容列（体力刷本与恶名狩猎共用子集）
+# 游戏内配队（predefined_team_idx）与配队方案（auto_battle_config）按上游
+# GUI 互斥：配队方案仅在「游戏内配队」(predefined_team_idx=-1) 时显示；
+# 两者在合成电池分类下都无意义，隐藏
 _PLAN_COLUMNS = [
     {"field": "category_name", "title": "副本", "type": "cascade"},
     {"field": "mission_type_name", "title": "类型", "type": "cascade"},
     {"field": "mission_name", "title": "关卡", "type": "cascade"},
     {"field": "level", "title": "等级", "type": "select", "options": _LEVEL_OPTIONS},
-    {"field": "auto_battle_config", "title": "配队方案", "type": "select", "source": "auto_battle"},
+    {
+        "field": "auto_battle_config",
+        "title": "配队方案",
+        "type": "select",
+        "source": "auto_battle",
+        "show_when": [
+            {"field": "category_name", "value": "合成电池", "not": True},
+            {"field": "predefined_team_idx", "value": -1},
+        ],
+    },
+    {
+        "field": "predefined_team_idx",
+        "title": "游戏内配队",
+        "type": "team",
+        "source": "predefined_teams",
+        "show_when": {"field": "category_name", "value": "合成电池", "not": True},
+    },
     {"field": "plan_times", "title": "计划次数", "type": "number"},
 ]
 
@@ -333,7 +358,7 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
         {"field": "challenge_way", "title": "喝后挑战", "type": "select", "options": _COFFEE_CHALLENGE_WAY_OPTIONS},
         {"field": "card_num", "title": "体力计划外的数量", "type": "select", "options": _COFFEE_CARD_NUM_OPTIONS, "default": "1"},
         {"field": "auto_battle", "title": "配队方案", "type": "select", "source": "auto_battle", "default": "全配队通用"},
-        {"field": "predefined_team_idx", "title": "预备编队", "type": "number"},
+        {"field": "predefined_team_idx", "title": "预备编队", "type": "team", "source": "predefined_teams"},
         {"field": "run_charge_plan_afterwards", "title": "结束后运行体力计划", "type": "bool", "default": False},
         *[
             {"field": f"day_coffee_{day}", "title": f"{name}咖啡", "type": "select", "source": f"coffee_day_{day}", "default": "汀曼特调"}
@@ -341,7 +366,7 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
         ],
     ],
     "intel_board": [
-        {"field": "predefined_team_idx", "title": "预备编队", "type": "number"},
+        {"field": "predefined_team_idx", "title": "预备编队", "type": "team", "source": "predefined_teams"},
         {"field": "auto_battle_config", "title": "配队方案", "type": "select", "source": "auto_battle", "default": "全配队通用"},
         {"field": "exp_grind_mode", "title": "刷满经验模式", "type": "bool", "default": False},
     ],
@@ -382,7 +407,7 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
     ],
     "life_on_line": [
         {"field": "daily_plan_times", "title": "每日计划次数", "type": "number", "default": 20},
-        {"field": "predefined_team_idx", "title": "预备编队", "type": "number"},
+        {"field": "predefined_team_idx", "title": "预备编队", "type": "team", "source": "predefined_teams"},
     ],
     "drive_disc_dismantle": [
         {"field": "dismantle_level", "title": "拆解等级", "type": "select", "options": _DISMANTLE_LEVEL_OPTIONS},
@@ -418,15 +443,24 @@ def get_task_app_jump(app_id: str) -> bool:
     return app_id in TASK_APP_JUMPS
 
 
-def resolve_field_options(root: Path, meta: dict[str, Any]) -> list[dict]:
+def resolve_field_options(
+    root: Path, meta: dict[str, Any], config_dir: Path | None = None
+) -> list[dict]:
     """解析字段的选项列表：静态 ``options`` 在前，``source`` 动态选项在后。
 
     静态选项与动态源可组合（如代理人列表前置「随机」、路线名单前置「全部」）。
+    ``predefined_teams`` 源随槽而异（读目标槽 team.yml），须经 ``config_dir``
+    传入目标实例目录，缺省时无动态选项。
     """
 
     source = meta.get("source")
     if not source:
         return [dict(o) for o in meta.get("options") or []]
+
+    if source == "predefined_teams":
+        from .zzz_od_config import predefined_team_options
+
+        return [dict(o) for o in predefined_team_options(config_dir)] if config_dir is not None else []
 
     from .compendium import (
         agent_names,

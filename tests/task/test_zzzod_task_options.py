@@ -298,3 +298,68 @@ def test_merge_plan_list_empty(tmp_path: Path) -> None:
         m for m in get_task_app_fields("notorious_hunt") or [] if m["type"] == "plan_list"
     )
     assert merge_plan_list(meta["columns"], meta["new_item"], [], [None, "x"]) == []
+
+
+def test_predefined_team_options_and_plan_columns(tmp_path: Path) -> None:
+    """游戏内配队列：选项「游戏内配队」(-1) 前置 + 全部编队；计划行保留配队下标。"""
+
+    import tempfile
+
+    from app.task.ZzzOd.tools import predefined_team_options
+
+    with tempfile.TemporaryDirectory() as td:
+        config_dir = Path(td)
+        write_team_list(config_dir, [{"name": "一队", "auto_battle": "全配队通用"}])
+        options = predefined_team_options(config_dir)
+        assert options[0] == {"label": "游戏内配队", "value": -1}
+        assert options[1] == {"label": "一队", "value": 0}
+        assert len(options) == 21  # 游戏内配队 + 固定 20 编队
+
+    # 体力计划列含游戏内配队（team 类型，动态源 predefined_teams）
+    meta = next(
+        m for m in get_task_app_fields("charge_plan") or [] if m["type"] == "plan_list"
+    )
+    team_col = next(c for c in meta["columns"] if c["field"] == "predefined_team_idx")
+    assert team_col["type"] == "team" and team_col["source"] == "predefined_teams"
+
+    # 配队方案与游戏内配队按上游 GUI 互斥（合成电池分类下都隐藏）
+    battle_col = next(
+        c for c in meta["columns"] if c["field"] == "auto_battle_config"
+    )
+    assert {"field": "predefined_team_idx", "value": -1} in battle_col["show_when"]
+    assert team_col["show_when"] == {
+        "field": "category_name",
+        "value": "合成电池",
+        "not": True,
+    }
+
+    # 计划行合并：下拉提交的字符串下标转 int（-1=游戏内配队）
+    merged = merge_plan_list(
+        meta["columns"],
+        meta["new_item"],
+        [],
+        [{"category_name": "实战模拟室", "predefined_team_idx": "2"}],
+    )
+    assert merged[0]["predefined_team_idx"] == 2
+    assert isinstance(merged[0]["predefined_team_idx"], int)
+
+
+def test_resolve_field_options_predefined_teams(tmp_path: Path) -> None:
+    """predefined_teams 源按目标槽解析 team.yml；缺 config_dir 时无动态选项。
+
+    选项 value 为原始 int 下标（端点层统一字符串化后再下发前端）。
+    """
+
+    from app.task.ZzzOd.tools import resolve_field_options
+
+    meta = {"field": "predefined_team_idx", "type": "team", "source": "predefined_teams"}
+    assert resolve_field_options(tmp_path, meta) == []
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        config_dir = Path(td)
+        write_team_list(config_dir, [{"name": "一队", "auto_battle": "全配队通用"}])
+        options = resolve_field_options(tmp_path, meta, config_dir)
+        assert options[0] == {"label": "游戏内配队", "value": -1}
+        assert options[1] == {"label": "一队", "value": 0}

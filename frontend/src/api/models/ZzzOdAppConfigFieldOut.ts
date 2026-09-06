@@ -19,7 +19,7 @@ export type ZzzOdAppConfigFieldOut = {
      */
     title: string;
     /**
-     * 字段类型：select/bool/number/plan_list
+     * 字段类型：select/bool/number/team/plan_list
      */
     type?: string;
     /**
@@ -31,7 +31,7 @@ export type ZzzOdAppConfigFieldOut = {
      */
     options?: Array<ComboBoxItem>;
     /**
-     * plan_list 行内字段元数据（field/title/type/options/showWhen）
+     * plan_list 行内字段元数据（field/title/type/options/showWhen；showWhen 为条件 dict 或条件列表，条件含 not 取反）
      */
     columns?: null;
     /**

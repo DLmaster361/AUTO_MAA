@@ -540,6 +540,20 @@ def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
     return normalized
 
 
+def predefined_team_options(config_dir: Path) -> list[dict]:
+    """预备编队选项（对齐上游体力计划 GUI 的下拉构造）。
+
+    「游戏内配队」(-1) 前置 + 全部 20 个编队（expand_team_list 补默认名）；
+    value 为编队下标（-1=不指定，沿用配队方案），供 predefined_team_idx
+    类字段/列作为动态选项。
+    """
+
+    return [{"label": "游戏内配队", "value": -1}] + [
+        {"label": str(item["name"]), "value": int(item["idx"])}
+        for item in expand_team_list(config_dir)
+    ]
+
+
 # ── 运行记录（结果权威来源）──
 
 

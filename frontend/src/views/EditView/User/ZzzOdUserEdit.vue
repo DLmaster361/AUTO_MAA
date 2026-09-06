@@ -1729,12 +1729,12 @@ const loadCatalog = async () => {
 }
 
 // ══ 任务卡片 ⚙：可配置任务弹出选项编辑（数据驱动元数据表）══
-// 字段类型决定渲染：select 下拉 / bool 开关 / number 数字；
+// 字段类型决定渲染：select/team 下拉 / bool 开关 / number 数字；
 // plan_list（体力刷本/恶名狩猎）不走弹层，⚙ 打开计划编辑弹窗
 interface TaskConfigField {
   field: string
   title: string
-  type: 'select' | 'bool' | 'number' | 'plan_list'
+  type: 'select' | 'bool' | 'number' | 'team' | 'plan_list'
   value: any
   options: { label: string; value: string }[]
   columns?: any[]

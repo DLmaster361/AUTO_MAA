@@ -73,9 +73,11 @@ import draggable from 'vuedraggable'
 interface PlanColumnMeta {
   field: string
   title: string
-  type: 'cascade' | 'select' | 'number'
+  type: 'cascade' | 'select' | 'number' | 'team'
   options?: { label: string; value: string }[]
-  showWhen?: { field: string; value: string }
+  showWhen?:
+    | { field: string; value: string; not?: boolean }
+    | { field: string; value: string; not?: boolean }[]
 }
 
 interface PlanMission {
@@ -137,6 +139,12 @@ const missionTypeOf = (plan: PlanItem) =>
 
 const isSelectColumn = (col: PlanColumnMeta) => col.type !== 'number'
 
+/** 下拉列取值统一字符串化（team 列存量行值为 int，选项 value 为字符串下标） */
+const selectValue = (plan: PlanItem, col: PlanColumnMeta) => {
+  const v = plan[col.field]
+  return v == null ? undefined : String(v)
+}
+
 const columnOptions = (col: PlanColumnMeta, plan: PlanItem) => {
   if (col.type === 'cascade') {
     if (col.field === 'mission_type_name') {
@@ -167,8 +175,16 @@ const visibleColumns = (plan: PlanItem) =>
         return false
       }
     }
-    if (col.showWhen && String(plan[col.showWhen.field] ?? '') !== col.showWhen.value) {
-      return false
+    // show_when 条件列：单条件或条件列表（全部满足才显示）；not=True 取反
+    if (col.showWhen) {
+      const conds = Array.isArray(col.showWhen) ? col.showWhen : [col.showWhen]
+      const allMatch = conds.every(c => {
+        const equals = String(plan[c.field] ?? '') === c.value
+        return c.not === true ? !equals : equals
+      })
+      if (!allMatch) {
+        return false
+      }
     }
     return true
   })

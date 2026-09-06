@@ -1380,6 +1380,7 @@ class AppConfig(GlobalConfig):
 
         from app.task.ZzzOd.tools import (
             get_task_app_fields,
+            instance_dir,
             read_app_config,
             resolve_field_options,
         )
@@ -1395,6 +1396,25 @@ class AppConfig(GlobalConfig):
             _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
             slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         current = read_app_config(root, slot, app_id) if slot > 0 else {}
+        # 预备编队等选项随槽而异（team.yml 在实例目录），无槽时无动态选项
+        config_dir = instance_dir(root, slot) if slot > 0 else None
+
+        def _show_when_out(sw: dict | list | None) -> dict:
+            """show_when 透传：单条件 dict 或条件列表（{field, value, not?}）。"""
+
+            if not sw:
+                return {}
+            conds = sw if isinstance(sw, list) else [sw]
+            return {
+                "showWhen": [
+                    {
+                        "field": str(c["field"]),
+                        "value": str(c["value"]),
+                        **({"not": True} if c.get("not") else {}),
+                    }
+                    for c in conds
+                ]
+            }
 
         fields = []
         for meta in fields_meta:
@@ -1417,18 +1437,15 @@ class AppConfig(GlobalConfig):
                         "type": str(c.get("type") or "select"),
                         "options": [
                             {"label": str(o["label"]), "value": str(o["value"])}
-                            for o in resolve_field_options(root, c)
+                            for o in resolve_field_options(root, c, config_dir)
                         ],
-                        **(
-                            {"showWhen": {"field": str(c["show_when"]["field"]), "value": str(c["show_when"]["value"])}}
-                            if c.get("show_when") else {}
-                        ),
+                        **_show_when_out(c.get("show_when")),
                     }
                     for c in meta.get("columns") or []
                 ]
                 field_out["newItem"] = dict(meta.get("new_item") or {})
             else:
-                options = resolve_field_options(root, meta)
+                options = resolve_field_options(root, meta, config_dir)
                 default = meta.get("default")
                 if default is None and options:
                     default = str(options[0]["value"])
@@ -1441,6 +1458,7 @@ class AppConfig(GlobalConfig):
                     except (TypeError, ValueError):
                         value = int(default or 0)
                 else:
+                    # select / team：展示为字符串（team 与选项 value 同型，保存转 int）
                     value = None if value is None else str(value)
                 field_out["value"] = value
                 field_out["options"] = [
@@ -1514,6 +1532,12 @@ class AppConfig(GlobalConfig):
                 patch[str(key)] = bool(raw)
             elif ftype == "number":
                 patch[str(key)] = int(raw)
+            elif ftype == "team":
+                # 预备编队下标：上游按 int 消费（-1=游戏内配队），下拉提交字符串
+                try:
+                    patch[str(key)] = int(raw)
+                except (TypeError, ValueError):
+                    patch[str(key)] = -1
             else:
                 patch[str(key)] = str(raw)
 

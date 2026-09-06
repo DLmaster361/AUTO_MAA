@@ -203,11 +203,14 @@ class ZzzOdAppConfigFieldOut(BaseModel):
 
     field: str = Field(..., description="配置字段名（app yml 中的键）")
     title: str = Field(..., description="展示标题")
-    type: str = Field(default="select", description="字段类型：select/bool/number/plan_list")
+    type: str = Field(
+        default="select", description="字段类型：select/bool/number/team/plan_list"
+    )
     value: Optional[Any] = Field(default=None, description="当前值（plan_list 为计划列表）")
     options: List[ComboBoxItem] = Field(default_factory=list, description="可选项列表")
     columns: Optional[List[Dict[str, Any]]] = Field(
-        default=None, description="plan_list 行内字段元数据（field/title/type/options/showWhen）"
+        default=None,
+        description="plan_list 行内字段元数据（field/title/type/options/showWhen；showWhen 为条件 dict 或条件列表，条件含 not 取反）",
     )
     newItem: Optional[Dict[str, Any]] = Field(
         default=None, description="plan_list 新增行的默认值"

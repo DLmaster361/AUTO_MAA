@@ -184,6 +184,9 @@ class ZzzOdCatalogItemOut(BaseModel):
     configurable: bool = Field(
         default=False, description="是否支持在 MAS 侧直接配置（任务卡片 ⚙ 弹出设置）"
     )
+    jump: bool = Field(
+        default=False, description="是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）"
+    )
     priority: int = Field(..., description="原生排序权重（小者在前）")
 
 
@@ -192,17 +195,63 @@ class ZzzOdCatalogOut(OutBase):
 
 
 class ZzzOdAppConfigFieldOut(BaseModel):
-    """任务级配置字段（元数据 + 当前值）"""
+    """任务级配置字段（元数据 + 当前值）
+
+    type 决定前端渲染方式：select 下拉 / bool 开关 / number 数字 /
+    plan_list 计划列表（columns 行内字段元数据 + newItem 新增行默认值）。
+    """
 
     field: str = Field(..., description="配置字段名（app yml 中的键）")
     title: str = Field(..., description="展示标题")
-    value: Optional[str] = Field(default=None, description="当前值")
-    options: List[ComboBoxItem] = Field(..., description="可选项列表")
+    type: str = Field(default="select", description="字段类型：select/bool/number/plan_list")
+    value: Optional[Any] = Field(default=None, description="当前值（plan_list 为计划列表）")
+    options: List[ComboBoxItem] = Field(default_factory=list, description="可选项列表")
+    columns: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="plan_list 行内字段元数据（field/title/type/options/showWhen）"
+    )
+    newItem: Optional[Dict[str, Any]] = Field(
+        default=None, description="plan_list 新增行的默认值"
+    )
 
 
 class ZzzOdAppConfigOut(OutBase):
     appId: str = Field(..., description="应用ID")
     fields: List[ZzzOdAppConfigFieldOut] = Field(..., description="配置字段列表")
+
+
+class ZzzOdMissionNameOut(BaseModel):
+    """副本字典关卡项"""
+
+    name: str = Field(..., description="关卡名（配置取值）")
+    display: str = Field(..., description="关卡展示名")
+
+
+class ZzzOdMissionTypeOut(BaseModel):
+    """副本字典类型项"""
+
+    name: str = Field(..., description="类型名（配置取值）")
+    display: str = Field(..., description="类型展示名")
+    missions: List[ZzzOdMissionNameOut] = Field(default_factory=list, description="关卡列表")
+
+
+class ZzzOdTrainCategoryOut(BaseModel):
+    """「训练」tab 副本分类（体力刷本/恶名狩猎级联选项）"""
+
+    name: str = Field(..., description="分类名（配置取值）")
+    label: str = Field(..., description="分类展示名")
+    mission_types: List[ZzzOdMissionTypeOut] = Field(default_factory=list, description="类型列表")
+
+
+class ZzzOdTaskOptionsOut(OutBase):
+    """任务计划的动态选项（静态读取安装目录，与一条龙原生 GUI 同源）"""
+
+    appId: str = Field(..., description="应用ID")
+    trainCategories: List[ZzzOdTrainCategoryOut] = Field(
+        default_factory=list, description="「训练」tab 副本级联树"
+    )
+    lostVoidMissions: List[str] = Field(default_factory=list, description="迷失之地图层列表")
+    autoBattle: List[ComboBoxItem] = Field(default_factory=list, description="配队方案选项")
+    challenge: List[ComboBoxItem] = Field(default_factory=list, description="迷失之地挑战配置选项")
 
 
 class ZzzOdAppConfigSaveIn(BaseModel):
@@ -211,11 +260,50 @@ class ZzzOdAppConfigSaveIn(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
     userId: str = Field(..., description="目标用户ID")
     appId: str = Field(..., description="应用ID")
-    values: Dict[str, str] = Field(..., description="字段名 → 值")
+    values: Dict[str, Any] = Field(..., description="字段名 → 值（plan_list 为计划列表）")
     instanceIdx: Optional[int] = Field(
         default=None,
         description="直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）",
     )
+
+
+class ZzzOdTeamItemOut(BaseModel):
+    """预备编队条目（team.yml；成员为游戏内识别结果，MAS 不编辑）"""
+
+    idx: int = Field(..., description="编队在列表中的下标")
+    name: str = Field(..., description="编队名称（与游戏内编队名一致）")
+    autoBattle: str = Field(..., description="绑定的配队方案（自动战斗配置名）")
+    agents: List[str] = Field(default_factory=list, description="成员代理人ID列表")
+
+
+class ZzzOdTeamsOut(OutBase):
+    """预备编队列表 + 配队方案/代理人选项"""
+
+    teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表（固定 20 个）")
+    autoBattle: List[ComboBoxItem] = Field(..., description="配队方案选项")
+    agentOptions: List[ComboBoxItem] = Field(
+        default_factory=list, description="代理人选项（label=名称，value=agent_id）"
+    )
+
+
+class ZzzOdTeamsSaveIn(BaseModel):
+    """整表保存预备编队（名称 + 绑定配队方案 + 成员 agent_id_list）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    teams: List[Dict[str, Any]] = Field(
+        ..., description="编队列表（name/autoBattle/agent_id_list）"
+    )
+    instanceIdx: Optional[int] = Field(
+        default=None,
+        description="直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）",
+    )
+
+
+class ZzzOdTeamsSaveOut(OutBase):
+    """保存后的编队列表"""
+
+    teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表")
 
 
 class ZzzOdBackupItemOut(BaseModel):
@@ -267,6 +355,9 @@ class ZzzOdNativeTaskOut(BaseModel):
     default_group: bool = Field(..., description="是否为 zzz-od 默认一条龙任务")
     configurable: bool = Field(
         default=False, description="是否支持在 MAS 侧直接配置（任务卡片 ⚙ 弹出设置）"
+    )
+    jump: bool = Field(
+        default=False, description="是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）"
     )
     priority: int = Field(..., description="原生排序权重（小者在前）")
 
@@ -1632,8 +1723,20 @@ class ZzzOdConfig_Info(GeneralConfig_Info):
 class ZzzOdConfig_Game(BaseModel):
     """ZZZ-OD 游戏配置"""
 
+    Enabled: Optional[bool] = Field(
+        default=None, description="是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）"
+    )
+    LaunchBeforeTask: Optional[bool] = Field(
+        default=None,
+        description="任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）",
+    )
+    Path: Optional[str] = Field(default=None, description="游戏路径（游戏本体 exe）")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(
+        default=None, description="启动游戏后的等待时间（秒）"
+    )
     CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否由 zzz-od 关闭游戏"
+        default=None, description="任务结束后是否由 MAS 关闭游戏"
     )
     AccountSwitch: Optional[Literal["单实例切换", "多实例切换", "MAS切换"]] = Field(
         default=None,
@@ -3716,6 +3819,10 @@ class TaskCreateIn(DispatchIn):
     viewOnly: bool = Field(
         default=False,
         description="可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份",
+    )
+    instanceIdx: int | None = Field(
+        default=None,
+        description="可选：仅 ScriptConfig 生效；直控指定会话窗口打开的原生实例（临时切换活跃，会话结束还原）",
     )
 
 

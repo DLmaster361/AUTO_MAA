@@ -46,11 +46,14 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 
 import asyncio
 import json
+import shlex
 import uuid
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 from app.core import Config
 from app.log_box import LogCollect, log_box
@@ -59,7 +62,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
-from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
 
@@ -100,6 +103,18 @@ _ZZZOD_LAUNCHER_BOOK = {
 }
 
 _ZZZOD_LAUNCHERS = tuple(_ZZZOD_LAUNCHER_BOOK.values())
+
+# 游戏本体进程名：MAS 侧关闭游戏按进程名结束（游戏由启动器拉起，可能不在
+# 启动器进程树内，进程管理器跟踪不到）
+_ZZZ_GAME_PROCESS = "ZenlessZoneZero.exe"
+
+
+def _split_args(raw: object) -> list[str]:
+    """启动参数按 shell 规则拆分（保留 Windows 风格引号，空串返回空列表）。"""
+
+    value = str(raw or "").strip()
+    return shlex.split(value, posix=False) if value else []
+
 
 # 启动器成功启动的证据：出现 zzz-od 应用层运行上下文即视为已启动（两种启动器的
 # 一条龙运行日志都汇聚 .log/log.txt；启动器自身未起来时该文件无任何应用层条目）
@@ -380,6 +395,9 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.cur_user_log: LogRecord | None = None
         self.launcher_process_manager: ProcessManager | None = None
+        # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体的进程管理器
+        self.game_process_manager: ProcessManager | None = None
+        self.game_exe_path: Path | None = None
         self.wait_event: asyncio.Event | None = None
         self.script_root_path: Path | None = None
         self.launcher_exe_path: Path | None = None
@@ -677,6 +695,12 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def prepare(self):
         self.launcher_process_manager = ProcessManager()
+        # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体
+        self.game_process_manager = (
+            ProcessManager() if self.script_config.get("Game", "Enabled") else None
+        )
+        game_path = str(self.script_config.get("Game", "Path") or "").strip()
+        self.game_exe_path = Path(game_path) if game_path else None
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
@@ -771,8 +795,8 @@ class AutoProxyTask(TaskExecuteBase):
                         ",".join(str(slot) for slot, _ in self._injected_slots),
                     ]
 
-            if self.script_config.get("Game", "CloseOnFinish"):
-                launcher_args.append("--close-game")
+            # 任务结束后关闭游戏由 MAS 侧执行（见 kill_managed_process），
+            # 不再委托一条龙 --close-game：手动停止调度时 MAS 也能一并关游戏
 
             # 启动器选择：直控/用户统一按配置——自动=优先上次成功项，原始/集成=固定
             # 对应项（未安装回退可用项）；直控默认「自动」时行为等同原强绑定默认顺序
@@ -808,6 +832,40 @@ class AutoProxyTask(TaskExecuteBase):
                         Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
                         "脚本前任务",
                     )
+
+                # 启用游戏配置 + 任务前启动游戏：由 MAS 拉起游戏本体后再跑一条龙
+                # （对齐 ok-ww/ok-nte；游戏已在运行时跳过，避免重复启动）
+                if self.game_process_manager is not None:
+                    try:
+                        await self._mas_launch_game_before_task()
+                    except Exception as e:
+                        await self._push_dispatch_log(f"游戏启动失败: {e}")
+                        self.cur_user_log.status = f"游戏启动失败: {e}"
+                        self.cur_user_log.content = [f"游戏启动失败: {e}"]
+                        self.script_info.log = self.cur_user_log.status
+                        logger.opt(exception=True).warning(
+                            f"用户 {self.cur_user_item.name} - MAS 启动游戏失败: {e}"
+                        )
+                        await self.kill_managed_process(
+                            kill_game=self._mas_should_close_game()
+                        )
+                        try:
+                            await Notify.push_plyer(
+                                "ZZZ-OD 自动代理出现异常！",
+                                f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                f"{self.cur_user_item.name}的自动代理出现异常",
+                                3,
+                            )
+                        except Exception:
+                            pass
+                        if i + 1 < run_limit:
+                            self.script_info.log += (
+                                f"\n将在稍后重试 ({i + 1}/{run_limit})"
+                            )
+                            await asyncio.sleep(10)
+                        else:
+                            self.cur_user_item.status = "异常"
+                        continue
 
                 run_desc = (
                     f"{self.mode}配置·多实例切换·{len(self._injected_slots)}个用户"
@@ -885,7 +943,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_log.status}"
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
-                await self.kill_managed_process()
+                await self.kill_managed_process(
+                    kill_game=self._mas_should_close_game()
+                )
                 try:
                     await Notify.push_plyer(
                         "ZZZ-OD 自动代理出现异常！",
@@ -1167,11 +1227,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-        # 结束时先清理进程与监控
+        # 结束时先清理进程与监控（正常结束/失败/超时/手动中止都走这里——
+        # wait_for_finalizer_on_cancel 保证手动停止也会完整收尾）
         if self.log_monitor is not None:
             with suppress(Exception):
                 await self.log_monitor.stop()
-        await self.kill_managed_process()
+        await self.kill_managed_process(kill_game=self._mas_should_close_game())
         await self._restore_injection()
 
         # log_box 收尾：冲刷残留并完成后置聚合（账号归属 → sink 路由进各用户
@@ -1280,7 +1341,7 @@ class AutoProxyTask(TaskExecuteBase):
                 data={"Error": f"ZZZ-OD 自动代理任务出现异常: {e}"},
             )
         with suppress(Exception):
-            await self.kill_managed_process()
+            await self.kill_managed_process(kill_game=self._mas_should_close_game())
         with suppress(Exception):
             await self._restore_injection()
         with suppress(Exception):
@@ -1302,8 +1363,12 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception:
             pass
 
-    async def kill_managed_process(self) -> None:
-        """中止 ZZZ-OD 启动器进程（游戏进程由 zzz-od 自行管理）。"""
+    async def kill_managed_process(self, kill_game: bool = False) -> None:
+        """中止 ZZZ-OD 启动器进程；kill_game 为真时由 MAS 结束游戏进程。
+
+        游戏由启动器拉起、可能不在启动器进程树内（进程管理器跟踪不到），
+        按进程名结束——手动停止调度时同样收尾游戏，不依赖一条龙 --close-game。
+        """
 
         if self.launcher_process_manager is not None:
             try:
@@ -1317,3 +1382,60 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.launcher_exe_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 ZZZ-OD 主进程失败: {e}")
+        if kill_game:
+            await self._kill_game_process()
+
+    def _mas_should_close_game(self) -> bool:
+        """收尾/中止时由 MAS 结束游戏（任务结束后关闭游戏=是）。"""
+
+        return bool(self.script_config.get("Game", "CloseOnFinish"))
+
+    async def _mas_launch_game_before_task(self) -> None:
+        """MAS 接管启动游戏本体（启用游戏配置 + 任务前启动游戏时调用）。
+
+        一条龙自身也会拉起游戏，但 MAS 先把游戏开好可跳过一条龙内的启动
+        等待；检测到游戏进程已在运行时直接复用，不重复启动。
+        """
+
+        if not isinstance(self.game_process_manager, ProcessManager):
+            return
+        await self._push_dispatch_log(
+            f"正在检查游戏进程 ({_ZZZ_GAME_PROCESS})..."
+        )
+        if is_process_running(_ZZZ_GAME_PROCESS):
+            logger.info("检测到游戏本体进程已在运行，跳过由 MAS 重复启动游戏")
+            await self._push_dispatch_log("检测到游戏已在运行，跳过启动")
+            return
+        if self.game_exe_path is None:
+            raise RuntimeError(
+                "未配置游戏路径，请在脚本配置的游戏配置中选择游戏本体（ZenlessZoneZero.exe）"
+            )
+        await self._push_dispatch_log("正在由 MAS 启动游戏...")
+        await self.game_process_manager.open_process(
+            self.game_exe_path,
+            *_split_args(self.script_config.get("Game", "Arguments")),
+        )
+        wait_time = max(int(self.script_config.get("Game", "WaitTime") or 0), 0)
+        if wait_time:
+            await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
+            await asyncio.sleep(wait_time)
+        await self._push_dispatch_log("游戏启动完成")
+
+    async def _kill_game_process(self) -> None:
+        """按进程名结束游戏本体（对齐 ok-nte 的 MAS 侧关闭）。"""
+
+        try:
+            for process in psutil.process_iter(["name"]):
+                try:
+                    if process.info["name"] != _ZZZ_GAME_PROCESS:
+                        continue
+                except psutil.Error:
+                    continue
+                try:
+                    await System.kill_process_by_pid(process.pid)
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"结束游戏进程失败 PID: {process.pid}, {e}"
+                    )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")

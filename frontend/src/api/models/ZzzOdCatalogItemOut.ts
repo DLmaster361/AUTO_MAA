@@ -23,6 +23,10 @@ export type ZzzOdCatalogItemOut = {
      */
     configurable?: boolean;
     /**
+     * 是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）
+     */
+    jump?: boolean;
+    /**
      * 原生排序权重（小者在前）
      */
     priority: number;

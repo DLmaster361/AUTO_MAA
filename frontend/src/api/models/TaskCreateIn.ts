@@ -23,6 +23,10 @@ export type TaskCreateIn = {
      * 可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份
      */
     viewOnly?: boolean;
+    /**
+     * 可选：仅 ScriptConfig 生效；直控指定会话窗口打开的原生实例（临时切换活跃，会话结束还原）
+     */
+    instanceIdx?: (number | null);
 };
 export namespace TaskCreateIn {
     /**

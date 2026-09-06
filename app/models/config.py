@@ -3889,7 +3889,20 @@ class ZzzOdConfig(ConfigBase):
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FolderValidator())
 
         ## Game ------------------------------------------------------------
-        ## 任务结束后由 zzz-od 关闭游戏（对应启动器 --close-game）
+        ## 是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）
+        self.Game_LaunchBeforeTask = ConfigItem(
+            "Game", "LaunchBeforeTask", False, BoolValidator()
+        )
+        ## 游戏路径（游戏本体 ZenlessZoneZero.exe）
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 启动游戏后的等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体，
+        ## 不再委托一条龙 --close-game）
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )

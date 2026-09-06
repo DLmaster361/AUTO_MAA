@@ -49,10 +49,12 @@ from .tools import (
     archive_mas_backup,
     archive_onedragon_backup,
     collect_mas_user_info,
+    find_active_instance,
     instance_dir,
     read_app_group,
     read_game_account,
     restore_instance_view,
+    set_active_instance,
     write_instance_view,
 )
 
@@ -64,6 +66,10 @@ class ScriptConfigTask(TaskExecuteBase):
 
     view_only=True 时为查看会话：只读预览（槽内即恢复的历史备份），
     不注入基线、不回读字段，用于「查看配置」等预览场景。
+
+    instance_idx 仅脚本级会话（直控）生效：会话窗口把原生注册表的活跃
+    实例临时切到正在编辑的实例（GUI 打开即所见实例），结束还原原活跃，
+    全程只动 one_dragon.yml 的 active 标志（纯配置操作）。
     """
 
     def __init__(
@@ -72,6 +78,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_config: ZzzOdConfig,
         user_config: MultipleConfig[ZzzOdUserConfig],
         view_only: bool = False,
+        instance_idx: int | None = None,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -82,6 +89,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.user_config = user_config
         # 查看会话：只读预览（如「查看历史备份」），不注入基线也不回读字段
         self.view_only = view_only
+        # 直控指定的会话实例（用户会话忽略；脚本级会话临时切活跃）
+        self._session_native_idx = instance_idx
+        # 会话前的原生活跃实例（有临时切换时结束后还原）
+        self._original_active_idx: int | None = None
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         # 目标用户（user_id 可解析且在 UserData 中）；Default 等伪用户为 None
         self._target_uid: uuid.UUID | None = None
@@ -144,8 +155,22 @@ class ScriptConfigTask(TaskExecuteBase):
                 )
         else:
             # 脚本级会话（直控「在一条龙内配置」入口）：先自愈崩溃残留的
-            # 合成视图，保证拉起的是完整原生实例列表，不做隔离与注入
+            # 合成视图，保证拉起的是完整原生实例列表，不做隔离与注入。
+            # 指定了会话实例时把原生活跃临时切过去（GUI 打开即正在编辑的
+            # 实例），原活跃在会话结束还原；目标不存在则跳过不切换
             restore_instance_view(self.root_path)
+            if self._session_native_idx is not None:
+                active = find_active_instance(self.root_path)
+                self._original_active_idx = (
+                    int(active["idx"]) if active is not None else None
+                )
+                if self._original_active_idx != self._session_native_idx:
+                    with suppress(Exception):
+                        set_active_instance(self.root_path, self._session_native_idx)
+                        logger.info(
+                            f"会话窗口临时切换活跃实例: "
+                            f"{self._original_active_idx} → {self._session_native_idx}"
+                        )
             logger.info(f"启动 zzz-od 原生设置: {self.exe_path}")
         self.cur_user_item.status = "运行"
         # 无参数启动 = GUI 模式；启动器要求管理员权限，elevated 避免二次 UAC
@@ -198,6 +223,19 @@ class ScriptConfigTask(TaskExecuteBase):
             f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(enabled_apps)} 项)"
         )
 
+    def _restore_native_active(self) -> None:
+        """会话结束还原会话前的原生活跃实例（仅做过临时切换时）。"""
+
+        if self._original_active_idx is None:
+            return
+        with suppress(Exception):
+            set_active_instance(self.root_path, self._original_active_idx)
+            logger.info(
+                f"会话结束还原活跃实例: {self._session_native_idx} → "
+                f"{self._original_active_idx}"
+            )
+        self._original_active_idx = None
+
     async def final_task(self) -> None:
         self.wait_event.set()
         # 进程清掉前先回读：GUI 内的任务编排/账号改动写回 MAS 字段（查看会话跳过）
@@ -205,9 +243,10 @@ class ScriptConfigTask(TaskExecuteBase):
             with suppress(Exception):
                 await self._readback_user_fields(self._session_slot)
         await self._kill_processes()
-        # GUI 已退出，恢复原生注册表（会话内的合成视图不保留）
+        # GUI 已退出，恢复原生注册表与会话前的原生活跃实例
         with suppress(Exception):
             restore_instance_view(self.root_path)
+        self._restore_native_active()
         if not self.crashed:
             if self.view_only:
                 logger.success("zzz-od 原生查看结束（只读，不回读字段）")
@@ -223,6 +262,7 @@ class ScriptConfigTask(TaskExecuteBase):
             await self._kill_processes()
         with suppress(Exception):
             restore_instance_view(self.root_path)
+        self._restore_native_active()
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",

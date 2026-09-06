@@ -103,6 +103,129 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
+                    {{ t('edit.enableGameConfiguration') }}
+                    <a-tooltip :title="t('edit.masTakesOverStarting')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="zzzodConfig.Game.Enabled"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Game', 'Enabled', zzzodConfig.Game.Enabled)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.launchGameBeforeTask') }}
+                    <a-tooltip :title="t('edit.zzzodLaunchBeforeTaskHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="zzzodConfig.Game.LaunchBeforeTask"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!zzzodConfig.Game.Enabled"
+                  @change="
+                    handleChange('Game', 'LaunchBeforeTask', zzzodConfig.Game.LaunchBeforeTask)
+                  "
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.zzzodGamePath') }}
+                    <a-tooltip :title="t('edit.zzzodGamePathHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="zzzodConfig.Game.Path"
+                    :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                    size="large"
+                    class="path-input"
+                    readonly
+                    :disabled="!zzzodConfig.Game.Enabled"
+                  />
+                  <a-button
+                    size="large"
+                    class="path-button"
+                    :disabled="!zzzodConfig.Game.Enabled || isSaving"
+                    @click="selectGamePath"
+                  >
+                    <template #icon>
+                      <FolderOpenOutlined />
+                    </template>
+                    {{ t('edit.pickFile') }}
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.launchArguments') }}
+                    <a-tooltip :title="t('edit.zzzodGameArgumentsHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input
+                  v-model:value="zzzodConfig.Game.Arguments"
+                  :placeholder="t('edit.enterGameLaunchArguments')"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!zzzodConfig.Game.Enabled"
+                  @blur="handleChange('Game', 'Arguments', zzzodConfig.Game.Arguments)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.startupWait') }}
+                    <a-tooltip :title="t('edit.howLongWaitAfter')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input-number
+                  v-model:value="zzzodConfig.Game.WaitTime"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!zzzodConfig.Game.Enabled"
+                  @blur="handleChange('Game', 'WaitTime', zzzodConfig.Game.WaitTime)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
                     {{ t('edit.zzzodCloseGameOnFinish') }}
                     <a-tooltip :title="t('edit.zzzodCloseGameOnFinishHint')">
                       <QuestionCircleOutlined class="help-icon" />
@@ -282,7 +405,15 @@ const formData = reactive({
 const zzzodConfig = reactive<ZzzOdScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 180 },
-  Game: { CloseOnFinish: true, AccountSwitch: '单实例切换' },
+  Game: {
+    Enabled: false,
+    LaunchBeforeTask: false,
+    Path: '',
+    Arguments: '',
+    WaitTime: 60,
+    CloseOnFinish: true,
+    AccountSwitch: '单实例切换',
+  },
 })
 
 // 账号切换方式（value 为后端 Game.AccountSwitch 取值，驱动逻辑需保持原样；label 走词表）
@@ -383,6 +514,31 @@ const loadScript = async () => {
   } finally {
     isInitializing.value = false
     pageLoading.value = false
+  }
+}
+
+const selectGamePath = async () => {
+  const paths = await window.electronAPI?.selectFile([
+    {
+      name: 'ZenlessZoneZero.exe',
+      extensions: ['exe'],
+    },
+  ])
+  const path = paths?.[0]
+  if (!path) return
+  const fileName = path.split(/[\\/]/).pop()
+  if (fileName?.toLowerCase() !== 'zenlesszonezero.exe') {
+    message.error(t('edit.zzzodPickGameExe'))
+    return
+  }
+  const normalized = path.replace(/\\/g, '/')
+  const previous = zzzodConfig.Game.Path
+  zzzodConfig.Game.Path = normalized
+  try {
+    await handleChange('Game', 'Path', normalized)
+  } catch (error) {
+    zzzodConfig.Game.Path = previous
+    throw error
   }
 }
 

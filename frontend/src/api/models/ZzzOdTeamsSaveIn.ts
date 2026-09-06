@@ -3,9 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 保存任务级配置（字段白名单校验后写入绑定槽；直控可指定原生实例）
+ * 整表保存预备编队（名称 + 绑定配队方案 + 成员 agent_id_list）
  */
-export type ZzzOdAppConfigSaveIn = {
+export type ZzzOdTeamsSaveIn = {
     /**
      * 所属脚本ID
      */
@@ -15,13 +15,9 @@ export type ZzzOdAppConfigSaveIn = {
      */
     userId: string;
     /**
-     * 应用ID
+     * 编队列表（name/autoBattle/agent_id_list）
      */
-    appId: string;
-    /**
-     * 字段名 → 值（plan_list 为计划列表）
-     */
-    values: Record<string, any>;
+    teams: Array<Record<string, any>>;
     /**
      * 直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）
      */

@@ -163,6 +163,7 @@ class ZzzOdManager(TaskExecuteBase):
                     self.script_config,
                     self.user_config,
                     view_only=self.task_info.view_only,
+                    instance_idx=self.task_info.instance_idx,
                 )
             )
             return

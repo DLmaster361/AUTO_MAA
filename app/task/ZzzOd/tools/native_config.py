@@ -166,6 +166,7 @@ def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
                 "app_name": str(meta.get("app_name") or app_id),
                 "default_group": bool(meta.get("default_group", True)),
                 "configurable": bool(meta.get("configurable", False)),
+                "jump": bool(meta.get("jump", False)),
                 "priority": int(meta.get("priority", 9999)),
             }
         )
@@ -180,6 +181,7 @@ def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
                 "app_name": str(item.get("app_name") or app_id),
                 "default_group": True,
                 "configurable": bool(item.get("configurable", False)),
+                "jump": bool(item.get("jump", False)),
                 "priority": int(item.get("priority", 9999)),
             }
         )

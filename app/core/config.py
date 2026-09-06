@@ -1378,7 +1378,11 @@ class AppConfig(GlobalConfig):
         否则读取用户绑定槽（未分配槽时取元数据默认值）。
         """
 
-        from app.task.ZzzOd.tools import get_task_app_fields, read_app_config
+        from app.task.ZzzOd.tools import (
+            get_task_app_fields,
+            read_app_config,
+            resolve_field_options,
+        )
 
         fields_meta = get_task_app_fields(app_id)
         if fields_meta is None:
@@ -1394,20 +1398,56 @@ class AppConfig(GlobalConfig):
 
         fields = []
         for meta in fields_meta:
-            options = meta.get("options") or []
-            default = str(options[0]["value"]) if options else ""
-            value = current.get(meta["field"], default)
-            fields.append(
-                {
-                    "field": str(meta["field"]),
-                    "title": str(meta["title"]),
-                    "value": None if value is None else str(value),
-                    "options": [
-                        {"label": str(o["label"]), "value": str(o["value"])}
-                        for o in options
-                    ],
-                }
-            )
+            ftype = str(meta.get("type") or "select")
+            field_out: dict = {
+                "field": str(meta["field"]),
+                "title": str(meta["title"]),
+                "type": ftype,
+            }
+            if ftype == "plan_list":
+                # 计划列表：当前值整表返回；列元数据内联（动态列选项服务端解析），
+                # 级联列选项由前端从任务选项端点的训练副本树取
+                value = current.get(meta["field"])
+                field_out["value"] = value if isinstance(value, list) else []
+                field_out["options"] = []
+                field_out["columns"] = [
+                    {
+                        "field": str(c["field"]),
+                        "title": str(c["title"]),
+                        "type": str(c.get("type") or "select"),
+                        "options": [
+                            {"label": str(o["label"]), "value": str(o["value"])}
+                            for o in resolve_field_options(root, c)
+                        ],
+                        **(
+                            {"showWhen": {"field": str(c["show_when"]["field"]), "value": str(c["show_when"]["value"])}}
+                            if c.get("show_when") else {}
+                        ),
+                    }
+                    for c in meta.get("columns") or []
+                ]
+                field_out["newItem"] = dict(meta.get("new_item") or {})
+            else:
+                options = resolve_field_options(root, meta)
+                default = meta.get("default")
+                if default is None and options:
+                    default = str(options[0]["value"])
+                value = current.get(meta["field"], default)
+                if ftype == "bool":
+                    value = bool(value)
+                elif ftype == "number":
+                    try:
+                        value = int(value)
+                    except (TypeError, ValueError):
+                        value = int(default or 0)
+                else:
+                    value = None if value is None else str(value)
+                field_out["value"] = value
+                field_out["options"] = [
+                    {"label": str(o["label"]), "value": str(o["value"])}
+                    for o in options
+                ]
+            fields.append(field_out)
         return {"appId": app_id, "fields": fields}
 
     async def save_zzzod_app_config(
@@ -1421,42 +1461,175 @@ class AppConfig(GlobalConfig):
         """保存任务级配置到目标位置（字段白名单校验后写入）。
 
         instance_idx 给定时（直控模式）直接写该原生实例的 per-app YAML；
-        否则写用户绑定槽（首次编辑会自动分配绑定槽）。
+        否则写用户绑定槽（首次编辑会自动分配绑定槽）。值按字段类型转换
+        （select→str / bool→bool / number→int），plan_list 整表合并写入并
+        按 plan_id 保留既有 run_times。
         """
 
-        from app.task.ZzzOd.tools import get_task_app_fields, write_app_config
+        from app.task.ZzzOd.tools import (
+            get_task_app_fields,
+            merge_plan_list,
+            read_app_config,
+            write_app_config,
+        )
 
         fields_meta = get_task_app_fields(app_id)
         if fields_meta is None:
             raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
-        allowed = {str(m["field"]) for m in fields_meta}
-        unknown = {str(k) for k in values} - allowed
+        meta_by_field = {str(m["field"]): m for m in fields_meta}
+        unknown = {str(k) for k in values} - set(meta_by_field)
         if unknown:
             raise ValueError(f"不支持的配置字段: {', '.join(sorted(unknown))}")
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
-        patch = {str(k): str(v) for k, v in values.items()}
 
         if instance_idx is not None:
             self._zzzod_native_instance(script_id, instance_idx)
             slot = int(instance_idx)
-            config = write_app_config(root, slot, app_id, patch)
+        else:
+            from app.task.ZzzOd.AutoProxy import (
+                collect_used_slot_idxs,
+                ensure_user_slot,
+            )
+
+            _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
+            used = collect_used_slot_idxs(exclude_uids={uid})
+            slot = await ensure_user_slot(root, user_cfg, used)
+
+        current = read_app_config(root, slot, app_id) if slot > 0 else {}
+        patch: dict = {}
+        for key, raw in values.items():
+            meta = meta_by_field[str(key)]
+            ftype = str(meta.get("type") or "select")
+            if ftype == "plan_list":
+                columns = meta.get("columns") or []
+                patch[str(key)] = merge_plan_list(
+                    columns,
+                    dict(meta.get("new_item") or {}),
+                    current.get(str(key)) if isinstance(current.get(str(key)), list) else [],
+                    raw if isinstance(raw, list) else [],
+                )
+            elif ftype == "bool":
+                patch[str(key)] = bool(raw)
+            elif ftype == "number":
+                patch[str(key)] = int(raw)
+            else:
+                patch[str(key)] = str(raw)
+
+        config = write_app_config(root, slot, app_id, patch)
+        if instance_idx is not None:
             logger.info(
                 f"ZZZ-OD 实例 {slot:02d} 任务 {app_id} 配置已由直控页面保存: {values}"
             )
-            return config
-
-        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
-
-        _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
-        used = collect_used_slot_idxs(exclude_uids={uid})
-        slot = await ensure_user_slot(root, user_cfg, used)
-        config = write_app_config(root, slot, app_id, patch)
-        logger.info(
-            f"ZZZ-OD 用户 {uid} 任务 {app_id} 配置已保存到槽 {slot:02d}: {values}"
-        )
+        else:
+            logger.info(
+                f"ZZZ-OD 用户 {uid} 任务 {app_id} 配置已保存到槽 {slot:02d}: {values}"
+            )
         return config
+
+    async def get_zzzod_task_options(self, script_id: str, app_id: str) -> dict:
+        """任务计划的动态选项（副本级联树 / 配队方案 / 挑战配置等）。
+
+        全部从安装目录静态读取（compendium_data.yml + 配置目录扫描），
+        与一条龙原生 GUI 选项同源，上游升级后无需改 MAS。
+        """
+
+        from app.task.ZzzOd.tools import (
+            auto_battle_options,
+            get_task_app_fields,
+            lost_void_challenge_options,
+            lost_void_missions,
+            train_categories,
+        )
+
+        if get_task_app_fields(app_id) is None:
+            raise ValueError(f"任务 {app_id} 不支持在 MAS 侧配置")
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        return {
+            "appId": app_id,
+            "trainCategories": train_categories(root),
+            "lostVoidMissions": lost_void_missions(root),
+            "autoBattle": auto_battle_options(root),
+            "challenge": lost_void_challenge_options(root),
+        }
+
+    async def get_zzzod_teams(
+        self, script_id: str, user_id: str, instance_idx: int | None = None
+    ) -> dict:
+        """预备编队完整列表（固定 20 个，与一条龙原生编队页一致）。
+
+        team.yml：名称 + 绑定配队方案 + 成员（agent_id → 代理人下拉可选）。
+        缺失项按上游规则补「编队N」默认编队。
+        instance_idx 给定时（直控模式）读该原生实例；否则读用户绑定槽。
+        附带配队方案与代理人选项（静态数据，不含识别能力）供前端渲染。
+        """
+
+        from app.task.ZzzOd.tools import (
+            agent_id_options,
+            auto_battle_options,
+            expand_team_list,
+            instance_dir,
+        )
+
+        if instance_idx is not None:
+            root, _ = self._zzzod_native_instance(script_id, instance_idx)
+            slot = int(instance_idx)
+        else:
+            _, root, user_cfg, _ = self._zzzod_user(script_id, user_id)
+            slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+
+        teams = []
+        if slot > 0:
+            for item in expand_team_list(instance_dir(root, slot)):
+                teams.append(
+                    {
+                        "idx": int(item["idx"]),
+                        "name": str(item["name"]),
+                        "autoBattle": str(item["auto_battle"]),
+                        "agents": [str(a) for a in item["agent_id_list"]],
+                    }
+                )
+        return {
+            "teams": teams,
+            "autoBattle": auto_battle_options(self._zzzod_script_root(script_id)),
+            "agentOptions": agent_id_options(self._zzzod_script_root(script_id)),
+        }
+
+    async def save_zzzod_teams(
+        self,
+        script_id: str,
+        user_id: str,
+        teams: list,
+        instance_idx: int | None = None,
+    ) -> list:
+        """整表保存预备编队（名称 + 绑定配队方案，成员按行保留）。"""
+
+        from app.task.ZzzOd.tools import instance_dir, write_team_list
+
+        if instance_idx is not None:
+            self._zzzod_native_instance(script_id, instance_idx)
+            slot = int(instance_idx)
+        else:
+            from app.task.ZzzOd.AutoProxy import (
+                collect_used_slot_idxs,
+                ensure_user_slot,
+            )
+
+            _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
+            used = collect_used_slot_idxs(exclude_uids={uid})
+            slot = await ensure_user_slot(root, user_cfg, used)
+
+        saved = write_team_list(instance_dir(self._zzzod_script_root(script_id), slot), teams)
+        logger.info(f"ZZZ-OD 预备编队已保存到槽 {slot:02d}: {len(saved)} 个编队")
+        return saved
+
+    def _zzzod_script_root(self, script_id: str) -> Path:
+        """脚本安装根目录（供 teams 等实例级配置读写复用）。"""
+
+        return self._zzzod_root(self._zzzod_script_config(script_id))
 
     async def list_zzzod_backups(
         self, script_id: str, user_id: str, target: str
@@ -1655,15 +1828,15 @@ class AppConfig(GlobalConfig):
     async def import_zzzod_config(
         self, script_id: str, user_id: str, instance_idx: int
     ) -> dict:
-        """基于一条龙已有实例快速生成当前用户配置（账号信息 + 已启用任务编排 + 应用通知）。
+        """基于一条龙已有实例快速生成当前用户配置（账号信息 + 已启用任务编排 + 实例级配置）。
 
         覆盖前强制归档当前 MAS 槽配置（与「配置恢复」一致：即使内容与最近
         备份一致也生成新时间戳条目）——导入前的状态可在配置恢复中按 MAS
         配置找回。账号字段只回填来源实例的非空值（密码留空=沿用登录态），
         任务编排只取来源实例当前启用的应用（对齐 _group.yml 缺席=不加入）。
-        应用通知（notify.yml：总开关 + 每应用生命周期/细节级别）随导入对齐
-        来源实例写入绑定槽——zzz-od 对缺失 notify.yml 的默认值是开启，不搬
-        会让「来源关着通知」的实例导入后变开着。
+        实例级配置随导入对齐来源实例写入绑定槽：notify.yml（应用通知，
+        zzz-od 默认开启，不搬会让「来源关着」变开着）、team.yml（预备编队）、
+        one_dragon/ 全部 per-app 配置（体力计划/咖啡店/随便观等任务级 yml）。
         """
 
         import json
@@ -1731,12 +1904,15 @@ class AppConfig(GlobalConfig):
             "OneDragon", "AppList", json.dumps(enabled_apps, ensure_ascii=False)
         )
 
-        # 实例级持久配置对齐来源实例：notify.yml（应用通知）在实例根，
-        # charge_plan.yml（体力计划）在 one_dragon/ 应用组子目录
-        # （ApplicationConfig 的分组存储）。均不经 MAS 用户字段承载，直接
-        # 对齐到绑定槽（注入运行的实例目录）；用户尚无绑定槽时按全局查重
-        # 分配（语义与运行注入的 ensure_user_slot 一致）。缺失文件对齐为
-        # 删除 = 沿用 zzz-od 默认
+        # 实例级持久配置对齐来源实例：
+        # - notify.yml（应用通知）在实例根
+        # - team.yml（预备编队：名称 + 绑定配队方案 + 成员）在实例根
+        # - one_dragon/ 全部 per-app 配置（charge_plan.yml 体力计划、coffee.yml
+        #   咖啡店、suibian_temple.yml 随便观等）随导入整目录对齐
+        # _group.yml 例外：任务编排走上面的 AppList 启用项语义，不整搬。
+        # 均不经 MAS 用户字段承载，直接对齐到绑定槽（注入运行的实例目录）；
+        # 用户尚无绑定槽时按全局查重分配（语义与运行注入的 ensure_user_slot
+        # 一致）。来源缺失的文件对齐为删除 = 沿用 zzz-od 默认
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         if slot <= 0:
             slot = await ensure_user_slot(
@@ -1744,15 +1920,33 @@ class AppConfig(GlobalConfig):
             )
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)
-        for yml_name, sub_dir in (("notify.yml", ""), ("charge_plan.yml", "one_dragon")):
-            source_yml = source_dir / sub_dir / yml_name if sub_dir else source_dir / yml_name
-            target_yml = target_dir / sub_dir / yml_name if sub_dir else target_dir / yml_name
-            if sub_dir:
-                target_yml.parent.mkdir(parents=True, exist_ok=True)
+
+        def _align_yml(rel_parts: list[str]) -> None:
+            source_yml = source_dir.joinpath(*rel_parts)
+            target_yml = target_dir.joinpath(*rel_parts)
+            target_yml.parent.mkdir(parents=True, exist_ok=True)
             if source_yml.is_file():
                 shutil.copyfile(source_yml, target_yml)
             else:
                 target_yml.unlink(missing_ok=True)
+
+        _align_yml(("notify.yml",))
+        _align_yml(("team.yml",))
+
+        source_one_dragon = source_dir / "one_dragon"
+        target_one_dragon = target_dir / "one_dragon"
+        if target_one_dragon.is_dir():
+            for target_yml in target_one_dragon.glob("*.yml"):
+                if target_yml.name != "_group.yml" and not (
+                    source_one_dragon / target_yml.name
+                ).is_file():
+                    target_yml.unlink(missing_ok=True)
+        if source_one_dragon.is_dir():
+            target_one_dragon.mkdir(parents=True, exist_ok=True)
+            for source_yml in source_one_dragon.glob("*.yml"):
+                if source_yml.name == "_group.yml":
+                    continue
+                shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
 
         await self.ScriptConfig.save()
         logger.info(
@@ -1826,7 +2020,6 @@ class AppConfig(GlobalConfig):
         )
         from app.task.ZzzOd.tools.zzz_od_config import (
             DEFAULT_GAME_ACCOUNT,
-            instance_dir,
         )
         from app.utils.io import read_file
 
@@ -2006,6 +2199,7 @@ class AppConfig(GlobalConfig):
 
         from app.task.ZzzOd.tools import (
             get_task_app_fields,
+            get_task_app_jump,
             list_app_catalog,
             read_native_account_fields,
             read_native_instance_run,
@@ -2017,6 +2211,7 @@ class AppConfig(GlobalConfig):
                 **item,
                 "configurable": get_task_app_fields(str(item["app_id"]))
                 is not None,
+                "jump": get_task_app_jump(str(item["app_id"])),
             }
             for item in list_app_catalog(root)
         ]

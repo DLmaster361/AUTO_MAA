@@ -25,6 +25,10 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
+import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
+import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
+import type { ZzzOdTeamsSaveOut } from '../models/ZzzOdTeamsSaveOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -191,6 +195,53 @@ export class ZzzOdService {
         });
     }
     /**
+     * 获取预备编队列表（名称 + 绑定配队方案）
+     * 读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。
+     * @param scriptId
+     * @param userId
+     * @param instanceIdx
+     * @returns ZzzOdTeamsOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodTeamsApiApiScriptsZzzodTeamsGet(
+        scriptId: string,
+        userId: string,
+        instanceIdx?: (number | null),
+    ): CancelablePromise<ZzzOdTeamsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/teams',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'instanceIdx': instanceIdx,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 整表保存预备编队（名称 + 绑定配队方案；成员按行保留）
+     * 直控传 instanceIdx 直接写原生实例，缺省写用户绑定槽。
+     * @param requestBody
+     * @returns ZzzOdTeamsSaveOut Successful Response
+     * @throws ApiError
+     */
+    public static saveZzzodTeamsApiApiScriptsZzzodTeamsSavePost(
+        requestBody: ZzzOdTeamsSaveIn,
+    ): CancelablePromise<ZzzOdTeamsSaveOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/teams/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取一条龙任务目录
      * 静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。
      * @param scriptId
@@ -235,6 +286,30 @@ export class ZzzOdService {
                 'userId': userId,
                 'appId': appId,
                 'instanceIdx': instanceIdx,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取任务计划的动态选项（副本级联树/配队方案/挑战配置）
+     * 静态读取安装目录（compendium 数据 + 配置目录扫描），与一条龙原生 GUI 选项同源。
+     * @param scriptId
+     * @param appId
+     * @returns ZzzOdTaskOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodTaskOptionsApiApiScriptsZzzodOptionsGet(
+        scriptId: string,
+        appId: string,
+    ): CancelablePromise<ZzzOdTaskOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/options',
+            query: {
+                'scriptId': scriptId,
+                'appId': appId,
             },
             errors: {
                 422: `Validation Error`,

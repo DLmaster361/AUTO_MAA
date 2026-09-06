@@ -7,7 +7,27 @@
  */
 export type ZzzOdConfig_Game = {
     /**
-     * 任务结束后是否由 zzz-od 关闭游戏
+     * 是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）
+     */
+    Enabled?: (boolean | null);
+    /**
+     * 任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）
+     */
+    LaunchBeforeTask?: (boolean | null);
+    /**
+     * 游戏路径（游戏本体 exe）
+     */
+    Path?: (string | null);
+    /**
+     * 游戏启动参数
+     */
+    Arguments?: (string | null);
+    /**
+     * 启动游戏后的等待时间（秒）
+     */
+    WaitTime?: (number | null);
+    /**
+     * 任务结束后是否由 MAS 关闭游戏
      */
     CloseOnFinish?: (boolean | null);
     /**

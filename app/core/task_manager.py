@@ -969,6 +969,7 @@ class _TaskManager:
         user_id: str | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
+        instance_idx: int | None = None,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -981,6 +982,8 @@ class _TaskManager:
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
+            instance_idx: 配置会话（ScriptConfig 专用）：直控指定会话窗口
+                打开的原生实例（临时切换活跃，会话结束还原）。
 
         Returns:
             uuid.UUID: 任务 UID
@@ -1085,6 +1088,7 @@ class _TaskManager:
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
                 view_only=view_only and exec_mode == "ScriptConfig",
+                instance_idx=instance_idx if exec_mode == "ScriptConfig" else None,
             )
             self.task_handler[task_uid] = Task(
                 self.task_info[task_uid],

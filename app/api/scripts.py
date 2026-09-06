@@ -1593,6 +1593,80 @@ async def delete_zzzod_instance_api(
 
 
 @router.get(
+    "/zzzod/teams",
+    tags=["ZZZ-OD"],
+    summary="获取预备编队列表（名称 + 绑定配队方案）",
+    response_model=ZzzOdTeamsOut,
+    status_code=200,
+)
+async def get_zzzod_teams_api(
+    scriptId: str,
+    userId: str,
+    instanceIdx: int | None = None,
+) -> ZzzOdTeamsOut:
+    """读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。"""
+
+    try:
+        data = await Config.get_zzzod_teams(scriptId, userId, instance_idx=instanceIdx)
+        return ZzzOdTeamsOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            teams=[ZzzOdTeamItemOut(**t) for t in data["teams"]],
+            autoBattle=data["autoBattle"],
+            agentOptions=data["agentOptions"],
+        )
+    except Exception as e:
+        return ZzzOdTeamsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            teams=[],
+            autoBattle=[],
+        )
+
+
+@router.post(
+    "/zzzod/teams/save",
+    tags=["ZZZ-OD"],
+    summary="整表保存预备编队（名称 + 绑定配队方案；成员按行保留）",
+    response_model=ZzzOdTeamsSaveOut,
+    status_code=200,
+)
+async def save_zzzod_teams_api(script: ZzzOdTeamsSaveIn = Body(...)) -> ZzzOdTeamsSaveOut:
+    """直控传 instanceIdx 直接写原生实例，缺省写用户绑定槽。"""
+
+    try:
+        saved = await Config.save_zzzod_teams(
+            script.scriptId,
+            script.userId,
+            script.teams,
+            instance_idx=script.instanceIdx,
+        )
+        return ZzzOdTeamsSaveOut(
+            code=200,
+            status="success",
+            message="编队已保存",
+            teams=[
+                ZzzOdTeamItemOut(
+                    idx=i,
+                    name=str(item.get("name") or ""),
+                    autoBattle=str(item.get("auto_battle") or ""),
+                    agents=[str(a) for a in item.get("agent_id_list") or []],
+                )
+                for i, item in enumerate(saved)
+            ],
+        )
+    except Exception as e:
+        return ZzzOdTeamsSaveOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            teams=[],
+        )
+
+
+@router.get(
     "/zzzod/catalog",
     tags=["ZZZ-OD"],
     summary="获取一条龙任务目录",
@@ -1607,12 +1681,17 @@ async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         if not root.is_dir():
             raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
-        from app.task.ZzzOd.tools import get_task_app_fields, list_app_catalog
+        from app.task.ZzzOd.tools import (
+            get_task_app_fields,
+            get_task_app_jump,
+            list_app_catalog,
+        )
 
         data = [
             ZzzOdCatalogItemOut(
                 **item,
                 configurable=get_task_app_fields(str(item["app_id"])) is not None,
+                jump=get_task_app_jump(str(item["app_id"])),
             )
             for item in list_app_catalog(root)
         ]
@@ -1664,6 +1743,37 @@ async def get_zzzod_app_config_api(
             message=f"{type(e).__name__}: {str(e)}",
             appId=appId,
             fields=[],
+        )
+
+
+@router.get(
+    "/zzzod/options",
+    tags=["ZZZ-OD"],
+    summary="获取任务计划的动态选项（副本级联树/配队方案/挑战配置）",
+    response_model=ZzzOdTaskOptionsOut,
+    status_code=200,
+)
+async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOptionsOut:
+    """静态读取安装目录（compendium 数据 + 配置目录扫描），与一条龙原生 GUI 选项同源。"""
+
+    try:
+        data = await Config.get_zzzod_task_options(scriptId, appId)
+        return ZzzOdTaskOptionsOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            appId=data["appId"],
+            trainCategories=data["trainCategories"],
+            lostVoidMissions=data["lostVoidMissions"],
+            autoBattle=data["autoBattle"],
+            challenge=data["challenge"],
+        )
+    except Exception as e:
+        return ZzzOdTaskOptionsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            appId=appId,
         )
 
 

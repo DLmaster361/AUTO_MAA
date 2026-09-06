@@ -78,13 +78,18 @@ export function useZzzodGuiSession() {
     }
   }
 
-  const startSession = async (taskId: string, viewOnly = false): Promise<void> => {
+  const startSession = async (
+    taskId: string,
+    viewOnly = false,
+    instanceIdx?: number | null
+  ): Promise<void> => {
     try {
       zzzodConfigLoading.value = true
       const response = await Service.addTaskApiDispatchStartPost({
         taskId,
         mode: TaskCreateIn.mode.SCRIPT_CONFIG,
         viewOnly,
+        instanceIdx: instanceIdx ?? undefined,
       })
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.zzzodStartFailed'))

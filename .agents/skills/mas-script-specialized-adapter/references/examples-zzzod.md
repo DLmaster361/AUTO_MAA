@@ -8,7 +8,16 @@ ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段�
 
 - **用户↔实例槽固定绑定，注册表零持久写入**：绑定下标存用户配置 `Info.SlotIdx`，首次运行/配置时按全局查重分配最小空闲 idx；运行/会话窗口内以合成注册表视图临时呈现 MAS 槽（详见下节），窗口外 zzz-od 原生世界零 MAS 痕迹。不要把「槽目录持久」误解为「注册表持久」——持久的是 `config/{idx:02d}` 目录（配队等），注册表（`one_dragon.yml`）从不写入 MAS 条目。
 - **任务网格只把 `DEFAULT_GROUP=True` 的应用作为可选项**。自动战斗等独立工具应用不是一条龙任务；但已保存/导入的启用非默认任务照常显示并执行（对齐 zzz-od 原生「已开启的非默认组应用保留」语义），不要在聚合层过滤掉。
-- 任务编排 `OneDragon.AppList` 是 JSON 字符串字段（顺序即执行顺序），前端开关=加入/移出、箭头=调序；不做 zzz-od 式逐任务子配置页。
+- 任务编排 `OneDragon.AppList` 是 JSON 字符串字段（顺序即执行顺序），前端开关=加入/移出、拖拽=调序；不做 zzz-od 式逐任务子配置页。
+- **任务卡片 ⚙ 走数据驱动元数据表**（`app/task/ZzzOd/tools/app_options.py` 的 `TASK_APP_FIELDS`，加任务=加表项）：字段类型 select/bool/number/plan_list 决定前端渲染（plan_list 或字段多走弹窗，少量字段走弹层）；复杂配置不进 MAS 的任务在 `TASK_APP_JUMPS` 注册（式舆防卫战/迷失之地/枯萎之都/随便观/兑换码），卡片显示跳转按钮引导进一条龙主界面。
+- **动态选项与一条龙原生 GUI 同源，全部静态读取**（`tools/compendium.py`，勿写死）：副本级联与图层=安装目录 `assets/game_data/compendium_data.yml`；咖啡= `coffee_data.yml` 排程；代理人名=`assets/game_data/agent/*.yml`；配队方案/挑战配置/锄大地路线名单=扫描 `config/auto_battle`、`config/{lost_void,hollow_zero}_challenge`、`config/world_patrol_route_list`（与上游列表函数同规则）。字段静态 `options` 会前置合并到动态源之前（如「随机」「全部」）。
+- **上游取值三态要核对**：部分枚举存 enum name 而非 value（随便观游历任务/邦布价格存 `HOUR_20`/`S4` 这类 name），锄大地的界面消失/重试处理存英文常量，体力计划等级等存中文 value——照抄 config 的 `get` 默认值与 GUI 的 ConfigItem 定义，不要凭惯例猜。
+- **`plan_list` 保存按 plan_id 保留既有 `run_times`**（`merge_plan_list`）：MAS 只改计划内容、不重置一条龙运行计数，新行补 uuid（对齐上游 `ChargePlanItem.__post_init__`）；行内字段白名单=columns+隐藏持久字段（tab_name/run_times/plan_id）。
+- **预备编队（前端独立组件 `ZzzOdPredefinedTeams.vue` + `/zzzod/teams(/save)` 端点）**：
+  - 数据源是实例槽的 `config/{idx:02d}/team.yml`（上游 `TeamConfig`），**固定 20 个编队**：读取侧 `expand_team_list` 与上游 `team_list` 属性同规则补「编队N/全配队通用」默认项；保存整表写回，成员 `agent_id_list` 按行保留（优先传入行 > 既有行同下标 > unknown×3）
+  - **成员下拉的坑**：`assets/game_data/agent` 数据文件只覆盖部分角色（老版本遗留），新角色（yixuan/dialyn 等）不在其中——必须正则解析上游源码 `src/zzz_od/game_data/agent.py` 的 `AgentEnum` 拿全量 id→名映射，数据文件只作兜底；否则下拉选不了新角色、已存 id 显示原始英文。**正则要兼容两种写法**：老角色单引号单行 `Agent('anby', '安比', ...)`，新角色双引号多行 `Agent(\n "sunna",\n "千夏",`——用 `Agent\(\s*['"]([\w]+)['"],\s*['"]([^'"]+)['"]`（`\s*` 跨行、引号两种都匹配），只认单引号同行会漏新角色
+  - **MAS 不提供 OCR 识别**（上游「预备编队识别」是进游戏扫描成员的能力）：成员在一条龙侧识别后落盘 team.yml，MAS 只读写这份配置，两侧靠配置文件中转、无直接调用
+- **非侵入红线（所有 ZzzOd 对接必须遵守）**：MAS **零 import、零执行、零修改**一条龙代码——对接手段只有四种：① 读写实例 YAML 配置（含直控/注入窗口）；② 正则静态解析源码常量（`*_const.py` 应用目录、`agent.py` 代理人名单，只读不执行）；③ 读静态游戏数据（`assets/game_data/*.yml`）；④ 以 CLI 参数拉起官方启动器。任何需要 `import zzz_od` / 调用其运行时 / 改其源码资源的设计都是错的。
 
 ## 存储模型：为什么与 MAA/OK-WW 系不同
 
@@ -42,7 +51,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 | 「运行前切换账号」开关 | 实例条目 `force_login_before_run` | `instances/force-login` | 一条龙原生能力，作用点见下节 |
 | 「运行实例」下拉 | 全局 `instance_run` | `instances/run-mode` | **全局设置，与编辑哪个实例无关**——独立端点，不要挂回 native-config/save 的实例通道（旧实现把 disabled 和保存都耦合在"所选实例"上，未选实例时既灰又存不了，已修） |
 
-「在一条龙内配置」在直控下走**脚本级原生会话**（`startSession(scriptId)`）：完整原生实例列表，不隔离不注入；启动前 `restore_instance_view` 自愈崩溃残留的合成视图。用户模式仍走合成视图会话。会话关闭后直控页重拉所选实例配置。
+「在一条龙内配置」在直控下走**脚本级原生会话**（`startSession(scriptId, false, instanceIdx)`）：完整原生实例列表，不隔离不注入；**传当前编辑实例下标时会话窗口临时把原生活跃切到它**（GUI 打开即所见实例，结束还原原活跃，纯 `one_dragon.yml` active 标志操作）；启动前 `restore_instance_view` 自愈崩溃残留的合成视图。用户模式仍走合成视图会话。会话关闭后直控页重拉所选实例配置。
 
 直控账号字段区：账号/密码（B服为 B服账号名）带红色 `*` 必填标记（区服联动），因账号切换需要完整登录信息（见下节）；字段顺序=后端 `_NATIVE_ACCOUNT_FIELDS` 元数据顺序（数据驱动栅格），**options 必须随元数据一起走**——曾把 `game_language` 的 options 写丢导致下拉退化为文本框显示原始值 `cn`。
 
@@ -73,11 +82,17 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 - 判态：内置致命日志（未找到有效的实例 / 请先结束其他运行中的功能 再启动 / 运行应用 one_dragon 失败）→ 各槽 `app_run_record` 前后 diff；启动器进程退出即本轮结束。
 - 恢复在 `main_task` finally、`final_task`、`on_crash` 三处幂等执行：先还原合成视图，再逐槽备份恢复（目录一律保留）。
 
-## 账号切换两模式（脚本级 `Game.AccountSwitch` 下拉）
+## 账号切换三模式（脚本级 `Game.AccountSwitch` 下拉）
 
-- **一条龙内置**（默认）：全部启用用户注入各自绑定槽，`--onedragon --instance s1,s2,...` 单进程覆盖所有用户（zzz-od 内部 SwitchAccount 切游戏账号）。**manager 只 spawn 一个代理**；结果按各槽 diff 归属用户（`_judge_multi`），逐用户写回统计并按各自 `PushLogMode` 推送。
-- **MAS账号切换**（预留）：逐用户循环（注入该用户绑定槽 → 运行 → 结束），当前依赖一条龙账密登录，MAS 侧主动切换能力后续接入；走原逐用户 spawn + `_judge_final`。
-- 跳过条件（剩余天数/代理次数上限/任务编排为空）在**注入名单内逐用户施加**；内置切换的触发者可能被跳过，不要把其「跳过」状态覆盖为「运行」。
+- **单实例切换**（默认，推荐）：逐用户独立会话——注入该用户配置到绑定槽 → 单实例运行（仅运行当前，无槽间切换）→ 跑完关游戏 → 下一个用户。**manager 每次只 spawn 一个代理**，跑完一个再起下一个；失败域隔离最好（重试只重启失败用户），且单用户配置必须配账密时由 `write_instance_view(force_login=True)` 强制账密登录。
+- **多实例切换**（不推荐）：全部启用用户注入各自绑定槽，`--onedragon --instance s1,s2,...` 单进程覆盖所有用户（zzz-od 内部 SwitchAccount 切游戏账号）。总时长最短，但单槽失败或切换失败会拖整轮重试、用户之间不隔离；结果按各槽 diff 归属用户（`_judge_multi`），逐用户写回统计并按各自 `PushLogMode` 推送。
+- **MAS账号切换**（预留）：MAS 侧主动切号后逐用户交一条龙运行，能力后续接入；走逐用户 spawn + `_judge_final`。
+- 跳过条件（剩余天数/代理次数上限/任务编排为空）在**注入名单内逐用户施加**；多实例切换的触发者可能被跳过，不要把其「跳过」状态覆盖为「运行」。
+
+## 游戏进程管理（脚本级 `Game` 配置，对齐 ok-ww/ok-nte）
+
+- 字段：`Enabled`（启用游戏配置，任务前启动的总控）/ `LaunchBeforeTask`（任务前由 MAS 启动游戏，检测到游戏进程已在运行则跳过）/ `Path`（**游戏本体** `ZenlessZoneZero.exe`，不是一条龙启动器）/ `Arguments` / `WaitTime`（拉起后等待秒数）。
+- **关闭游戏由 MAS 负责**：不传一条龙 `--close-game`——收尾/失败重试/手动停止调度都走 `kill_managed_process(kill_game=CloseOnFinish)`，按进程名结束游戏本体（游戏由启动器拉起、可能不在启动器进程树内，进程管理器跟踪不到）。`CloseOnFinish` 不依赖 `Enabled`（历史上默认开启，避免存量配置悄悄变「不关游戏」）。
 
 ## 在一条龙内配置（配置会话，双向联动）
 

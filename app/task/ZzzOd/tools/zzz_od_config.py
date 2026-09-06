@@ -459,6 +459,87 @@ def write_app_group(config_dir: Path, app_list: list[dict]) -> None:
     )
 
 
+def read_team_list(config_dir: Path) -> list[dict]:
+    """读取预备编队原始持久化条目（team.yml 的 team_list）。"""
+
+    data = read_file(config_dir / "team.yml") or {}
+    return [
+        dict(item) for item in (data.get("team_list") or []) if isinstance(item, dict)
+    ]
+
+
+# 预备编队固定数量（与上游 TeamConfig.team_list 一致：缺失项补默认编队）
+TEAM_LIST_SIZE = 20
+
+
+def expand_team_list(config_dir: Path) -> list[dict]:
+    """展开为固定 20 个编队的完整列表（与上游 ``TeamConfig.team_list`` 同规则）。
+
+    已持久化条目原样返回（成员缺失补 unknown 占位），其后补
+    「编队N / 全配队通用 / 无成员」默认项直至 20 个。
+    """
+
+    raw = read_team_list(config_dir)
+    expanded: list[dict] = []
+    for i, item in enumerate(raw):
+        agents = item.get("agent_id_list")
+        expanded.append(
+            {
+                "idx": i,
+                "name": str(item.get("name") or f"编队{i + 1}"),
+                "auto_battle": str(item.get("auto_battle") or "全配队通用"),
+                "agent_id_list": (
+                    [str(a) for a in agents]
+                    if isinstance(agents, list) and agents
+                    else ["unknown", "unknown", "unknown"]
+                ),
+            }
+        )
+    for i in range(len(raw), TEAM_LIST_SIZE):
+        expanded.append(
+            {
+                "idx": i,
+                "name": f"编队{i + 1}",
+                "auto_battle": "全配队通用",
+                "agent_id_list": [],
+            }
+        )
+    return expanded
+
+
+def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
+    """整表写回预备编队（名称 + 绑定配队方案；成员按行保留既有值）。
+
+    成员取值优先级：传入行自带的 agent_id_list（外部全量写回场景）> 既有行
+    同下标成员 > unknown 占位（与上游 PredefinedTeamInfo 补齐规则一致）。
+    """
+
+    existing = read_team_list(config_dir)
+    normalized: list[dict] = []
+    for i, item in enumerate(teams):
+        if str(item.get("name") or "").strip() == "" and i >= len(existing):
+            continue
+        incoming_agents = item.get("agent_id_list")
+        prev_agents = existing[i].get("agent_id_list") if i < len(existing) else None
+        agents_src = (
+            incoming_agents
+            if isinstance(incoming_agents, list) and incoming_agents
+            else (prev_agents if isinstance(prev_agents, list) and prev_agents else None)
+        )
+        agents = (
+            [str(a) for a in agents_src] if agents_src else ["unknown", "unknown", "unknown"]
+        )
+        normalized.append(
+            {
+                "name": str(item.get("name") or f"编队{i + 1}"),
+                "auto_battle": str(item.get("auto_battle") or "全配队通用"),
+                "agent_id_list": agents,
+            }
+        )
+    write_file(config_dir / "team.yml", {"team_list": normalized})
+    return normalized
+
+
 # ── 运行记录（结果权威来源）──
 
 

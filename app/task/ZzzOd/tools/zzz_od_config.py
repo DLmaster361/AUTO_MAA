@@ -67,12 +67,18 @@ RUN_STATUS_RUNNING = 3
 # 「全部实例」的 instance_run 原生取值；``--instance N`` 的临时实例索引仅在
 # 「全部实例」分支生效（OneDragonApp.handle_init 只在该分支读 temp 列表），
 # 因此注入运行前需临时落盘此值，结束后恢复原值。
+# 「仅运行当前」= 只跑活跃实例：单槽注入时用它规避上游 wrap-around 对自己的
+# 无意义登出/登录切换。
 INSTANCE_RUN_ALL = "全部实例"
+INSTANCE_RUN_CURRENT = "仅运行当前"
 
 # zzz-od game_account.yml 的默认结构（与 GameAccountConfig 默认值一致）。
 # zzz-od 只持久化非默认字段，读取侧合并此默认值即可得到完整配置。
+# 注意 platform 的上游真实值为大写 'PC'（GamePlatformEnum.PC = ConfigItem('PC')，
+# 单参构造 value=label），注入/导入必须写大写，小写会导致 init_controller
+# 判断失败、controller 不创建（「未初始化控制器」整轮失败）。
 DEFAULT_GAME_ACCOUNT: dict[str, Any] = {
-    "platform": "pc",
+    "platform": "PC",
     "game_region": "cn",
     "game_path": "",
     "game_language": "cn",
@@ -352,14 +358,24 @@ def _view_sidecar_path(root: Path) -> Path:
 
 
 def write_instance_view(
-    root: Path, slots: list[tuple[int, str]], active_idx: int | None = None
+    root: Path,
+    slots: list[tuple[int, str]],
+    active_idx: int | None = None,
+    instance_run: str = INSTANCE_RUN_ALL,
+    force_login: bool = False,
 ) -> None:
     """把 one_dragon.yml 替换为合成视图（仅含给定 MAS 槽）。
 
     - 首次替换前把原生内容备份到 sidecar（已存在则不覆盖，保留最早的原生
       现场，保证崩溃后仍可完全还原）；
     - 视图内槽条目 ``active_in_od=True``（视图就是一条龙的全部世界），
-      ``active`` 指向 ``active_idx``（缺省首个槽），``instance_run=全部实例``；
+      ``active`` 指向 ``active_idx``（缺省首个槽）；
+    - ``instance_run``：多槽注入用「全部实例」（``--instance`` 列表在该分支
+      生效）；单槽注入用「仅运行当前」——规避上游 wrap-around 对自己的
+      无意义登出/登录切换；
+    - ``force_login``：视图内槽条目 ``force_login_before_run=True``（单实例
+      切换模式下用户配置了账号时置位，进入游戏前强制账密登录，避免沿用
+      游戏当前登录态串号）；
     - 槽目录（config/{idx:02d}）不受影响，配队等复杂配置持久保留。
     """
 
@@ -376,12 +392,14 @@ def write_instance_view(
             "active": (active_idx if active_idx is not None else slots[0][0])
             == int(idx),
             "active_in_od": True,
+            "force_login_before_run": bool(force_login),
         }
         for idx, name in slots
     ]
     with _YAML_LOCK:
         write_file(
-            original, {"instance_list": entries, "instance_run": INSTANCE_RUN_ALL}
+            original,
+            {"instance_list": entries, "instance_run": instance_run},
         )
 
 

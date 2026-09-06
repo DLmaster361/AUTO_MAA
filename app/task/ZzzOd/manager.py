@@ -25,10 +25,9 @@ from app.core import Config
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
 from app.tools.push_log import build_user_result_text
 from app.utils import get_logger
@@ -168,31 +167,96 @@ class ZzzOdManager(TaskExecuteBase):
             )
             return
 
-        # 「一条龙内置」账号切换：单次运行覆盖全部启用用户——
-        # 只生成一个代理任务，由其把各用户配置注入多实例槽并按槽归属结果
-        if (
-            self.script_config.get("Game", "AccountSwitch") == "一条龙内置"
-            and self.script_info.user_list
-        ):
-            self.script_info.current_index = 0
-            method = AutoProxyTask(
-                script_info=self.script_info,
-                script_config=self.script_config,
-                user_config=self.user_config,
-            )
-            sub_check = await method.check()
-            if sub_check != "Pass":
-                self.check_result = sub_check
-                for user in self.script_info.user_list:
-                    if user.status == "等待":
-                        user.status = "异常"
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id, type="Info", data={"Error": sub_check}
+        # 按配置来源分派：用户模式 → 注入运行；直控模式 → 原生裸跑。
+        # 直控用户绝不进入注入名单（直控=MAS 零注入零干涉）
+        inject_users = [
+            user
+            for user in self.script_info.user_list
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode")
+            != "直控"
+        ]
+        direct_users = [
+            user
+            for user in self.script_info.user_list
+            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Mode")
+            == "直控"
+        ]
+        account_switch = str(
+            self.script_config.get("Game", "AccountSwitch") or "单实例切换"
+        )
+
+        # 「多实例切换」（不推荐）：用户模式用户合并为一轮多账号注入运行
+        # （一条龙内部切换账号），直控用户在其后逐个原生裸跑。
+        # 失败域耦合：单槽失败/切换失败会终止整轮并全量重走（已完成任务按
+        # 运行记录跳过，不重复执行，但会话重启与重新登录的代价仍在）
+        if self.script_config.get("Game", "AccountSwitch") == "多实例切换":
+            ran_any = False
+            if inject_users:
+                self.script_info.current_index = 0
+                method = AutoProxyTask(
+                    script_info=self.script_info,
+                    script_config=self.script_config,
+                    user_config=self.user_config,
+                    users=inject_users,
                 )
-                return
-            await self.spawn(method)
+                sub_check = await method.check()
+                if sub_check != "Pass":
+                    for user in inject_users:
+                        if user.status == "等待":
+                            user.status = "异常"
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": sub_check},
+                    )
+                else:
+                    ran_any = True
+                    await self.spawn(method)
+            for direct_user in direct_users:
+                self.script_info.current_index = 0
+                method = AutoProxyTask(
+                    script_info=self.script_info,
+                    script_config=self.script_config,
+                    user_config=self.user_config,
+                    users=[direct_user],
+                )
+                sub_check = await method.check()
+                if sub_check != "Pass":
+                    if direct_user.status == "等待":
+                        direct_user.status = "异常"
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": sub_check},
+                    )
+                    continue
+                ran_any = True
+                await self.spawn(method)
+            if not ran_any:
+                self.check_result = "当前没有可执行的用户"
+                self.script_info.status = "异常"
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": self.check_result},
+                )
             return
 
+        # 「MAS切换」（MAS 侧 OCR 操控游戏切号后交一条龙运行）暂未开放
+        if account_switch == "MAS切换":
+            self.check_result = "MAS切换暂未开放, 请改用单实例切换或多实例切换"
+            self.script_info.status = "异常"
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": self.check_result},
+            )
+            return
+
+        # 「单实例切换」（默认，推荐）：逐用户独立会话——注入该用户配置 →
+        # 单实例运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。
+        # 失败域隔离：某用户失败只重启该用户，不影响已完成的用户
+        ran_any = False
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             current_user = self.script_info.user_list[self.script_info.current_index]
 
@@ -204,10 +268,6 @@ class ZzzOdManager(TaskExecuteBase):
 
             sub_check = await method.check()
             if sub_check != "Pass":
-                self.check_result = sub_check
-                current_user = self.script_info.user_list[
-                    self.script_info.current_index
-                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
                 await Config.send_websocket_message(
@@ -215,7 +275,17 @@ class ZzzOdManager(TaskExecuteBase):
                 )
                 continue
 
+            ran_any = True
             await self.spawn(method)
+
+        if not ran_any:
+            self.check_result = "当前没有可执行的用户"
+            self.script_info.status = "异常"
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": self.check_result},
+            )
 
     async def final_task(self):
         script_uid = uuid.UUID(self.script_info.script_id)
@@ -287,22 +357,19 @@ class ZzzOdManager(TaskExecuteBase):
                     "game_sign_summary": has_game_sign_summary,
                 }
 
-                await Notify.push_plyer(
-                    title.replace("报告", "已完成！"),
-                    (
-                        f"已完成用户数: {len(over_user)}, "
-                        f"未完成用户数: {len(error_user) + len(wait_user)}"
-                    ),
-                    (
-                        f"已完成用户数: {len(over_user)}, "
-                        f"未完成用户数: {len(error_user) + len(wait_user)}"
-                    ),
-                    10,
-                )
+                # 系统通知由 push_notification 内部的全局目标统一发送
+                # （include_system=True），此处不再直接 push_plyer 以免重复
                 try:
-                    await push_notification("代理结果", title, result)
-                    if has_game_sign_summary:
-                        mark_task_game_sign_summary_consumed(self.task_info)
+                    push_result = await push_notification(
+                        mode="代理结果",
+                        title=title,
+                        message=result,
+                        user_config=None,
+                        task_info=self.task_info,
+                    )
+                    finalize_task_game_sign_notification(
+                        self.task_info, has_game_sign_summary, push_result
+                    )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
                     await Config.send_websocket_message(

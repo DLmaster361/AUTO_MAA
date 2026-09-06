@@ -11,8 +11,8 @@ export type ZzzOdConfig_Game = {
      */
     CloseOnFinish?: (boolean | null);
     /**
-     * 多用户账号切换方式：一条龙内置=全部用户注入实例槽由一条龙多账号运行；MAS账号切换=逐用户循环运行（MAS侧主动切换后续接入）
+     * 多用户账号切换方式：单实例切换=逐用户独立会话（默认，推荐）；多实例切换=全部用户合并一轮多账号运行（不推荐）；MAS切换=MAS侧切换账号后交一条龙（暂未开放）
      */
-    AccountSwitch?: ('一条龙内置' | 'MAS账号切换' | null);
+    AccountSwitch?: ('单实例切换' | '多实例切换' | 'MAS切换' | null);
 };
 

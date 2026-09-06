@@ -136,7 +136,14 @@
                   size="large"
                   style="width: 100%"
                   @change="handleChange('Game', 'AccountSwitch', zzzodConfig.Game.AccountSwitch)"
-                />
+                >
+                  <!-- 逐选项悬停提示：鼠标停在哪个选项上就显示哪个的说明 -->
+                  <template #option="{ label, hint }">
+                    <a-tooltip :title="hint" placement="right" :mouse-enter-delay="0.3">
+                      <div class="account-switch-option">{{ label }}</div>
+                    </a-tooltip>
+                  </template>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -253,7 +260,7 @@ interface ZzzOdRunForm {
 
 interface ZzzOdGameForm {
   CloseOnFinish: boolean
-  AccountSwitch: '不切换' | '一条龙内置' | 'MAS账号切换'
+  AccountSwitch: '单实例切换' | '多实例切换' | 'MAS切换'
 }
 
 interface ZzzOdScriptConfigForm {
@@ -275,14 +282,28 @@ const formData = reactive({
 const zzzodConfig = reactive<ZzzOdScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 180 },
-  Game: { CloseOnFinish: true, AccountSwitch: '一条龙内置' },
+  Game: { CloseOnFinish: true, AccountSwitch: '单实例切换' },
 })
 
 // 账号切换方式（value 为后端 Game.AccountSwitch 取值，驱动逻辑需保持原样；label 走词表）
-// MAS账号切换尚未实现，先置灰不可选（后端 OptionsValidator 仍保留该值，落地后去掉 disabled 即可）
+// hint 为逐选项悬停提示（下拉里鼠标停在哪个选项就显示哪个的说明）
 const accountSwitchOptions = [
-  { label: t('edit.zzzodAccountSwitchOd'), value: '一条龙内置' },
-  { label: t('edit.zzzodAccountSwitchMas'), value: 'MAS账号切换', disabled: true },
+  {
+    label: t('edit.zzzodAccountSwitchSingle'),
+    value: '单实例切换',
+    hint: t('edit.zzzodAccountSwitchSingleHint'),
+  },
+  {
+    label: t('edit.zzzodAccountSwitchMulti'),
+    value: '多实例切换',
+    hint: t('edit.zzzodAccountSwitchMultiHint'),
+  },
+  {
+    label: t('edit.zzzodAccountSwitchMas'),
+    value: 'MAS切换',
+    hint: t('edit.zzzodAccountSwitchMasHint'),
+    disabled: true,
+  },
 ]
 
 const rules = computed(() => ({

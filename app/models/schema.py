@@ -1362,6 +1362,15 @@ class ZzzOdUserConfig_Game(BaseModel):
     BilibiliAccountName: Optional[str] = Field(
         default=None, description="B服登录账号名"
     )
+    Platform: Optional[Literal["PC"]] = Field(
+        default=None, description="游戏平台（上游 GamePlatformEnum.PC 真实值为大写）"
+    )
+    UseCustomWinTitle: Optional[bool] = Field(
+        default=None, description="是否使用自定义窗口标题"
+    )
+    CustomWinTitle: Optional[str] = Field(
+        default=None, description="自定义窗口标题"
+    )
 
 
 class ZzzOdUserConfig_OneDragon(BaseModel):
@@ -1626,9 +1635,9 @@ class ZzzOdConfig_Game(BaseModel):
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否由 zzz-od 关闭游戏"
     )
-    AccountSwitch: Optional[Literal["一条龙内置", "MAS账号切换"]] = Field(
+    AccountSwitch: Optional[Literal["单实例切换", "多实例切换", "MAS切换"]] = Field(
         default=None,
-        description="多用户账号切换方式：一条龙内置=全部用户注入实例槽由一条龙多账号运行；MAS账号切换=逐用户循环运行（MAS侧主动切换后续接入）",
+        description="多用户账号切换方式：单实例切换=逐用户独立会话（默认，推荐）；多实例切换=全部用户合并一轮多账号运行（不推荐）；MAS切换=MAS侧切换账号后交一条龙（暂未开放）",
     )
 
 

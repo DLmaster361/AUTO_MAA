@@ -143,6 +143,49 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 放 log_box 只会强塞专项语义。
 
 
+## 表达式语法（权威文档在前端目录）
+
+`collect(regex, expr)` / `collect_scope(..., expr)` 的提取表达式与通用脚本
+web 推送配置用的是**同一套表达式引擎**，完整语法文档维护在
+`frontend/src/views/EditView/Script/docs/`（web 配置界面内嵌「说明文档」的
+同源文件，随前端一起分发）：
+
+- [expression-doc.md](../../../../frontend/src/views/EditView/Script/docs/expression-doc.md) — 表达式指南（函数 / 正则 / 混合模式，**首选入口**）
+- [regex-doc.md](../../../../frontend/src/views/EditView/Script/docs/regex-doc.md) — 正则语法
+- multiline-doc.md / split-doc.md — 多行聚合与分割
+
+专项内建规则最常用的语义速查（详见上方文档）：
+
+| 语法 | 语义 |
+| --- | --- |
+| `$()`（空） | 返回整行（可多次复用），常接函数链 `.cutby("定位",0,1)` 截取 |
+| `$(正则)` | 取捕获组中的非空组（多组以 `\n` 拼接）；无捕获组 → 空串 |
+| `+` / `;` | 同行拼接 / 换行拼接；一行内所有 `$()` 必须全命中该行才输出 |
+| 函数链 | `.cut/.get/.cutby/.subby/.replace/.trim/.upper/.lower`；定位失败时跳过、返回原文（不报错） |
+
+> `$()` 内正则默认 DOTALL（`.` 跨行）；单行内提取用 `[^\n]+`。
+> 文档里 missing 语义「找不到定位文本跳过处理」同样适用于专项规则——规则
+> 匹配正则先行过滤、表达式只做提取，失败面最小。
+
+## 规则调试 API（debug_pattern）
+
+`app.utils.LogPatternExtractor.debug_pattern` 是规则调试的现成入口（web 推送
+配置的 🐛 调试按钮即基于它，与「日志提取」功能共用同一引擎）。专项排查
+规则命中/提取问题直接用它，**不要手工拼 RegexMatcher**：
+
+```python
+from app.utils.LogPatternExtractor import debug_pattern
+
+config = {"type": "regex", "match": r"...", "extract": r"..."}  # split/multiline 同理
+error, is_multiline, results = debug_pattern(config, log_text)
+# error: 配置级错误（正则/表达式语法错误等），None=通过
+# results: 逐行 {"idx", "hit", "extracted", "line"}——含未命中行，
+#          对整份日志一次跑完即可看清「哪些行命中、各自提取了什么」
+```
+
+与 `apply_patterns` 的差异：apply_patterns 只回首个命中且不含未命中信息，
+调试场景一律用 debug_pattern（入口统一 strip、不受 enabled 开关影响）。
+
 ## 表达式引擎自定义算子
 
 ```python

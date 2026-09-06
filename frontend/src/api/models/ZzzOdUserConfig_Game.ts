@@ -30,5 +30,17 @@ export type ZzzOdUserConfig_Game = {
      * B服登录账号名
      */
     BilibiliAccountName?: (string | null);
+    /**
+     * 游戏平台（上游 GamePlatformEnum.PC 真实值为大写）
+     */
+    Platform?: (string | null);
+    /**
+     * 是否使用自定义窗口标题
+     */
+    UseCustomWinTitle?: (boolean | null);
+    /**
+     * 自定义窗口标题
+     */
+    CustomWinTitle?: (string | null);
 };
 

@@ -48,6 +48,7 @@ from .native_config import (
 from .notify import push_notification
 from .zzz_od_config import (
     INSTANCE_RUN_ALL,
+    INSTANCE_RUN_CURRENT,
     RUN_STATUS_FAILED,
     RUN_STATUS_NOT_RUN,
     RUN_STATUS_RUNNING,
@@ -82,6 +83,7 @@ from .zzz_od_config import (
 
 __all__ = [
     "INSTANCE_RUN_ALL",
+    "INSTANCE_RUN_CURRENT",
     "RUN_STATUS_FAILED",
     "RUN_STATUS_NOT_RUN",
     "RUN_STATUS_RUNNING",

@@ -1655,16 +1655,24 @@ class AppConfig(GlobalConfig):
     async def import_zzzod_config(
         self, script_id: str, user_id: str, instance_idx: int
     ) -> dict:
-        """基于一条龙已有实例快速生成当前用户配置（账号信息 + 已启用任务编排）。
+        """基于一条龙已有实例快速生成当前用户配置（账号信息 + 已启用任务编排 + 应用通知）。
 
         覆盖前强制归档当前 MAS 槽配置（与「配置恢复」一致：即使内容与最近
         备份一致也生成新时间戳条目）——导入前的状态可在配置恢复中按 MAS
         配置找回。账号字段只回填来源实例的非空值（密码留空=沿用登录态），
         任务编排只取来源实例当前启用的应用（对齐 _group.yml 缺席=不加入）。
+        应用通知（notify.yml：总开关 + 每应用生命周期/细节级别）随导入对齐
+        来源实例写入绑定槽——zzz-od 对缺失 notify.yml 的默认值是开启，不搬
+        会让「来源关着通知」的实例导入后变开着。
         """
 
         import json
+        import shutil
 
+        from app.task.ZzzOd.AutoProxy import (
+            collect_used_slot_idxs,
+            ensure_user_slot,
+        )
         from app.task.ZzzOd.tools import (
             archive_mas_backup,
             collect_mas_user_info,
@@ -1702,6 +1710,8 @@ class AppConfig(GlobalConfig):
             "Account": "account",
             "Password": "password",
             "BilibiliAccountName": "bilibili_account_name",
+            "Platform": "platform",
+            "CustomWinTitle": "custom_win_title",
         }
         imported_accounts = 0
         for user_key, native_key in field_map.items():
@@ -1710,14 +1720,45 @@ class AppConfig(GlobalConfig):
                 continue
             await user_cfg.set("Game", user_key, value)
             imported_accounts += 1
+        if "use_custom_win_title" in game_account:
+            await user_cfg.set(
+                "Game", "UseCustomWinTitle",
+                bool(game_account.get("use_custom_win_title")),
+            )
+            imported_accounts += 1
 
         await user_cfg.set(
             "OneDragon", "AppList", json.dumps(enabled_apps, ensure_ascii=False)
         )
+
+        # 实例级持久配置对齐来源实例：notify.yml（应用通知）在实例根，
+        # charge_plan.yml（体力计划）在 one_dragon/ 应用组子目录
+        # （ApplicationConfig 的分组存储）。均不经 MAS 用户字段承载，直接
+        # 对齐到绑定槽（注入运行的实例目录）；用户尚无绑定槽时按全局查重
+        # 分配（语义与运行注入的 ensure_user_slot 一致）。缺失文件对齐为
+        # 删除 = 沿用 zzz-od 默认
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        if slot <= 0:
+            slot = await ensure_user_slot(
+                root, user_cfg, collect_used_slot_idxs(exclude_uids={uid})
+            )
+        target_dir = instance_dir(root, slot)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for yml_name, sub_dir in (("notify.yml", ""), ("charge_plan.yml", "one_dragon")):
+            source_yml = source_dir / sub_dir / yml_name if sub_dir else source_dir / yml_name
+            target_yml = target_dir / sub_dir / yml_name if sub_dir else target_dir / yml_name
+            if sub_dir:
+                target_yml.parent.mkdir(parents=True, exist_ok=True)
+            if source_yml.is_file():
+                shutil.copyfile(source_yml, target_yml)
+            else:
+                target_yml.unlink(missing_ok=True)
+
         await self.ScriptConfig.save()
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
-            f"(账号字段 {imported_accounts} 项, 任务 {len(enabled_apps)} 项)"
+            f"(账号字段 {imported_accounts} 项, 任务 {len(enabled_apps)} 项, "
+            f"应用通知/体力计划已对齐槽 {slot:02d})"
         )
         return {
             "instanceIdx": int(instance_idx),
@@ -2082,9 +2123,13 @@ class AppConfig(GlobalConfig):
 
         # ZzzOd 专项守卫：每脚本仅允许一个直控用户——直控是脚本级全局视图
         # （实例/活跃/运行实例都在一份 one_dragon.yml），多直控用户共享同一
-        # 份状态互相干扰，多账号由直控页实例管理直接配置
+        # 份状态互相干扰，多账号由直控页实例管理直接配置。
+        # 切入直控时同步清空任务编排残留：直控不消费 AppList，残留会让
+        # 注入名单误把直控用户卷入多账号运行（直控=MAS 零注入零干涉）。
         if isinstance(script_config, ZzzOdConfig):
             new_mode = str(data.get("Info", {}).get("Mode", "") or "")
+            if new_mode == "直控":
+                data.setdefault("OneDragon", {})["AppList"] = "[]"
             if (
                 new_mode == "直控"
                 and str(user_config.get("Info", "Mode") or "用户") != "直控"

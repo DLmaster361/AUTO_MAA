@@ -3762,6 +3762,16 @@ class ZzzOdUserConfig(ConfigBase):
         self.Game_Password = ConfigItem("Game", "Password", "")
         ## B服登录账号名
         self.Game_BilibiliAccountName = ConfigItem("Game", "BilibiliAccountName", "")
+        ## 游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）
+        self.Game_Platform = ConfigItem(
+            "Game", "Platform", "PC", OptionsValidator(["PC"])
+        )
+        ## 是否使用自定义窗口标题
+        self.Game_UseCustomWinTitle = ConfigItem(
+            "Game", "UseCustomWinTitle", False, BoolValidator()
+        )
+        ## 自定义窗口标题
+        self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
 
         ## OneDragon -------------------------------------------------------
         ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
@@ -3883,16 +3893,19 @@ class ZzzOdConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
-        ## 多用户账号切换方式（脚本级下拉）：
-        ## 一条龙内置 = 把全部启用用户的配置注入各实例槽，由一条龙多账号运行
-        ##   依次执行并内部切换账号（单进程覆盖所有用户）；
-        ## MAS账号切换 = 逐用户循环：注入该用户配置 → 运行一条龙 → 关闭再下一
-        ##   个（MAS 侧主动切换能力后续版本接入，当前依赖一条龙账密登录）。
+        ## 多用户账号切换方式（脚本级下拉，value 对应 manager 的分派分支）：
+        ## 单实例切换（默认，推荐）= 逐用户独立会话：注入该用户配置 → 单实例
+        ##   运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。失败域
+        ##   隔离最好，重试只重启失败用户；
+        ## 多实例切换（不推荐）= 全部启用用户合并为一轮多账号运行，一条龙内部
+        ##   依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随
+        ##   用户数线性增长；
+        ## MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。
         self.Game_AccountSwitch = ConfigItem(
             "Game",
             "AccountSwitch",
-            "一条龙内置",
-            OptionsValidator(["一条龙内置", "MAS账号切换"]),
+            "单实例切换",
+            OptionsValidator(["单实例切换", "多实例切换", "MAS切换"]),
         )
 
         ## Run -------------------------------------------------------------

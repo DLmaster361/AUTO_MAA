@@ -1521,9 +1521,16 @@ export default {
     zzzodCloseGameOnFinish: '任务结束后关闭游戏',
     zzzodAccountSwitch: '账号切换方式',
     zzzodAccountSwitchHint:
-      '一条龙内置切换 = 把全部启用用户的配置注入各实例槽，由一条龙多账号运行依次执行并内部切换账号，单次运行覆盖所有用户；MAS账号切换 = 每个用户独立循环（注入该用户配置 → 运行一条龙 → 结束再下一个），暂未开放（选项置灰）',
-    zzzodAccountSwitchOd: '一条龙内置切换',
-    zzzodAccountSwitchMas: 'MAS账号切换',
+      '多用户运行时按所选方式依次执行各用户的账号切换；悬停下拉选项可查看各方式的详细说明',
+    zzzodAccountSwitchSingle: '单实例切换（推荐）',
+    zzzodAccountSwitchSingleHint:
+      '每个用户独立一条龙会话：注入该用户配置 → 单实例运行（无槽间切换）→ 跑完关闭 → 下一个用户。失败只重启失败的用户，用户之间完全隔离',
+    zzzodAccountSwitchMulti: '多实例切换（不推荐）',
+    zzzodAccountSwitchMultiHint:
+      '全部用户合并一轮多账号运行，一条龙内部依次切换账号，总时长最短；但单槽失败或切换失败会拖整轮重试，用户之间不隔离',
+    zzzodAccountSwitchMas: 'MAS切换（暂未开放）',
+    zzzodAccountSwitchMasHint:
+      'MAS 操控游戏完成账号切换后交一条龙运行，暂未开放',
     zzzodCloseGameOnFinishHint: '一条龙跑完后由 zzz-od 关闭游戏（多账号连续运行时建议开启）',
     zzzodRetryLimitHint: '超过该次数仍失败则终止；重跑会自动跳过已完成的任务',
     zzzodRunTimeoutHint: '日志长期无变化将判定超时；一条龙全流程默认建议不低于 180 分钟',
@@ -1641,13 +1648,13 @@ export default {
     zzzodSettingsSaveFailed: '保存 ZZZ-OD 设置失败',
     zzzodUserNameHint: '用于区分用户的名称，相同名称的用户将被视为同一用户进行统计',
     zzzodConfigSourceUserAlert:
-      '账号与任务编排以本页配置为准，运行时由 MAS 写入你绑定的专属实例（不参与 zzz-od 原生一条龙）；「在一条龙内配置」的改动会自动回读到本页',
+      '账号与任务编排以本页配置为准，运行时由 AUTO-MAS 注入一条龙运行',
     zzzodConfigSourceDirectAlert:
       '直控直接编辑所选一条龙实例的原生配置，运行时按该实例配置执行，MAS 不注入不干涉',
-    zzzodModeUser: '用户配置',
-    zzzodModeUserDesc: '在本页配置账号与任务编排，运行时由 MAS 注入一条龙',
+    zzzodModeUser: '用户',
+    zzzodModeUserDesc: '使用当前用户独立配置，与原生配置隔离。',
     zzzodModeDirectDesc:
-      '直接编辑一条龙原生配置，多账号在本页实例管理中配置（每脚本限一个直控用户）',
+      '直接编辑一条龙原生配置，多账号在本页实例管理中配置\n（每脚本限一个直控用户）',
     zzzodDirectInstance: '选择配置实例',
     zzzodDirectInstanceHint:
       '选择要直接编辑的一条龙账号（实例）；编辑只影响该实例本身，要跑哪个账号在实例管理里把它「设为活跃」，多账号用「启动实例」+「切换账号」组合',

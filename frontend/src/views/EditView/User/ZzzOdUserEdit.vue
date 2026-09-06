@@ -725,7 +725,6 @@
                   <a-select
                     v-model:value="formData.Notify.PushLogMode"
                     :options="pushLogModeOptions"
-                    :disabled="!formData.Notify.Enabled"
                     size="large"
                     class="modern-select"
                     @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
@@ -962,6 +961,9 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
     Account: '',
     Password: '',
     BilibiliAccountName: '',
+    Platform: 'PC',
+    UseCustomWinTitle: false,
+    CustomWinTitle: '',
   },
   OneDragon: {
     AppList: '[]',

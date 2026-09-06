@@ -1581,9 +1581,16 @@ export default {
     zzzodCloseGameOnFinish: 'Close the game after the run',
     zzzodAccountSwitch: 'Account switching',
     zzzodAccountSwitchHint:
-      'One-dragon built-in = inject every enabled user into instance slots and let the one-dragon multi-account run execute them in order with built-in account switching, covering all users in a single run. MAS switching = per-user cycles (inject that user config → run the one-dragon → finish, then next); not yet available (greyed out)',
-    zzzodAccountSwitchOd: 'One-dragon built-in',
-    zzzodAccountSwitchMas: 'MAS switching',
+      'Multi-user runs switch each user\'s account per the selected method; hover a dropdown option for its details',
+    zzzodAccountSwitchSingle: 'Single-instance (recommended)',
+    zzzodAccountSwitchSingleHint:
+      "Each user gets an independent one-dragon session: inject that user config → single-instance run (no cross-slot switching) → finish and close → next user. A failure only restarts the failed user; users are fully isolated",
+    zzzodAccountSwitchMulti: 'Multi-instance (not recommended)',
+    zzzodAccountSwitchMultiHint:
+      'All users merge into one multi-account run with the one-dragon switching accounts internally; shortest total time, but one bad slot or failed switch drags the whole round into retries and users are not isolated',
+    zzzodAccountSwitchMas: 'MAS switching (not yet available)',
+    zzzodAccountSwitchMasHint:
+      'MAS drives the game to switch accounts then hands over to the one-dragon; not yet available',
     zzzodCloseGameOnFinishHint: 'zzz-od closes the game after the one-dragon run (recommended for multi-account runs)',
     zzzodRetryLimitHint: 'Give up after this many failures; re-runs skip already completed tasks',
     zzzodRunTimeoutHint: 'Times out when the log stays silent; a full one-dragon run usually needs 180+ minutes',
@@ -1704,14 +1711,14 @@ export default {
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',
     zzzodUserNameHint: 'Display name used to tell users apart in statistics',
     zzzodConfigSourceUserAlert:
-      'Account and task list follow this page; MAS writes them into your bound dedicated instance at run time (it never joins the native one-dragon). Changes made via "Configure in OneDragon" read back here automatically',
+      'Account and task list follow this page; AUTO-MAS injects them into the one-dragon at run time',
     zzzodConfigSourceDirectAlert:
       'Direct mode edits the selected instance\'s native one-dragon config and runs with that instance\'s config; MAS does not inject or interfere',
-    zzzodModeUser: 'User config',
+    zzzodModeUser: 'User',
     zzzodModeUserDesc:
-      'Configure the account and task list here; MAS injects them into the one-dragon at run time',
+      "Use this user's independent config, isolated from the native one.",
     zzzodModeDirectDesc:
-      'Edit the one-dragon\'s native config directly; configure multiple accounts in the Instance management on this page (one direct-control user per script)',
+      "Edit the one-dragon's native config directly; configure multiple accounts in the Instance management on this page\n(one direct-control user per script)",
     zzzodDirectInstance: 'Instance to edit',
     zzzodDirectInstanceHint:
       'Pick the one-dragon account (instance) to edit directly; editing only affects that instance. To decide which account "Run current only" runs, use "Set active" in Instance management, and combine "Launch instance" + "Switch account" for multi-account runs',

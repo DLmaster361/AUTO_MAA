@@ -800,7 +800,7 @@
                           >
                             <span class="task-config-field-title">{{ f.title }}</span>
                             <a-select
-                              v-if="f.type === 'select'"
+                              v-if="f.type === 'select' || f.type === 'team'"
                               :value="f.value ?? undefined"
                               size="small"
                               style="min-width: 150px"
@@ -2261,9 +2261,16 @@ onMounted(async () => {
     await loadInstances()
     await loadLaunchers()
     await loadCatalog()
-    // 已是直控模式的用户：同样确保原生配置已有最新备份（指纹去重，幂等）
+    // 已是直控模式的用户：确保原生配置已有最新备份（指纹去重，幂等），
+    // 并加载所选实例的原生配置（运行实例等全局设置）。
     if (formData.Info.Mode === '直控') {
       await ensureDirectBackup()
+      if (nativeInstanceIdx.value === null && instances.value.length) {
+        nativeInstanceIdx.value = instances.value[0].idx
+      }
+      if (nativeInstanceIdx.value !== null) {
+        await loadNativeConfig(nativeInstanceIdx.value)
+      }
     }
   }
 })

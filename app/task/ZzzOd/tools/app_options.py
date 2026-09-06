@@ -421,10 +421,9 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
 }
 
 # 支持跳转一条龙主界面配置的任务（任务卡片展示跳转按钮）：高度复杂配置
-# （式舆防卫战配队、迷失之地/枯萎之都挑战方案、随便观优先级列表、兑换码管理）
-# 引导用户进原生 GUI 编辑
+# （式舆防卫战配队、迷失之地/枯萎之都挑战方案）引导用户进原生 GUI 编辑
 TASK_APP_JUMPS: frozenset[str] = frozenset(
-    {"shiyu_defense", "lost_void", "withered_domain", "suibian_temple", "redemption_code"}
+    {"shiyu_defense", "lost_void", "withered_domain"}
 )
 
 # 数字列字段（plan_list 行内保存时转 int）

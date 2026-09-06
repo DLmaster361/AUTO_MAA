@@ -178,8 +178,8 @@ def test_get_task_app_jump() -> None:
     assert get_task_app_jump("shiyu_defense")
     assert get_task_app_jump("lost_void")
     assert get_task_app_jump("withered_domain")
-    assert get_task_app_jump("suibian_temple")
-    assert get_task_app_jump("redemption_code")
+    assert not get_task_app_jump("suibian_temple")
+    assert not get_task_app_jump("redemption_code")
     assert not get_task_app_jump("charge_plan")
     assert not get_task_app_jump("daily_signin")
 

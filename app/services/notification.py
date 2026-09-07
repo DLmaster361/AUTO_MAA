@@ -25,7 +25,9 @@ import re
 import json
 import smtplib
 import httpx
+import ipaddress
 from datetime import datetime
+from urllib.parse import urlparse
 from plyer import notification
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
@@ -42,9 +44,58 @@ logger = get_logger("通知服务")
 
 SMTP_TIMEOUT_SECONDS = 15
 
+# Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
+# UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
+# 数组，超长会抛 ValueError，且各留一位给结尾空字符，因此推送前先截断。
+PLYER_TITLE_LIMIT = 63
+PLYER_MESSAGE_LIMIT = 255
+
+
+def clip_notify_text(text: str, limit: int) -> str:
+    """
+    按 Windows 通知字段上限截断文本，超出部分以省略号收尾
+
+    ``ctypes.c_wchar`` 数组按 UTF-16 代码单元计数，而 ``len()`` 数的是码位：
+    emoji 等非 BMP 字符占 1 个码位却要 2 个代码单元，按码位截断仍会溢出，因此
+    这里按编码后的代码单元数裁剪。截断点落在代理对中间时，``errors="ignore"``
+    会丢弃残缺的那一半。
+
+    Args:
+        text: 待截断的文本
+        limit: 目标字段可用的 UTF-16 代码单元数（已扣除结尾空字符）
+
+    Returns:
+        str: 编码后不超过 ``limit`` 个 UTF-16 代码单元的文本
+    """
+
+    encoded = text.encode("utf-16-le")
+    if len(encoded) // 2 <= limit:
+        return text
+
+    clipped = encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore")
+
+    return f"{clipped}…"
+
+
+def _webhook_client_kwargs(url: str) -> dict:
+    """根据 Webhook 目标地址生成 httpx 客户端参数。
+
+    本地/内网目标（loopback、RFC1918 私网等）绕过代理并忽略环境变量中的
+    代理设置，避免 localhost 推送被系统代理劫持后返回误导性的 502；
+    外部目标沿用全局代理配置（含环境变量代理，保持历史行为）。
+    """
+    hostname = urlparse(url).hostname or ""
+    try:
+        addr = ipaddress.ip_address(hostname)
+        is_local = addr.is_loopback or addr.is_private
+    except ValueError:
+        is_local = hostname.lower() == "localhost"
+    if is_local:
+        return {"timeout": 10, "trust_env": False}
+    return {"timeout": 10, "proxy": Config.proxy}
+
 
 class Notification:
-
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
         推送系统通知
@@ -69,8 +120,8 @@ class Notification:
         if notification.notify is not None:
             await asyncio.to_thread(
                 notification.notify,
-                title=title,
-                message=message,
+                title=clip_notify_text(title, PLYER_TITLE_LIMIT),
+                message=clip_notify_text(message, PLYER_MESSAGE_LIMIT),
                 app_name="AUTO-MAS",
                 app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
                 timeout=t,
@@ -219,7 +270,6 @@ class Notification:
 
         # 替换模板变量
         try:
-
             # 准备模板变量
             template_vars = {
                 "title": title,
@@ -286,16 +336,14 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
-        async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+        url = webhook.get("Data", "Url")
+
+        async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
-                    response = await client.post(
-                        url=webhook.get("Data", "Url"), json=data, headers=headers
-                    )
+                    response = await client.post(url=url, json=data, headers=headers)
                 elif isinstance(data, str):
-                    response = await client.post(
-                        url=webhook.get("Data", "Url"), content=data, headers=headers
-                    )
+                    response = await client.post(url=url, content=data, headers=headers)
             elif webhook.get("Data", "Method") == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
@@ -307,9 +355,7 @@ class Notification:
                             params[k] = str(v)
                 else:
                     params = {"message": str(data)}
-                response = await client.get(
-                    url=webhook.get("Data", "Url"), params=params, headers=headers
-                )
+                response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
         if response.status_code == 200:
@@ -317,7 +363,9 @@ class Notification:
                 f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
             )
         else:
-            raise Exception(f"HTTP {response.status_code}: {response.text}")
+            raise Exception(
+                f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}: {response.text}"
+            )
 
     async def _WebHookPush(self, title, content, webhook_url) -> None:
         """

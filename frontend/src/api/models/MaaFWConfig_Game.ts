@@ -23,5 +23,9 @@ export type MaaFWConfig_Game = {
      * 任务结束后是否关闭由 MAS 启动的游戏
      */
     CloseOnFinish?: (boolean | null);
+    /**
+     * Win32 controller 下把游戏窗口客户区调整为指定尺寸；Off 不调整，Fit 取屏幕放得下的最大一档
+     */
+    WindowSize?: ('Off' | 'Fit' | '1280x720' | '1600x900' | '1920x1080' | null);
 };
 

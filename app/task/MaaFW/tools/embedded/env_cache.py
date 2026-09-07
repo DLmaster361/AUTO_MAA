@@ -28,6 +28,12 @@
 ``project_environment_fingerprint()``——它哈希的正是 interface / requirements /
 uv.lock 这些「脚本更新了没」的输入，项目一更新缓存自然失效。
 
+项目文件不是唯一的输入：运行池里那份 runtime 的身份还包含**宿主引导解释器**
+（``pool.resolve()`` 的 ``python_identity``，源头是本进程的 ``sys.executable``）。
+AUTO-MAS 自己换了随包 Python 之后，旧 runtime 目录仍在盘上、项目也没动过，光比
+项目指纹会命中，而真正运行时会解析到另一个 runtime 并现建——正好是这层缓存想
+避免的事。所以宿主解释器身份也是命中判据的一部分。
+
 **存在性检查不验内容**：文件还在、但 venv 内部已经坏了这种情况这里会放行。
 兜底仍在：运行前 ``embedded_manager.describe_unusable_runtime()`` 会起解释器
 核一次 ABI，编辑页的重试按钮也带 ``force`` 直接绕过缓存。
@@ -38,6 +44,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import uuid
 from collections.abc import Mapping
 from datetime import datetime
@@ -51,7 +58,17 @@ from .project_path import normalize_project_path
 logger = get_logger("MFW 运行环境缓存")
 
 # 缓存结构变更时递增：读到不认识的版本一律当没有缓存。
-CACHE_FORMAT_VERSION = 1
+CACHE_FORMAT_VERSION = 2
+
+
+def _host_python_identity() -> dict[str, str]:
+    """本进程解释器的身份，用来判断运行池那份 runtime 该不该换。
+
+    只读内存里的常量，不起子进程——运行池真正算 identity 时会去探测解释器，
+    但那份探测的输入就是这里这两个值，同路径同版本探不出不同结果。
+    """
+
+    return {"executable": sys.executable, "version": sys.version}
 
 
 def _cache_root() -> Path:
@@ -128,6 +145,9 @@ def load_prepared_environment(
         return None
     if payload.get("fingerprint") != fingerprint:
         return None
+    if payload.get("host") != _host_python_identity():
+        logger.debug("MFW 运行环境缓存来自另一个宿主解释器，将重新准备")
+        return None
 
     result = payload.get("result")
     if not isinstance(result, Mapping):
@@ -153,6 +173,7 @@ def store_prepared_environment(
         "version": CACHE_FORMAT_VERSION,
         "projectPath": normalize_project_path(project_path),
         "fingerprint": fingerprint,
+        "host": _host_python_identity(),
         "preparedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         # 只留下次要用的两段，日志不留：命中时那是上一次的日志，不是这次的。
         "result": {

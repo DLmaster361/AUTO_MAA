@@ -140,6 +140,21 @@ class MaaFWEnvCacheTest(unittest.TestCase):
         self._store()
         self.assertIsNotNone(load_prepared_environment(self.project, "FP-A"))
 
+    def test_host_interpreter_change_misses(self) -> None:
+        """AUTO-MAS 换了随包 Python，运行池里那份 runtime 的身份也跟着变。
+
+        项目文件一个字没动、旧 runtime 目录也还在盘上，光比项目指纹会命中，
+        而真正运行时会解析到另一个 runtime 并现建——正好是这层缓存要避免的。
+        """
+
+        self._store()
+        cache_file = self._cache_files()[0]
+        payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        payload["host"]["version"] = "3.11.0 (fake build)"
+        cache_file.write_text(json.dumps(payload), encoding="utf-8")
+
+        self.assertIsNone(load_prepared_environment(self.project, "FP-A"))
+
     def test_corrupt_cache_misses_without_raising(self) -> None:
         self._store()
         cache_files = self._cache_files()

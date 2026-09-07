@@ -30,9 +30,11 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -72,6 +74,11 @@ logger = get_logger("MFW 内置运行")
 # Store checkout 的 sidecar：存在即说明版本由 Project Store 管理（source hash
 # 绑定），原地改文件会破坏这层绑定，第三层要求走「下载 → 导入新版本 → 切换」。
 MANAGED_PROJECT_SIDECAR_NAME = ".auto_mas_maafw_project.json"
+
+# 取消运行环境准备后等线程收尾的上限，与 ``runner_task`` 里那条准备路径的
+# ``_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS`` 取同一个值（那边导入即打开
+# maa DLL，不为一个常数把它拉进来）。
+_ENV_PREPARE_CANCEL_GRACE_SECONDS = 2.0
 # CDK 距到期不足这些天时提醒用户续费
 CDK_EXPIRY_WARNING_DAYS = 7
 
@@ -519,7 +526,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 "；".join(text for _, text in lines),
             )
 
-    def _prepare_project_environment_sync(self, project_path: Path) -> bool:
+    def _prepare_project_environment_sync(
+        self, project_path: Path, cancel_event: threading.Event
+    ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
 
         先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
@@ -557,6 +566,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
             import_paths=[Path.cwd()],
             send_log=self._append_update_log,
+            cancel_event=cancel_event,
         )
         store_prepared_environment(
             project_path,
@@ -592,10 +602,27 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self._append_update_log("项目正被占用，跳过本次运行环境确认")
             return
 
-        try:
-            prepared = await asyncio.to_thread(
-                self._prepare_project_environment_sync, project_path
+        # 准备可能要几分钟（首次要下 MaaFramework）。用户这时点停止，
+        # ``task.cancel()`` 会在下面的 await 上抛出，但工作线程不会自己停——
+        # 取消得靠令牌传进去，做法与 ``runner_task`` 的准备路径一致。
+        cancel_event = threading.Event()
+        prepare_task = asyncio.create_task(
+            asyncio.to_thread(
+                self._prepare_project_environment_sync, project_path, cancel_event
             )
+        )
+        try:
+            prepared = await asyncio.shield(prepare_task)
+        except asyncio.CancelledError:
+            # 置位后正在跑的 uv 子进程会被终止。只等有限时间：等到了就在放开
+            # 项目锁之前收干净，等不到也不再拖着关机，线程随子进程结束。
+            cancel_event.set()
+            with suppress(BaseException):
+                await asyncio.wait_for(
+                    asyncio.shield(prepare_task),
+                    timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
+                )
+            raise
         except Exception as exc:  # noqa: BLE001 - 准备失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
             logger.opt(exception=True).warning(

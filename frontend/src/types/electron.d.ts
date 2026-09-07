@@ -297,7 +297,8 @@ export interface ElectronAPI {
     error?: string
   }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
-  openLogWindow: () => Promise<void>
+  /** file 指定打开时选中哪一份日志，省略则沿用日志页自己的默认（后端日志）。 */
+  openLogWindow: (file?: 'app' | 'frontend') => Promise<{ success: boolean; error?: string }>
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {

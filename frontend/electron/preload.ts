@@ -135,7 +135,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
-  openLogWindow: () => ipcRenderer.invoke('log:openWindow'),
+  openLogWindow: (file?: 'app' | 'frontend') => ipcRenderer.invoke('log:openWindow', file),
 
   // 获取模块化日志器（使用 electron-log）
   getLogger: (moduleName: string) => ({

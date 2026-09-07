@@ -613,6 +613,8 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+/** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
+type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
@@ -1066,7 +1068,9 @@ function createWindow() {
 }
 
 // 创建日志窗口
-function createLogWindow() {
+// file 指定落地时选中哪一份日志；启动/初始化路径要的是主进程写的 frontend.log，
+// 因为那时后端还没起来，debug/app.log 不存在或者还停在上一轮。
+function createLogWindow(file?: LogWindowFile) {
   // 如果日志窗口已存在，则聚焦并返回
   if (logWindow && !logWindow.isDestroyed()) {
     logWindow.focus()
@@ -1088,12 +1092,13 @@ function createLogWindow() {
     show: false,
   })
 
+  const hash = file ? `/logs?file=${file}` : '/logs'
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
-    logWindow.loadURL(`${devServer}#/logs`)
+    logWindow.loadURL(`${devServer}#${hash}`)
   } else {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
-    logWindow.loadFile(indexHtmlPath, { hash: '/logs' })
+    logWindow.loadFile(indexHtmlPath, { hash })
   }
 
   logWindow.once('ready-to-show', () => {
@@ -1344,9 +1349,9 @@ ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: strin
   }
 })
 
-ipcMain.handle('log:openWindow', async () => {
+ipcMain.handle('log:openWindow', async (_event, file?: LogWindowFile) => {
   try {
-    createLogWindow()
+    createLogWindow(file)
     return { success: true }
   } catch (error) {
     logger.error('打开日志窗口失败:', error)

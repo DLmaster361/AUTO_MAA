@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useTheme } from '@/composables/useTheme'
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 const logger = window.electronAPI.getLogger('日志查看')
+const route = useRoute()
 const { isDark } = useTheme()
 const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
 
@@ -15,15 +17,25 @@ defineOptions({ name: 'LogViewer' })
 type LogMode = 'follow' | 'browse'
 
 const logs = ref<string>('')
-const loading = ref(false)
+// 首次 loadLogs 之前就先算加载中，否则空日志的提示会在挂载那一帧闪一下
+const loading = ref(true)
 const logMode = ref<LogMode>('follow')
-const selectedLogFile = ref<'app' | 'frontend'>('app')
+// 主进程用 `#/logs?file=frontend` 指定落地时选中哪一份；启动路径要的是前端日志，
+// 那时后端还没起来，app.log 打开就是空的。没带参数时维持原来的默认。
+const selectedLogFile = ref<'app' | 'frontend'>(route.query.file === 'frontend' ? 'frontend' : 'app')
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 // Monaco Editor 主题（isDark 由 useTheme 响应式驱动，system 模式下跟随系统变化）
 const editorTheme = computed(() => (isDark.value ? 'vs-dark' : 'vs'))
+
+// 文件不存在时主进程返回空串。直接把空串塞进编辑器只会得到一片白，说一句人话。
+const emptyHint = computed(() =>
+  selectedLogFile.value === 'app'
+    ? '后端日志还是空的。后端这一程可能还没启动起来，先看「前端日志」。'
+    : '前端日志还是空的。'
+)
 
 // Monaco Editor 配置
 const editorOptions = {
@@ -140,7 +152,12 @@ const onLogFileChange = () => {
 }
 
 // 监听日志内容变化
-watch(logs, () => {
+watch(logs, value => {
+  // 内容清空时编辑器整个被 v-else 卸载，留着旧实例会拿到已 dispose 的 model
+  if (!value) {
+    editorInstance = null
+    return
+  }
   if (logMode.value === 'follow') {
     nextTick(() => scrollToBottom())
   }
@@ -197,7 +214,9 @@ onUnmounted(() => {
     <div class="logs-content">
       <a-spin :spinning="loading" tip="加载日志中...">
         <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
+          <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
           <vue-monaco-editor
+            v-else
             v-model:value="logs"
             language="log"
             :theme="editorTheme"
@@ -275,6 +294,16 @@ onUnmounted(() => {
 .log-editor {
   flex: 1;
   min-height: 0;
+}
+
+.log-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  color: var(--ant-color-text-tertiary);
+  text-align: center;
 }
 
 :deep(.monaco-editor) {

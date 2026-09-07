@@ -2604,6 +2604,10 @@ class MaaFWProjectUpdateOut(OutBase):
 class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(..., description="MFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(default=None, description="脚本 ID，仅用于日志定位")
+    force: bool = Field(
+        default=False,
+        description="忽略指纹缓存强制重新准备，供用户手动重试使用",
+    )
 
 
 class MaaFWAgentEnvInfo(BaseModel):
@@ -2639,6 +2643,13 @@ class MaaFWAgentEnvPrepareData(BaseModel):
     venvPath: Optional[str] = Field(default=None, description="Runner 虚拟环境路径")
     maafwVersion: Optional[str] = Field(
         default=None, description="实际解析到的 MaaFramework 版本"
+    )
+    cached: bool = Field(
+        default=False,
+        description="是否命中指纹缓存，命中时本次未做实际准备",
+    )
+    preparedAt: Optional[str] = Field(
+        default=None, description="缓存命中时，上一次实际完成准备的时间"
     )
 
 

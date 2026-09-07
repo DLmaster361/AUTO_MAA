@@ -3197,6 +3197,14 @@ class BetterGIUserConfig(ConfigBase):
         ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
         ## （按副本 TaskOrder 相对顺序，不重排）。
         self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
+        ## 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。
+        ## 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段
+        ## 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。
+        self.OneDragon_Plan = ConfigItem("OneDragon", "Plan", "", StringValidator())
+        ## 是否启用「直连执行层」：战斗 4 项由 MAS 自编排 Plan 驱动（按需求恒开，预留开关）。
+        self.OneDragon_UseExecutionLayer = ConfigItem(
+            "OneDragon", "UseExecutionLayer", True, BoolValidator()
+        )
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）

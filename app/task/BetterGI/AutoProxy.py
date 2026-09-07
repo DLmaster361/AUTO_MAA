@@ -34,7 +34,13 @@ from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
 from app.utils.platform import IS_ELEVATED
 
-from .tools import account_switch, one_dragon, push_notification
+from .tools import (
+    account_switch,
+    one_dragon,
+    one_dragon_bridge,
+    push_notification,
+)
+from .tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES, parse_one_dragon_plan
 from .tools.one_dragon_report import parse_one_dragon_report
 
 logger = get_logger("BetterGI 自动代理")
@@ -79,6 +85,9 @@ _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
 
 # 切换账号单独执行的超时（秒），超时视为失败并继续一条龙
 _BGI_SWITCH_TIMEOUT_SECONDS = 600
+
+# 路径 B 执行层（战斗 4 项 --startGroups MAS一条龙）单独执行的超时（秒）
+_BGI_PLAN_COMBAT_TIMEOUT_SECONDS = 900
 
 # BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
 # TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
@@ -272,6 +281,21 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_queue = one_dragon.parse_one_dragon_queue(
             self.cur_user_config.get("OneDragon", "Queue") or ""
         )
+        # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
+        # plan 模式下战斗 4 项由 --startGroups MAS一条龙 直连执行层；日常 4 项仍走一条龙
+        # （_write_one_dragon_config 会把战斗 4 项从一条龙副本过滤，避免重复执行）。
+        self.use_execution_layer = bool(
+            self.cur_user_config.get("OneDragon", "UseExecutionLayer")
+        )
+        _plan_steps = parse_one_dragon_plan(
+            self.cur_user_config.get("OneDragon", "Plan") or ""
+        )
+        self.plan_combat_steps = [
+            s
+            for s in _plan_steps
+            if s.get("name") in BUILTIN_COMBAT_STEP_NAMES and s.get("enabled", True)
+        ]
+        self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
 
@@ -297,15 +321,22 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
-    def _write_one_dragon_config(self) -> None:
+    def _write_one_dragon_config(
+        self, exclude_task_names: list[str] | None = None
+    ) -> None:
         """用户独立配置模式下，把组开关应用到一条龙配置并物化到 BGI（槽位 + 前缀配置组）。
 
         物化的配置组文件路径记录在 ``self._materialized_script_groups``，
         由 ``_restore_one_dragon_config`` 在结束后删除。
+        ``exclude_task_names`` 用于路径 B：把已改由执行层直连的战斗 4 项从一条龙副本过滤掉。
         """
         if not self.use_mas_config:
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
+        # 路径 B：plan 模式下把战斗 4 项从一条龙副本过滤，交由 --startGroups MAS一条龙 直连
+        _exclude = exclude_task_names or (
+            list(BUILTIN_COMBAT_STEP_NAMES) if self.plan_mode else None
+        )
         self._materialized_script_groups = one_dragon.write_user_one_dragon(
             self.script_root_path,
             self.script_info.script_id,
@@ -321,6 +352,7 @@ class AutoProxyTask(TaskExecuteBase):
             custom_groups=self.one_dragon_custom_groups,
             manage_custom_groups=self.use_custom_groups,
             queue=self.one_dragon_queue,
+            exclude_task_names=_exclude,
         )
         # 幽境危战面板设置（刷取战场/树脂策略等）先物化到 config.json 的
         # autoStygianOnslaughtConfig 段；随后顶部「通用战斗队伍/策略」非空会覆盖同段的
@@ -414,6 +446,14 @@ class AutoProxyTask(TaskExecuteBase):
         self._backup_one_dragon_config()
         self._write_one_dragon_config()
 
+        # 路径 B：先直连执行层跑战斗 4 项；失败则中止（日常 4 项仍走随后的一条龙）
+        if self.plan_mode:
+            if not await self._run_plan_combat():
+                self.cur_user_item.status = "异常"
+                self.script_info.log = "执行层（战斗4项）失败，已中止任务"
+                logger.error(f"用户 {self.cur_user_item.name} 执行层失败，中止任务")
+                return
+
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
             if self.run_book:
@@ -497,6 +537,96 @@ class AutoProxyTask(TaskExecuteBase):
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
+
+    async def _run_plan_combat(self) -> bool:
+        """路径 B：用 ``--startGroups MAS一条龙`` 直连执行层跑战斗 4 项，返回是否成功。
+
+        单组 --startGroups 成败判定与切号一致（见 ``_switch_account``）：
+        成功 = 「配置组 "MAS一条龙" 执行结束」；失败 = 执行配置组任务时失败 / 任务启动失败 /
+        任务执行异常 / [FTL] / [ERR]；进程提前退出亦判失败。
+        """
+        group_name = one_dragon_bridge.GROUP_NAME
+        try:
+            one_dragon_bridge.write_one_dragon_group(
+                self.script_root_path, self.plan_combat_steps
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"一条龙执行层配置组生成失败: {e}")
+            await self._push_dispatch_log(f"执行层配置组生成失败: {e}")
+            return False
+
+        await self._push_dispatch_log(
+            f"开始执行层（战斗4项）: --startGroups {group_name}"
+        )
+        logger.info(
+            f"用户 {self.cur_user_item.name} 启动 BetterGI 执行层: "
+            f"{self.script_exe_path} --startGroups {group_name}"
+        )
+
+        # 杀旧进程，保证单实例下 --startGroups 由新进程执行
+        await self.kill_managed_process()
+
+        result: dict[str, bool] = {"success": False, "started": False}
+        done_event = asyncio.Event()
+        done_marker = f'配置组 "{group_name}" 执行结束'
+        fail_markers = (
+            "执行配置组任务时失败",
+            "任务启动失败",
+            "任务执行异常",
+            "[FTL]",
+            "[ERR]",
+        )
+
+        async def on_log(log_content: list[str], latest_time: datetime) -> None:
+            log = "".join(log_content)
+            if done_marker in log:
+                result["success"] = True
+                done_event.set()
+            elif any(m in log for m in fail_markers):
+                result["success"] = False
+                done_event.set()
+            elif (
+                result["started"]
+                and not await self.bettergi_process_manager.is_running()
+            ):
+                done_event.set()
+
+        monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
+
+        try:
+            await self.bettergi_process_manager.open_process(
+                self.script_exe_path,
+                "--startGroups",
+                group_name,
+                target_process=self.script_target_process_info,
+                elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+            )
+            result["started"] = True
+            await asyncio.sleep(1)
+            await monitor.start_monitor_file(
+                self._resolve_log_file_path, datetime.now()
+            )
+            try:
+                await asyncio.wait_for(
+                    done_event.wait(), timeout=_BGI_PLAN_COMBAT_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                result["success"] = False
+                logger.warning(f"用户 {self.cur_user_item.name} 执行层超时")
+        except Exception as e:
+            logger.opt(exception=True).warning(f"执行层执行异常: {e}")
+            result["success"] = False
+        finally:
+            await monitor.stop()
+            await self.kill_managed_process()
+            with suppress(Exception):
+                one_dragon_bridge.scrub_one_dragon_group(self.script_root_path)
+
+        if result["success"]:
+            await self._push_dispatch_log("执行层（战斗4项）完成")
+        else:
+            await self._push_dispatch_log("执行层（战斗4项）失败")
+        return result["success"]
 
     async def _switch_account(self) -> bool:
         """单独执行一次切号（--startGroups），返回是否切换成功。

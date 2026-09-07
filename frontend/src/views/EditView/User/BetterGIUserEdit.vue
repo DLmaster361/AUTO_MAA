@@ -2057,6 +2057,7 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
         { key: 'LeyLineResinExhaustionMode', label: '树脂耗尽模式', type: 'bool', help: '按当前树脂与库存自动计算可刷次数，结束后自动停止。' },
         { key: 'LeyLineOpenModeCountMin', label: '刷取次数最小值', type: 'bool', help: '与手动次数取最小值，避免超过树脂可用次数。' },
         { key: 'LeyLineRunCount', label: '刷取次数', type: 'number', min: 0, help: '填 0 则使用独立任务配置。' },
+        { key: 'LeyLineTimeout', label: '战斗超时(秒)', type: 'number', min: 0, help: '单次执行最长等待时间（秒）；0 表示不限制（使用 BetterGI 默认）。' },
       ],
     },
     {

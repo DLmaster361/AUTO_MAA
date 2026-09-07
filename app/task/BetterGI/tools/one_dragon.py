@@ -826,6 +826,33 @@ def cleanup_leftover_mas_groups(root: Path, script_id: str, user_id: str) -> int
     return removed
 
 
+def _exclude_tasks(config: dict, task_names: list[str]) -> dict:
+    """从一条龙配置中移除指定任务名（按 ``TaskDefinitions`` 的值匹配），同步清理
+    ``TaskOrder`` / ``TaskEnabledList``。
+
+    路径 B 用途：战斗 4 项改由 JS 直连执行层后，一条龙副本只保留日常 4 项，
+    避免与 ``--startGroups`` 重复执行同一任务。
+    """
+    names = set(task_names)
+    defs = config.get("TaskDefinitions")
+    if not isinstance(defs, dict) or not names:
+        return config
+    rm_keys = [k for k, v in defs.items() if v in names]
+    if not rm_keys:
+        return config
+    rm_set = set(rm_keys)
+    for k in rm_keys:
+        defs.pop(k, None)
+    enabled = config.get("TaskEnabledList")
+    if isinstance(enabled, dict):
+        for k in rm_keys:
+            enabled.pop(k, None)
+    order = config.get("TaskOrder")
+    if isinstance(order, list):
+        config["TaskOrder"] = [k for k in order if k not in rm_set]
+    return config
+
+
 def write_user_one_dragon(
     root: Path,
     script_id: str,
@@ -837,6 +864,7 @@ def write_user_one_dragon(
     custom_groups: list[dict[str, Any]] | None = None,
     manage_custom_groups: bool = False,
     queue: list[dict[str, Any]] | None = None,
+    exclude_task_names: list[str] | None = None,
 ) -> list[Path]:
     """把组开关与队伍/策略设置应用到一条龙配置，写入 BGI 运行时槽位并缓存 per-user 副本。
 
@@ -885,6 +913,8 @@ def write_user_one_dragon(
         manage_customs=manage_custom_groups,
         queue=queue,
     )
+    if exclude_task_names:
+        config = _exclude_tasks(config, exclude_task_names)
     # 副本只保存一条龙结构与组开关（不含顶部快捷覆盖，避免清空后残留旧值）
     write_file(user_path, config)
     slot_config = dict(config)

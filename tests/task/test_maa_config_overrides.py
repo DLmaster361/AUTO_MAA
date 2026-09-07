@@ -1,5 +1,10 @@
 import json
 
+# v5.4.0 结构下需先初始化 app.core：直接先导 app.task 会经
+# MAA.__init__ -> manager -> app.core.__init__ -> task_manager 触发循环导入
+# （dev 侧已重构消除，此处为 release 局部守卫，不影响生产入口）。
+import app.core  # noqa: F401
+
 from app.task.MAA.AutoProxy import (
     _build_activity_priority_fight,
     _build_depot_maintain_task,

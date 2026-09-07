@@ -154,51 +154,10 @@
               </a-col>
             </a-row>
 
-            <!-- 一条龙启动器（直控/用户两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明）。
-                 用户模式下右侧配「快速导入配置」：左侧母版下拉选择来源实例 + 右侧导入按钮，
-                 外观与周围下拉框一致；确认后覆盖本用户配置（账号+任务编排） -->
+            <!-- 一条龙启动器（直控/用户两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明）固定在右侧；
+                 左侧按模式切换：直控为「运行实例」，用户为「快速导入配置」（母版下拉选择来源实例 + 导入按钮，
+                 外观与周围下拉框一致；确认后覆盖本用户配置（账号+任务编排）） -->
             <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.zzzodLauncherMode') }}
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.LauncherMode"
-                    size="large"
-                    class="modern-select"
-                    :loading="launchersLoading"
-                    @change="saveField('Info.LauncherMode', formData.Info.LauncherMode)"
-                  >
-                    <a-select-option
-                      value="自动"
-                      :disabled="!launchersReady || !launchersUsable.smart"
-                    >
-                      <a-tooltip :title="t('edit.zzzodLauncherAutoHint')">
-                        <span>{{ t('edit.zzzodLauncherAuto') }}</span>
-                      </a-tooltip>
-                    </a-select-option>
-                    <a-select-option
-                      value="原始"
-                      :disabled="!launchersReady || !launchersUsable.original"
-                    >
-                      <a-tooltip :title="t('edit.zzzodLauncherOriginalHint')">
-                        <span>{{ t('edit.zzzodLauncherOriginal') }}</span>
-                      </a-tooltip>
-                    </a-select-option>
-                    <a-select-option
-                      value="集成"
-                      :disabled="!launchersReady || !launchersUsable.integrated"
-                    >
-                      <a-tooltip :title="t('edit.zzzodLauncherIntegratedHint')">
-                        <span>{{ t('edit.zzzodLauncherIntegrated') }}</span>
-                      </a-tooltip>
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
               <a-col v-if="formData.Info.Mode === '直控'" :span="12">
                 <a-form-item>
                   <template #label>
@@ -248,6 +207,47 @@
                       {{ t('edit.zzzodImport') }}
                     </a-button>
                   </div>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.zzzodLauncherMode') }}
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Info.LauncherMode"
+                    size="large"
+                    class="modern-select"
+                    :loading="launchersLoading"
+                    @change="saveField('Info.LauncherMode', formData.Info.LauncherMode)"
+                  >
+                    <a-select-option
+                      value="自动"
+                      :disabled="!launchersReady || !launchersUsable.smart"
+                    >
+                      <a-tooltip :title="t('edit.zzzodLauncherAutoHint')">
+                        <span>{{ t('edit.zzzodLauncherAuto') }}</span>
+                      </a-tooltip>
+                    </a-select-option>
+                    <a-select-option
+                      value="原始"
+                      :disabled="!launchersReady || !launchersUsable.original"
+                    >
+                      <a-tooltip :title="t('edit.zzzodLauncherOriginalHint')">
+                        <span>{{ t('edit.zzzodLauncherOriginal') }}</span>
+                      </a-tooltip>
+                    </a-select-option>
+                    <a-select-option
+                      value="集成"
+                      :disabled="!launchersReady || !launchersUsable.integrated"
+                    >
+                      <a-tooltip :title="t('edit.zzzodLauncherIntegratedHint')">
+                        <span>{{ t('edit.zzzodLauncherIntegrated') }}</span>
+                      </a-tooltip>
+                    </a-select-option>
+                  </a-select>
                 </a-form-item>
               </a-col>
             </a-row>

@@ -855,7 +855,50 @@ def _find_uv_executable(bootstrap: str) -> str | None:
     portable_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
     if portable_uv.is_file():
         return str(portable_uv)
+
+    runtime_uv = runtime_managed_uv_executable()
+    if runtime_uv is not None:
+        return runtime_uv
     return shutil.which("uv")
+
+
+def runtime_managed_uv_executable() -> str | None:
+    """AUTO-MAS Runtime 自己装的那把固定版本 uv。
+
+    受管模式下 Runtime 根目录就是应用根目录，也就是后端进程的 cwd，uv 落在
+    ``runtime/tools/uv/<版本>/uv.exe``。受管模式本身不需要运行池找 uv（后端跑在
+    受管 Python 的 venv 里，宿主够格当引导），但用户回退到旧链路后就需要了——而
+    Runtime 的 bootstrap 第一步装的就是 uv，机器上多半已经有一把，没必要再让用户
+    自己弄一份。
+    """
+
+    tools_dir = Path.cwd() / "runtime" / "tools" / "uv"
+    if not tools_dir.is_dir():
+        return None
+    parsed: list[tuple[Version, Path]] = []
+    unparsed: list[Path] = []
+    try:
+        entries = list(tools_dir.iterdir())
+    except OSError:
+        # 目录在但列不动（提权会话留下的 ACL 之类）：这只是发现链上的一环，
+        # 不该让整条链带着异常中断，后面还有 PATH 可以试。
+        return None
+    for entry in entries:
+        candidate = entry / "uv.exe"
+        if not candidate.is_file():
+            continue
+        try:
+            parsed.append((Version(entry.name), candidate))
+        except InvalidVersion:
+            unparsed.append(candidate)
+    if parsed:
+        # 同时留着多个版本时取版本号最大的那把。
+        parsed.sort(key=lambda item: item[0])
+        return str(parsed[-1][1])
+    if unparsed:
+        unparsed.sort()
+        return str(unparsed[-1])
+    return None
 
 
 def _runtime_pool_root(environment_path: Path) -> Path:

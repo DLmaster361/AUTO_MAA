@@ -32,6 +32,7 @@ from .security import (
     format_exception_reason,
     sanitize_log_message,
 )
+from .supervision import is_supervised
 
 _LAZY_EXPORTS = {
     "LogMonitor": (".LogMonitor", "LogMonitor"),
@@ -41,6 +42,7 @@ _LAZY_EXPORTS = {
     "ProcessInfo": (".ProcessManager", "ProcessInfo"),
     "ProcessResult": (".ProcessManager", "ProcessResult"),
     "is_process_running": (".ProcessManager", "is_process_running"),
+    "is_process_alive": (".ProcessManager", "is_process_alive"),
     "activate_window_by_pid": (".ProcessManager", "activate_window_by_pid"),
     "has_visible_window": (".ProcessManager", "has_visible_window"),
     "RegexMatcher": (".LogPatternExtractor", "RegexMatcher"),
@@ -135,6 +137,7 @@ __all__ = [
     "dpapi_decrypt",
     "format_exception_reason",
     "sanitize_log_message",
+    "is_supervised",
     "strptime",
     "MumuManager",
     "LDManager",

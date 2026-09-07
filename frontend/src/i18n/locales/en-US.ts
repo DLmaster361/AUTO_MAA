@@ -2718,6 +2718,8 @@ export default {
         'Checks whether the driver is installed, whether it can be driven, and whether a display can actually be attached. The last step briefly changes your monitor layout.',
       checkAction: 'Run check',
       checkFailed: 'Check request failed',
+      checkPassed: 'Check passed',
+      checkIssue: 'Check did not pass',
       monitors: 'Monitors during the check',
       download: 'Download the Parsec virtual display driver',
       stage: {

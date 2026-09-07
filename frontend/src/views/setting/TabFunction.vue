@@ -27,6 +27,11 @@ const virtualDisplayModeOptions = computed(() => [
 
 const vddChecking = ref(false)
 const vddResult = ref<VirtualDisplayCheckOut | null>(null)
+// 结论这一行由前端出：后端文案是中文的，紧挨着英文标签太刺眼。明细仍用后端原文，
+// 那里带着版本号、实际模式、错误详情这些动态内容，与全站其它后端文案一致。
+const vddAllPassed = computed(() =>
+  (vddResult.value?.results ?? []).every((item) => item.passed),
+)
 
 async function runVirtualDisplayCheck() {
   vddChecking.value = true
@@ -391,12 +396,14 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
       </a-row>
       <a-row v-if="vddResult" :gutter="24" class="vdd-result-row">
         <a-col :span="24">
-          <a-alert
-            :type="(vddResult.results ?? []).every((item) => item.passed) ? 'success' : 'warning'"
-            show-icon
-          >
-            <template #message>{{ vddResult.message }}</template>
+          <a-alert :type="vddAllPassed ? 'success' : 'warning'" show-icon>
+            <template #message>
+              {{ vddAllPassed ? t('setting.display.checkPassed') : t('setting.display.checkIssue') }}
+            </template>
             <template #description>
+              <p v-if="!vddAllPassed && vddResult.message" class="vdd-summary">
+                {{ vddResult.message }}
+              </p>
               <ul class="vdd-result-list">
                 <li v-for="item in vddResult.results ?? []" :key="item.stage">
                   <CheckCircleOutlined v-if="item.passed" class="vdd-ok" />
@@ -427,6 +434,10 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 
 .vdd-result-row {
   margin-top: 16px;
+}
+
+.vdd-summary {
+  margin: 0 0 8px;
 }
 
 .vdd-result-list {

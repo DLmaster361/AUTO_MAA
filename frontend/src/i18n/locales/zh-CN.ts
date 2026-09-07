@@ -2616,6 +2616,8 @@ export default {
         '依次检查驱动装没装、能不能调用、以及能否真的挂出一块屏。最后一步会短暂改变桌面显示器布局。',
       checkAction: '开始检测',
       checkFailed: '检测请求失败',
+      checkPassed: '检测通过',
+      checkIssue: '检测未通过',
       monitors: '检测时的显示器',
       download: '下载 Parsec 虚拟显示驱动',
       stage: {

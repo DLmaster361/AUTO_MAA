@@ -2716,6 +2716,8 @@ export default {
         'インストール済みか、呼び出せるか、実際に接続できるかを順に確認します。最後の手順ではモニター構成が一時的に変化します。',
       checkAction: '診断を実行',
       checkFailed: '診断リクエストに失敗しました',
+      checkPassed: '診断に合格しました',
+      checkIssue: '診断に合格しませんでした',
       monitors: '診断時のモニター',
       download: 'Parsec 仮想ディスプレイドライバーをダウンロード',
       stage: {

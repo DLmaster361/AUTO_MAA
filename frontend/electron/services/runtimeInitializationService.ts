@@ -262,14 +262,11 @@ const STAGE_STARTED_PROGRESS = 10
  * 进度百分比只用 Runtime 真给的 `percent`：没有可靠总量时用 `indeterminate` 明确告诉
  * 界面展示持续活动状态。`progress=10` 只为兼容仍要求数字的旧消费方，不再作为精确百分比
  * 呈现；这样既保留当前 IPC 形状，也不会让长耗时阶段看起来卡死在 10%。
-<<<<<<< HEAD
-=======
  *
  * Runtime 会为 `uv.download` 发真实字节百分比，且写入末块时必定回报一次 100；但一个界面段
  * 里装着好几个 Runtime stage（`uv.download` 之后还有校验、解压、`python.*`），段没结束就
  * 不能让渲染层看到 100，所以 running 的百分比钳在 [10, 99]，100 只由段收口发出。段内进度
  * 还要单调：镜像轮换会让下载从 0 重来，后续无 percent 的事件也不能把数字压回段起始值。
->>>>>>> dev
  */
 export class BootstrapProgressBridge {
   private index = -1
@@ -316,11 +313,7 @@ export class BootstrapProgressBridge {
       this.emit({
         stage: RUNTIME_BOOTSTRAP_STAGE_ORDER[target],
         status: 'started',
-<<<<<<< HEAD
-        progress: percent === undefined ? STAGE_STARTED_PROGRESS : clampPercent(percent),
-=======
         progress: this.stageProgress,
->>>>>>> dev
         message,
         indeterminate: percent === undefined,
       })

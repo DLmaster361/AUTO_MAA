@@ -348,36 +348,20 @@ describe('进度桥接', () => {
     expect(pythonInstall?.stage).toBe('repository')
   })
 
-  it('没有 percent 时标记为持续活动，有真实 percent 时立即透传', () => {
+  it('没有 percent 时段内停在 10%，段结束才 100%', () => {
     const updates: BootstrapProgressUpdate[] = []
     const bridge = new BootstrapProgressBridge(update => updates.push(update))
 
     bridge.observe('uv.download', '正在准备固定版本 uv')
     bridge.observe('uv.verify', '固定版本 uv 已校验')
     expect(updates.map(u => u.progress)).toEqual([10, 10])
-    expect(updates.every(u => u.indeterminate)).toBe(true)
 
     bridge.observe('workspace.clone', '正在同步后端仓库', 42.86)
     bridge.observe('workspace.clone', '正在接收后端仓库数据', 63.4)
     expect(updates[2]).toMatchObject({ stage: 'python', status: 'completed', progress: 100 })
-<<<<<<< HEAD
-    expect(updates[3]).toMatchObject({
-      stage: 'repository',
-      status: 'started',
-      progress: 43,
-      indeterminate: false,
-    })
-    expect(updates[4]).toMatchObject({
-      stage: 'repository',
-      status: 'running',
-      progress: 63,
-      indeterminate: false,
-    })
-=======
     // 段开始时带着真实百分比就照发（#570 起的既有行为，当时没同步这条期望值）
     expect(updates[3]).toMatchObject({ stage: 'repository', status: 'started', progress: 43 })
     expect(updates[4]).toMatchObject({ stage: 'repository', status: 'running', progress: 63 })
->>>>>>> dev
   })
 
   it('还没进过任何段时不会顺手把前面的段报成完成', () => {
@@ -489,11 +473,7 @@ describe('development 模式跳过', () => {
       'repository',
       'dependency',
     ])
-    expect(
-      updates.every(
-        u => u.status === 'completed' && u.progress === 100 && u.indeterminate === false
-      )
-    ).toBe(true)
+    expect(updates.every(u => u.status === 'completed' && u.progress === 100)).toBe(true)
     expect(updates[0].message).toBe('由 Runtime development 模式接管，跳过')
   })
 })

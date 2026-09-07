@@ -76,34 +76,20 @@ if (-not $backendVersionMatch.Success -or $backendVersionMatch.Groups['version']
 }
 
 $pythonVersion = $appVersion.Substring(1)
-<<<<<<< HEAD
-=======
 # Python 元数据兼容原始版本写法与规范化写法（如 5.5.0-beta.3 和 5.5.0b3）。
 $expectedLockVersion = $pythonVersion `
     -replace '-alpha\.', 'a' `
     -replace '-beta\.', 'b' `
     -replace '-rc\.', 'rc'
->>>>>>> dev
 $pyprojectText = Get-Content -LiteralPath $pyprojectFile -Raw
 $pyprojectVersionMatch = [regex]::Match(
     $pyprojectText,
     '(?m)^version\s*=\s*"(?<version>[^"]+)"'
 )
-<<<<<<< HEAD
-if (-not $pyprojectVersionMatch.Success -or $pyprojectVersionMatch.Groups['version'].Value -ne $pythonVersion) {
-    throw "pyproject.toml 版本与 $pythonVersion 不一致。"
-}
-
-$expectedLockVersion = $pythonVersion `
-    -replace '-alpha\.', 'a' `
-    -replace '-beta\.', 'b' `
-    -replace '-rc\.', 'rc'
-=======
 if (-not $pyprojectVersionMatch.Success -or @($pythonVersion, $expectedLockVersion) -notcontains $pyprojectVersionMatch.Groups['version'].Value) {
     throw "pyproject.toml 版本与 $pythonVersion 不一致。"
 }
 
->>>>>>> dev
 $uvLockText = Get-Content -LiteralPath $uvLockFile -Raw
 $uvVersionMatch = [regex]::Match(
     $uvLockText,

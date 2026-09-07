@@ -1,6 +1,11 @@
 import ctypes
 import unittest
 
+# v5.4.0 结构下需先初始化 app.core：直接先导 app.services 会经
+# matomo -> app.core.__init__ -> task_manager 触发循环导入（dev 侧已随
+# 通知迁移重构消除，此处为 release 局部守卫，不影响生产入口）。
+import app.core  # noqa: F401
+
 from app.services.notification import (
     PLYER_MESSAGE_LIMIT,
     PLYER_TITLE_LIMIT,

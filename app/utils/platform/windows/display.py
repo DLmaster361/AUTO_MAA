@@ -230,6 +230,37 @@ def monitor_from_window(hwnd: int) -> MonitorInfo | None:
         return _read_monitor(handle)
 
 
+def monitor_work_in_current_context(
+    hwnd: int, handle: int | None = None
+) -> tuple[int, int, int, int] | None:
+    """在**当前线程的 DPI 感知级别下**读取显示器工作区。
+
+    摆放窗口时必须用这个，不能用 `list_monitors()` 里那份物理像素的 work：
+    `GetWindowRect` / `SetWindowPos` 用的是调用线程感知级别下的坐标，而对
+    DPI-unaware 的窗口，那套坐标和物理像素在 150% 缩放下差 1.5 倍。两边混着比大小，
+    夹取会把窗口推到屏幕外，ScreenDC 截图随即抓到垃圾像素。
+
+    调用方负责先进入目标窗口的 DPI 上下文（见 `window_dpi_context`）。
+    """
+
+    target = handle
+    if not target:
+        with suppress(OSError):
+            target = ctypes.windll.user32.MonitorFromWindow(
+                wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST
+            )
+    if not target:
+        return None
+
+    info = _MONITORINFOEXW()
+    info.cbSize = ctypes.sizeof(_MONITORINFOEXW)
+    if not ctypes.windll.user32.GetMonitorInfoW(
+        wintypes.HMONITOR(target), ctypes.byref(info)
+    ):
+        return None
+    return (info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom)
+
+
 def frame_size_for_client(
     client_width: int,
     client_height: int,

@@ -50,7 +50,6 @@ from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
 from app.utils.platform.display import (
-    can_host_client,
     describe_monitors,
     find_host_monitor,
     monitor_from_window,
@@ -714,8 +713,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return resource.name
         return None
 
-
-
     def _check_desktop_capacity(self) -> str | None:
         """开了窗口整形时，先确认桌面上真有一块屏放得下目标客户区。
 
@@ -742,25 +739,31 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             "使用显示器假负载，或把「游戏窗口尺寸」改小"
         )
 
-    def _win32_window_target(self, monitor) -> tuple[int, int] | None:
-        """按脚本配置解析目标客户区；Off 或放不下时返回 None。
+    def _win32_window_plan(self):
+        """解析「目标客户区 + 该放到哪块屏」。Off、或没有一块屏放得下时返回 None。
 
-        目标只给 16:9 的几档预设，不做任意尺寸：MAS 无从知道某个 MaaFW 项目要的
-        是什么比例，硬凑一个非标尺寸只会把问题从「窗口太小」换成「窗口比例怪」。
+        目标只给 16:9 的几档预设，不做任意尺寸：MAS 无从知道某个 MaaFW 项目要的是什么
+        比例，硬凑一个非标尺寸只会把问题从「窗口太小」换成「窗口比例怪」。
+
+        选屏与判据必须是同一次决策。早先的版本容量检查按「任意显示器」放行、整形却按
+        「窗口当前所在显示器」执行，多屏尺寸不同时两者会对不上：窗口在小屏上时检查通过，
+        整形却降档，或者显式尺寸被夹到小屏工作区外面。
         """
 
         mode = str(self.script_config.get("Game", "WindowSize") or "Off")
         if mode == "Off":
             return None
         if mode in _WIN32_WINDOW_SIZE_PRESETS:
-            return _WIN32_WINDOW_SIZE_PRESETS[mode]
-        if mode != "Fit":
+            candidates = (_WIN32_WINDOW_SIZE_PRESETS[mode],)
+        elif mode == "Fit":
+            candidates = _WIN32_WINDOW_FIT_ORDER
+        else:
             return None
-        if monitor is None:
-            return None
-        for size in _WIN32_WINDOW_FIT_ORDER:
-            if can_host_client(monitor, *size):
-                return size
+
+        for size in candidates:
+            monitor = find_host_monitor(*size)
+            if monitor is not None:
+                return size, monitor
         return None
 
     def _prepare_win32_window(self, hwnd: int) -> None:
@@ -777,8 +780,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         try:
             self._append_log(f"桌面显示器: {describe_monitors()}")
         except Exception as exc:
+            # 读不到显示器信息不能让窗口诊断一起丢掉——恰恰是出问题时最需要它。
             self._append_log(f"读取显示器信息失败: {exc}")
-            return
 
         try:
             monitor = monitor_from_window(hwnd)
@@ -788,17 +791,29 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 f"{_format_physical_suffix(hwnd, before)}"
                 f"; 所在显示器: {monitor.describe() if monitor else '未知'}"
             )
+        except Exception as exc:
+            self._append_log(f"读取游戏窗口尺寸失败: {exc}")
+            return
 
-            target = self._win32_window_target(monitor)
-            if target is None:
+        try:
+            plan = self._win32_window_plan()
+            if plan is None:
                 return
-            if before == target:
+            target, host = plan
+            already_ok = (
+                before == target
+                and monitor is not None
+                and monitor.handle == host.handle
+            )
+            if already_ok:
                 self._append_log(
                     f"游戏窗口客户区已是 {target[0]}x{target[1]}，无需调整"
                 )
                 return
+            if monitor is not None and monitor.handle != host.handle:
+                self._append_log(f"游戏窗口将移至 {host.device} 以容纳目标尺寸")
 
-            after = set_client_size(hwnd, *target)
+            after = set_client_size(hwnd, *target, monitor_handle=host.handle)
             if after is None:
                 self._append_log(
                     f"游戏窗口无法调整为 {target[0]}x{target[1]}"

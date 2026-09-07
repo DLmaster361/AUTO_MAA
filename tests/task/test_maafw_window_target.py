@@ -1,7 +1,11 @@
-"""MaaFW Win32 游戏窗口目标尺寸解析的纯逻辑回归
+"""MaaFW Win32 游戏窗口「目标尺寸 + 目标显示器」解析的纯逻辑回归
 
-`Game.WindowSize` 决定 MAS 要不要动游戏窗口、动成多大。默认 Off：MAS 无从知道某个
-MaaFW 项目要的是什么比例，只在用户明确指定时才整形。Fit 从大到小挑第一个放得下的。
+`Game.WindowSize` 决定 MAS 要不要动游戏窗口、动成多大、放到哪块屏。默认 Off：MAS 无从
+知道某个 MaaFW 项目要的是什么比例，只在用户明确指定时才整形。
+
+选屏与判据必须是同一次决策——早先的版本容量检查按「任意显示器」放行、整形却按「窗口当前
+所在显示器」执行，多屏尺寸不同时两者会对不上。这里用假的 find_host_monitor 覆盖真实显示器，
+测的是那次决策本身。
 """
 
 from types import SimpleNamespace
@@ -13,24 +17,14 @@ from app.utils.platform import IS_WINDOWS
 pytestmark = pytest.mark.skipif(not IS_WINDOWS, reason="窗口整形仅 Windows 实现")
 
 
-def _task(window_size: str):
-    from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
-
-    task = object.__new__(MaaFWPluginAutoProxyTask)
-    task.script_config = SimpleNamespace(
-        get=lambda section, key: window_size
-        if (section, key) == ("Game", "WindowSize")
-        else None
-    )
-    return task
-
-
-def _monitor(width: int, height: int, dpi: int = 96):
+def _monitor(
+    width: int, height: int, dpi: int = 96, device: str = "TEST", handle: int = 1
+):
     from app.utils.platform.display import MonitorInfo
 
     return MonitorInfo(
-        device="\\\\.\\DISPLAYTEST",
-        handle=0,
+        device=device,
+        handle=handle,
         bounds=(0, 0, width, height),
         work=(0, 0, width, height),
         dpi=dpi,
@@ -38,40 +32,100 @@ def _monitor(width: int, height: int, dpi: int = 96):
     )
 
 
-def test_off_never_touches_the_window() -> None:
+def _task(window_size: str, monitors, monkeypatch):
+    """构造一个只带 Game.WindowSize 的任务，并把可用显示器换成 monitors。"""
+
+    from app.task.MaaFW.tools.embedded import runner_task
+    from app.utils.platform.display import can_host_client
+
+    def fake_find_host_monitor(width: int, height: int):
+        for monitor in monitors:
+            if can_host_client(monitor, width, height):
+                return monitor
+        return None
+
+    monkeypatch.setattr(runner_task, "find_host_monitor", fake_find_host_monitor)
+
+    task = object.__new__(runner_task.MaaFWPluginAutoProxyTask)
+    task.script_config = SimpleNamespace(
+        get=lambda section, key: (
+            window_size if (section, key) == ("Game", "WindowSize") else None
+        )
+    )
+    return task
+
+
+def test_off_never_touches_the_window(monkeypatch: pytest.MonkeyPatch) -> None:
     """默认不整形——用户没要求就不该替他决定窗口多大。"""
 
-    assert _task("Off")._win32_window_target(_monitor(3840, 2160)) is None
+    task = _task("Off", [_monitor(3840, 2160)], monkeypatch)
+    assert task._win32_window_plan() is None
 
 
-def test_explicit_preset_ignores_screen_size() -> None:
-    """指定了具体尺寸就照做，容量检查交给 check() 的闸门。"""
+def test_explicit_preset_returns_the_monitor_that_can_host_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """显式尺寸同样要求真有屏放得下，并把那块屏一起返回。"""
 
-    assert _task("1280x720")._win32_window_target(_monitor(1024, 768)) == (1280, 720)
-    assert _task("1920x1080")._win32_window_target(_monitor(3840, 2160)) == (1920, 1080)
+    big = _monitor(3840, 2160, device="BIG", handle=2)
+    task = _task("1920x1080", [big], monkeypatch)
+    assert task._win32_window_plan() == ((1920, 1080), big)
 
 
-def test_fit_picks_the_largest_that_actually_fits() -> None:
+def test_explicit_preset_gives_up_when_no_monitor_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """放不下就返回 None，交由 check() 的闸门给出可读的失败原因。
+
+    早先显式尺寸分支不做容量判断，会把窗口设成超出工作区的尺寸再被夹到屏幕外，
+    ScreenDC 截图随即抓到垃圾像素。
+    """
+
+    task = _task("1920x1080", [_monitor(1024, 768)], monkeypatch)
+    assert task._win32_window_plan() is None
+
+
+def test_fit_picks_the_largest_that_actually_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Fit 从大到小挑第一个放得下的，而不是无脑取最大。"""
 
-    task = _task("Fit")
-    assert task._win32_window_target(_monitor(3840, 2160)) == (1920, 1080)
-    assert task._win32_window_target(_monitor(1920, 1080)) == (1600, 900)
-    assert task._win32_window_target(_monitor(1600, 900)) == (1280, 720)
+    def plan_for(width: int, height: int):
+        task = _task("Fit", [_monitor(width, height)], monkeypatch)
+        return task._win32_window_plan()[0]
+
+    assert plan_for(3840, 2160) == (1920, 1080)
+    assert plan_for(1920, 1080) == (1600, 900)
+    assert plan_for(1600, 900) == (1280, 720)
 
 
-def test_fit_gives_up_when_nothing_fits() -> None:
-    """兜底分辨率下一档都放不下，返回 None 交由闸门给出可读的失败原因。"""
+def test_fit_gives_up_when_nothing_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """兜底分辨率下一档都放不下。"""
 
-    assert _task("Fit")._win32_window_target(_monitor(1024, 768)) is None
-    assert _task("Fit")._win32_window_target(None) is None
+    assert _task("Fit", [_monitor(1024, 768)], monkeypatch)._win32_window_plan() is None
+    assert _task("Fit", [], monkeypatch)._win32_window_plan() is None
 
 
-def test_fit_accounts_for_dpi_scaling() -> None:
+def test_larger_secondary_monitor_is_chosen_over_the_small_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """多屏尺寸不同时，选的是放得下的那块，不是第一块。
+
+    这正是选屏与判据分家时会错的场景：窗口在小屏上，检查却按大屏放行。
+    """
+
+    small = _monitor(1024, 768, device="SMALL", handle=1)
+    big = _monitor(2560, 1440, device="BIG", handle=2)
+    size, host = _task("Fit", [small, big], monkeypatch)._win32_window_plan()
+    assert size == (1920, 1080)
+    assert host.device == "BIG"
+
+
+def test_fit_accounts_for_dpi_scaling(monkeypatch: pytest.MonkeyPatch) -> None:
     """同样的屏幕像素，高 DPI 下非客户区更厚，可能就掉一档。
 
-    临界屏幕由换算函数自己算出来，不写死——写死的数字既容易和实际的边框宽度
-    对不上，也无法说明「差别真的来自 DPI」。
+    临界屏幕由换算函数自己算出来，不写死——写死的数字既容易和实际的边框宽度对不上，
+    也无法说明「差别真的来自 DPI」。
     """
 
     from app.utils.platform.display import frame_size_for_client
@@ -83,6 +137,11 @@ def test_fit_accounts_for_dpi_scaling() -> None:
     # 宽度对两档都够，高度只够 96 那一档。
     screen = max(width_96, width_192), height_96
 
-    task = _task("Fit")
-    assert task._win32_window_target(_monitor(*screen, dpi=96)) == (1920, 1080)
-    assert task._win32_window_target(_monitor(*screen, dpi=192)) != (1920, 1080)
+    plan_96 = _task(
+        "Fit", [_monitor(*screen, dpi=96)], monkeypatch
+    )._win32_window_plan()
+    plan_192 = _task(
+        "Fit", [_monitor(*screen, dpi=192)], monkeypatch
+    )._win32_window_plan()
+    assert plan_96[0] == (1920, 1080)
+    assert plan_192 is None or plan_192[0] != (1920, 1080)

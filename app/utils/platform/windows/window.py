@@ -9,7 +9,7 @@ import win32process
 from .display import (
     dpi_for_window,
     frame_size_for_client,
-    monitor_from_window,
+    monitor_work_in_current_context,
     per_monitor_dpi,
     window_dpi_context,
 )
@@ -318,12 +318,16 @@ def _is_resizable_window(hwnd: int) -> bool:
 
 
 def set_client_size(
-    hwnd: int, client_width: int, client_height: int
+    hwnd: int,
+    client_width: int,
+    client_height: int,
+    monitor_handle: int | None = None,
 ) -> tuple[int, int] | None:
     """把窗口客户区调整为目标尺寸，返回实际结果；不可调整时返回 None。
 
-    位置尽量保持不动，放不下时才挪回所在显示器的可用区域内——窗口跑到屏幕外面
-    会让 ScreenDC 之类基于屏幕 DC 的截图方式抓到垃圾像素。
+    `monitor_handle` 指定目标显示器（`MonitorInfo.handle`）：窗口不在那块屏上时会被挪
+    过去。不传则留在当前所在的屏。位置尽量保持不动，放不下时才夹回工作区内——窗口跑到
+    屏幕外面会让 ScreenDC 这类基于屏幕 DC 的截图方式抓到垃圾像素。
     """
 
     if not hwnd or client_width <= 0 or client_height <= 0:
@@ -331,7 +335,6 @@ def set_client_size(
     if not _is_resizable_window(hwnd):
         return None
 
-    monitor = monitor_from_window(hwnd)
     # 用窗口自己的 DPI，不是显示器的：DPI-unaware 的窗口在 150% 缩放下按物理像素
     # 去设根本取不到目标值（1280 -> 实测 1278），差的那两像素足以卡住脚本侧的下限。
     dpi = dpi_for_window(hwnd)
@@ -345,8 +348,10 @@ def set_client_size(
             )
             left, top, _right, _bottom = win32gui.GetWindowRect(hwnd)
 
-            if monitor is not None:
-                work_left, work_top, work_right, work_bottom = monitor.work
+            # 工作区必须在**同一个 DPI 上下文里**取，否则和上面的窗口坐标不是一套尺度。
+            work = monitor_work_in_current_context(hwnd, monitor_handle)
+            if work is not None:
+                work_left, work_top, work_right, work_bottom = work
                 left = min(
                     max(left, work_left), max(work_left, work_right - frame_width)
                 )

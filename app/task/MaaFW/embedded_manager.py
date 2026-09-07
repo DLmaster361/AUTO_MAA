@@ -33,7 +33,7 @@ import asyncio
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -410,6 +410,24 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self.project_update_logs.append(f"[{timestamp}] {line}\n")
         self.script_info.log = "".join(self.project_update_logs[-80:])
 
+    def _threadsafe_update_log(self) -> Callable[[str], None]:
+        """给会在工作线程里回调的下游用的日志入口。
+
+        ``_append_update_log`` 末尾写 ``script_info.log``，而那个 setter 会
+        ``schedule_on_change()`` → ``asyncio.create_task`` 推 WS。在非事件循环
+        线程里直接调它会 ``RuntimeError: no running event loop``，异常还会被
+        上层的容错吞掉，表面上只看到一句「…失败，任务继续」——更新与环境准备
+        都把 ``send_log`` 交给 ``asyncio.to_thread`` 里的同步代码，所以两边都
+        得走这个转发。
+        """
+
+        loop = asyncio.get_running_loop()
+
+        def send_log(message: str) -> None:
+            loop.call_soon_threadsafe(self._append_update_log, message)
+
+        return send_log
+
     async def _notify_update(
         self, level: Literal["info", "warning", "error"], message: str
     ) -> None:
@@ -447,7 +465,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "channel": credentials.channel,
             # 下载源由用户显式选定，核心包不再自动分流。
             "source_config": {"package_source": credentials.package_source},
-            "send_log": self._append_update_log,
+            "send_log": self._threadsafe_update_log(),
             "project_lock_already_held": False,
         }
         # 核心包签名正在收敛：``interface_model`` 位置参数可能被拿掉（改为包内
@@ -527,7 +545,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
 
     def _prepare_project_environment_sync(
-        self, project_path: Path, cancel_event: threading.Event
+        self,
+        project_path: Path,
+        cancel_event: threading.Event,
+        send_log: Callable[[str], None],
     ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
 
@@ -565,7 +586,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             runtime_pool_id=route.pool_id,
             # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
             import_paths=[Path.cwd()],
-            send_log=self._append_update_log,
+            send_log=send_log,
             cancel_event=cancel_event,
         )
         store_prepared_environment(
@@ -608,7 +629,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         cancel_event = threading.Event()
         prepare_task = asyncio.create_task(
             asyncio.to_thread(
-                self._prepare_project_environment_sync, project_path, cancel_event
+                self._prepare_project_environment_sync,
+                project_path,
+                cancel_event,
+                self._threadsafe_update_log(),
             )
         )
         try:

@@ -23,7 +23,7 @@
 | `archive_files(files, store_root, *, keep, force)` | 文件集快照（`{rel_key: Path}`），保留相对结构，供分散/部分备份 |
 | `restore_dir(store_root, ts, target)` | 整目录替换 `target`（先删后拷） |
 | `list_times(root)` | 时间倒序时间戳（目录名即时间戳） |
-| `get_backup_dir(store_root, ts)` | 定位单份归档，校验存在 |
+| `get_backup_dir(store_root, ts)` | 定位单份归档；`ts` 非法格式或目录不存在返回 `None`（报错由调用方/`restore_dir` 负责） |
 | `dir_files(source)` | 目录 → 相对文件集 |
 | `file_set_hash(files)` | 文件集指纹（rel 键 + 大小 + 字节） |
 

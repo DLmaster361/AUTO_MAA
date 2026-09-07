@@ -28,7 +28,7 @@ class LogBox:
         Args:
             paths: 日志位置（单个或多个文件）；None 时回退到环境变量
                 ``MAS_SCRIPT_LOG_PATH``（MAS 配置的日志位置）。
-            sink: MAS 进程宿主注入的 push_log 写入回调 sink(log_type, text)；
+            sink: MAS 进程宿主注入的 push_log 写入回调 sink(log_type, text, ts)；
                 缺省时结果走 @@LOGBOX@@ 标记回传（脚本子进程宿主）。
             start_from_end: 是否从文件末尾起始采集（仅采集会话内新增内容）。
 

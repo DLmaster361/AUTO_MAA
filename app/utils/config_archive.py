@@ -27,6 +27,7 @@
 为 ZzzOd 的 ``app.task.ZzzOd.tools.backup_archive``。
 """
 
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,9 @@ KEEP_COUNT = 10
 """默认保留的归档份数（每个 store_root 各自独立，超出清理最旧的）"""
 
 _TIME_FORMAT = "%Y%m%d-%H%M%S"
+
+_TS_PATTERN = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
+"""归档目录名白名单：仅接受本模块生成的时间戳命名（含同秒顺延序号后缀）"""
 
 
 def list_times(root: Path) -> list[str]:
@@ -199,14 +203,20 @@ def archive_dir(
 def get_backup_dir(store_root: Path, ts: str) -> Path | None:
     """取指定时间戳的归档目录；不存在返回 ``None``。
 
+    ``ts`` 仅接受本模块生成的 ``%Y%m%d-%H%M%S(-N)`` 目录名（时间戳来自
+    外部请求时防止 ``../`` 等输入拼出 store_root 之外的路径），格式非法
+    一律视为不存在。
+
     Args:
         store_root: 归档根目录。
         ts: 归档时间戳（目录名）。
 
     Returns:
-        归档目录路径；不存在时返回 ``None``。
+        归档目录路径；不存在或格式非法时返回 ``None``。
     """
 
+    if not _TS_PATTERN.match(str(ts)):
+        return None
     dest = store_root / str(ts)
     return dest if dest.is_dir() else None
 

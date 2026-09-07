@@ -3707,8 +3707,8 @@ class ZzzOdUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "用户", OptionsValidator(["用户", "直控"])
         )
-        ## 绑定的 zzz-od 实例槽下标（固定绑定持久槽）：-1=未分配，首次运行或
-        ## 「在一条龙内配置」时自动分配空闲 idx 并持久注册 MAS-{用户名} 实例，
+        ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
+        ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
         ## 此后配置会话与运行时注入都固定使用该槽
         self.Info_SlotIdx = ConfigItem(
             "Info", "SlotIdx", -1, RangeValidator(-1, 999)
@@ -3758,8 +3758,8 @@ class ZzzOdUserConfig(ConfigBase):
         )
         ## 登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）
         self.Game_Account = ConfigItem("Game", "Account", "")
-        ## 登录密码（与 zzz-od 一致明文存储，仅供其账密登录使用）
-        self.Game_Password = ConfigItem("Game", "Password", "")
+        ## 登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）
+        self.Game_Password = ConfigItem("Game", "Password", "", EncryptValidator())
         ## B服登录账号名
         self.Game_BilibiliAccountName = ConfigItem("Game", "BilibiliAccountName", "")
         ## 游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）

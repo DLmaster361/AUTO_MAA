@@ -9,7 +9,7 @@ ZzzOd 基于 `one-dragon` 框架家族，用户级配置是 **MaaEnd 式字段�
 - **用户↔实例槽固定绑定，注册表零持久写入**：绑定下标存用户配置 `Info.SlotIdx`，首次运行/配置时按全局查重分配最小空闲 idx；运行/会话窗口内以合成注册表视图临时呈现 MAS 槽（详见下节），窗口外 zzz-od 原生世界零 MAS 痕迹。不要把「槽目录持久」误解为「注册表持久」——持久的是 `config/{idx:02d}` 目录（配队等），注册表（`one_dragon.yml`）从不写入 MAS 条目。
 - **任务网格只把 `DEFAULT_GROUP=True` 的应用作为可选项**。自动战斗等独立工具应用不是一条龙任务；但已保存/导入的启用非默认任务照常显示并执行（对齐 zzz-od 原生「已开启的非默认组应用保留」语义），不要在聚合层过滤掉。
 - 任务编排 `OneDragon.AppList` 是 JSON 字符串字段（顺序即执行顺序），前端开关=加入/移出、拖拽=调序；不做 zzz-od 式逐任务子配置页。
-- **任务卡片 ⚙ 走数据驱动元数据表**（`app/task/ZzzOd/tools/app_options.py` 的 `TASK_APP_FIELDS`，加任务=加表项）：字段类型 select/bool/number/plan_list 决定前端渲染（plan_list 或字段多走弹窗，少量字段走弹层）；复杂配置不进 MAS 的任务在 `TASK_APP_JUMPS` 注册（式舆防卫战/迷失之地/枯萎之都/随便观/兑换码），卡片显示跳转按钮引导进一条龙主界面。
+- **任务卡片 ⚙ 走数据驱动元数据表**（`app/task/ZzzOd/tools/app_options.py` 的 `TASK_APP_FIELDS`，加任务=加表项）：字段类型 select/bool/number/plan_list 决定前端渲染（plan_list 或字段多走弹窗，少量字段走弹层）；复杂配置不进 MAS 的任务在 `TASK_APP_JUMPS` 注册（式舆防卫战/迷失之地/枯萎之都），卡片显示跳转按钮引导进一条龙主界面；随便观已字段化进 `TASK_APP_FIELDS`，兑换码无配置字段（两表均不进）。
 - **动态选项与一条龙原生 GUI 同源，全部静态读取**（`tools/compendium.py`，勿写死）：副本级联与图层=安装目录 `assets/game_data/compendium_data.yml`；咖啡= `coffee_data.yml` 排程；代理人名=`assets/game_data/agent/*.yml`；配队方案/挑战配置/锄大地路线名单=扫描 `config/auto_battle`、`config/{lost_void,hollow_zero}_challenge`、`config/world_patrol_route_list`（与上游列表函数同规则）。**唯一随槽而异的源是 `predefined_teams`**（`zzz_od_config.predefined_team_options` 读目标槽 `team.yml`，「游戏内配队」(-1) 前置，须给 `resolve_field_options` 传 `config_dir`）；`team` 类型字段/列展示同 select、保存转 int 下标（上游按 int 消费，写 str 会破坏 `-1` 判断）。字段静态 `options` 会前置合并到动态源之前（如「随机」「全部」）；`show_when` 支持条件列表与 `not` 取反（配队方案与游戏内配队互斥、合成电池隐藏，对齐上游体力计划 GUI）。
 - **上游取值三态要核对**：部分枚举存 enum name 而非 value（随便观游历任务/邦布价格存 `HOUR_20`/`S4` 这类 name），锄大地的界面消失/重试处理存英文常量，体力计划等级等存中文 value——照抄 config 的 `get` 默认值与 GUI 的 ConfigItem 定义，不要凭惯例猜。
 - **`plan_list` 保存按 plan_id 保留既有 `run_times`**（`merge_plan_list`）：MAS 只改计划内容、不重置一条龙运行计数，新行补 uuid（对齐上游 `ChargePlanItem.__post_init__`）；行内字段白名单=columns+隐藏持久字段（tab_name/run_times/plan_id）。
@@ -67,7 +67,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 ## 固定绑定与哨兵
 
-- **合成注册表视图**：zzz-od 的 `instance_list` 是安装级全局命名空间，持久注册会让 MAS 实例混进原生世界（GUI 混排、跨脚本槽串号、「仅运行当前」误跑）。MAS **零持久写入注册表**：运行/配置会话窗口内把 `one_dragon.yml` 临时替换为「仅本脚本用户槽」的合成视图（`write_instance_view`，active_in_od=True、instance_run=全部实例），窗口结束 `restore_instance_view` 恢复原生内容。`one_dragon.yml` 进程启动读一次、之后纯内存，替换窗口对启动器安全；闪退自愈靠 sidecar（`one_dragon.yml.mas-view.bak`）确定性恢复，每次窗口开始前先 restore。
+- **合成注册表视图**：zzz-od 的 `instance_list` 是安装级全局命名空间，持久注册会让 MAS 实例混进原生世界（GUI 混排、跨脚本槽串号、「仅运行当前」误跑）。MAS **零持久写入注册表**：运行/配置会话窗口内把 `one_dragon.yml` 临时替换为「仅本脚本用户槽」的合成视图（`write_instance_view`，active_in_od=True、instance_run 多槽=全部实例/单槽=仅运行当前），窗口结束 `restore_instance_view` 恢复原生内容。`one_dragon.yml` 进程启动读一次、之后纯内存，替换窗口对启动器安全；闪退自愈靠 sidecar（`one_dragon.yml.mas-view.bak`）确定性恢复，每次窗口开始前先 restore。
 - **会话/运行窗口内「只见 MAS 槽」是刻意的场景隔离，不是 bug**：视图只注册本场景的槽（配置会话=唯一槽、内置切换=全部注入槽），`--instance` 只认视图注册表内的 idx（未注册的静默丢弃）——目的是配置态不误碰/误跑原生实例、隔离跨脚本槽，与"文件层面只增量加槽目录"不冲突。要看原生实例：等窗口结束注册表还原后由一条龙自己打开（在一条龙内配置/查询会话天然只呈现 MAS 世界）；直控模式则在同一原生世界里选实例直接编辑（读的就是原生注册表）。
 - **槽目录持久**：配队等复杂配置持久保留在 `config/{idx:02d}`；运行恢复只还原 MAS 注入的字段（备份内容），不删目录。
 - **绑定持久在用户配置**（`Info.SlotIdx`），idx 分配全局查重：原生实例 idx ∪ 所有 ZzzOd 脚本用户 SlotIdx（`collect_used_slot_idxs`，排除本次注入/会话用户）——槽目录跨脚本共享，idx 不唯一会互相覆盖。绑定有效性要求 idx 不与原生实例/其他用户冲突（无注册表可查名字，旧版 MAS- 前缀校验随持久注册一起废弃）。
@@ -79,7 +79,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 - `--instance 1,2,...`（逗号分隔多实例）**只在 `instance_run=全部实例` 分支被读取**——instance_run 由合成视图统一落盘（窗口结束随视图恢复原生值）；且 idx 必须在视图注册表内，未注册的会被启动器静默丢弃。
 - 注入只做一次，**重试不清运行记录**（zzz-od 按记录跳过已完成任务）；新建槽的目录保留（配队持久）。
-- 判态：内置致命日志（未找到有效的实例 / 请先结束其他运行中的功能 再启动 / 运行应用 one_dragon 失败）→ 各槽 `app_run_record` 前后 diff；启动器进程退出即本轮结束。
+- 判态：内置致命日志（未找到有效的实例 / 请先结束其他运行中的功能 再启动 / 运行应用 one_dragon 失败 / 指令[ 一条龙 ] 执行失败）→ 各槽 `app_run_record` 前后 diff；成功标志「指令[ 一条龙 ] 执行成功」出现即结束日志等待（不等启动器进程退出，LogMonitor 静默期回调节流最长 60s），终态成败仍由 diff 判定。
 - **重跑按关键名单区分**（AutoProxy.py 顶部 `_ZZZOD_CRITICAL_APPS` frozenset，app_id 为键）：仅名单内应用失败才把本轮判异常并重跑；名单外失败只记录进状态文本不重跑；名单为空 = 任何节点失败都不重跑；致命日志仍立即终止并重跑。初始名单全部注释（即空），按需解开维护。
 - **「通知」应用是汇总信号**：上游 NotifyApp 在本轮存在失败任务时会把自己 round_fail（消息本身 fire-and-forget 已发出），MAS 侧在 `_failed_apps`（diff 判定）与 push_log resolve（节点行）两处剔除，避免「通知（失败）」误导。
 - 直控任务编排保存保留完整顺序（`save_native_tasks` 含未启用项原位写回，对齐原生队列「灰色可任意位置」语义）；「启用在前」只由前端一键整理按钮触发。用户模式 AppList 同为整表语义（含未启用项，运行侧 `parse_user_apps` 只消费启用项）；开关/拖拽/一键整理为两模式共用封装 `useZzzOdTaskBoard`，仅落盘方式不同。
@@ -89,7 +89,7 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 
 - **单实例切换**（默认，推荐）：逐用户独立会话——注入该用户配置到绑定槽 → 单实例运行（仅运行当前，无槽间切换）→ 跑完关游戏 → 下一个用户。**manager 每次只 spawn 一个代理**，跑完一个再起下一个；失败域隔离最好（重试只重启失败用户），且单用户配置必须配账密时由 `write_instance_view(force_login=True)` 强制账密登录。
 - **多实例切换**（不推荐）：全部启用用户注入各自绑定槽，`--onedragon --instance s1,s2,...` 单进程覆盖所有用户（zzz-od 内部 SwitchAccount 切游戏账号）。总时长最短，但单槽失败或切换失败会拖整轮重试、用户之间不隔离；结果按各槽 diff 归属用户（`_judge_multi`），逐用户写回统计并按各自 `PushLogMode` 推送。
-- **MAS账号切换**（预留）：MAS 侧主动切号后逐用户交一条龙运行，能力后续接入；走逐用户 spawn + `_judge_final`。
+- **MAS账号切换**（预留）：当前选它直接返回「暂未开放」提示、不 spawn 任何代理；能力后续接入。
 - 跳过条件（剩余天数/代理次数上限/任务编排为空）在**注入名单内逐用户施加**；多实例切换的触发者可能被跳过，不要把其「跳过」状态覆盖为「运行」。
 
 ## 游戏进程管理（脚本级 `Game` 配置，对齐 ok-ww/ok-nte）
@@ -132,7 +132,7 @@ ZzzOd 的「配置恢复」接入通用能力（专项只喂参数）：
 
 ## 审查清单
 
-- [ ] 用户↔槽绑定经 `ensure_user_slot` 唯一入口；MAS- 命名空间校验未被绕过
+- [ ] 用户↔槽绑定经 `ensure_user_slot` 唯一入口，idx 与原生实例/其他用户 SlotIdx 无冲突
 - [ ] 内置切换只 spawn 一个代理；注入名单逐用户施加跳过条件
 - [ ] `--instance` 与 `instance_run=全部实例` 成对出现且结束恢复
 - [ ] 槽内容在成功/失败/取消/超时/异常五条路径恢复；注册表按设计保留

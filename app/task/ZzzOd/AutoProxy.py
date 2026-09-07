@@ -727,9 +727,12 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def prepare(self):
         self.launcher_process_manager = ProcessManager()
-        # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体
+        # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体（对齐 ok-nte）
         self.game_process_manager = (
-            ProcessManager() if self.script_config.get("Game", "Enabled") else None
+            ProcessManager()
+            if self.script_config.get("Game", "Enabled")
+            and self.script_config.get("Game", "LaunchBeforeTask")
+            else None
         )
         game_path = str(self.script_config.get("Game", "Path") or "").strip()
         self.game_exe_path = Path(game_path) if game_path else None

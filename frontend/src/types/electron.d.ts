@@ -297,6 +297,7 @@ export interface ElectronAPI {
     error?: string
   }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
+  openLogWindow: () => Promise<void>
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {

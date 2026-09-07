@@ -1698,6 +1698,9 @@ export default {
       deleting: '删除中',
       operating: '处理中',
     },
+    configGuard: '配置守卫',
+    guardTip:
+      '把当前的分辨率、CPU、内存、帧率记成基准，之后每次启动前和关闭后各核验一次，对不上就按基准还原。只记你显式设过的项；在本页保存设置会同步更新基准。',
     blocked: {
       unavailable: '该模拟器暂时不可用，无法操作',
       missing: '找不到这台实例',
@@ -1717,6 +1720,8 @@ export default {
       probe_failed: '版本认不出',
     },
     toast: {
+      guardOk: '已记录 {count} 台设备的配置基准',
+      guardFailed: '记录配置基准失败',
       settingsConflict: '{fields} 在编辑期间被改动，请刷新后重试',
       stableOk: '已为 {count} 台设备开启稳定模式',
       stableFailed: '开启稳定模式失败',

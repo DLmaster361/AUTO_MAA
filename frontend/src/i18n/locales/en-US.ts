@@ -1788,6 +1788,9 @@ export default {
       deleting: 'Deleting',
       operating: 'Working',
     },
+    configGuard: 'Config guard',
+    guardTip:
+      'Records the current resolution, CPU, memory and frame rate as a baseline, then checks before every start and after every stop, restoring anything that drifted. Only fields you set explicitly are recorded; saving settings here updates the baseline.',
     blocked: {
       unavailable: 'This emulator is unreachable right now',
       missing: 'This instance cannot be found',
@@ -1807,6 +1810,8 @@ export default {
       probe_failed: 'Version not recognised',
     },
     toast: {
+      guardOk: 'Baseline recorded for {count} device(s)',
+      guardFailed: 'Failed to record the baseline',
       settingsConflict: '{fields} changed while you were editing; refresh and try again',
       stableOk: 'Stable mode is on for {count} device(s)',
       stableFailed: 'Failed to turn on stable mode',

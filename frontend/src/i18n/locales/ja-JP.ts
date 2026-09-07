@@ -1733,6 +1733,9 @@ export default {
       deleting: '削除中',
       operating: '処理中',
     },
+    configGuard: '設定ガード',
+    guardTip:
+      '現在の解像度・CPU・メモリ・フレームレートを基準として記録し、起動前と終了後に照合してずれていれば元に戻します。明示的に設定した項目のみ記録され、このページで設定を保存すると基準も更新されます。',
     blocked: {
       unavailable: 'このエミュレーターは現在利用できません',
       missing: 'このインスタンスが見つかりません',
@@ -1752,6 +1755,8 @@ export default {
       probe_failed: 'バージョンを判別できません',
     },
     toast: {
+      guardOk: '{count} 台のデバイスの基準を記録しました',
+      guardFailed: '基準の記録に失敗しました',
       settingsConflict: '編集中に {fields} が変更されました。更新してからやり直してください',
       stableOk: '{count} 台のデバイスで安定モードを有効にしました',
       stableFailed: '安定モードの有効化に失敗しました',

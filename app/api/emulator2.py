@@ -29,6 +29,7 @@ from fastapi import APIRouter, Body
 from app.models.schema import (
     Emulator2DevicesIn,
     Emulator2DevicesOut,
+    Emulator2GuardCaptureOut,
     Emulator2InstanceCreateIn,
     Emulator2InstanceCreateOut,
     Emulator2InstanceDeleteIn,
@@ -313,3 +314,25 @@ async def apply_stable_mode(
     except Exception as e:
         return Emulator2SettingsApplyAllOut(**_error(e))
     return Emulator2SettingsApplyAllOut(**result)
+
+
+@router.post(
+    "/guard/capture",
+    tags=["Action"],
+    summary="记录配置守卫的基准",
+    response_model=Emulator2GuardCaptureOut,
+    status_code=200,
+)
+async def capture_baselines(
+    payload: Emulator2DevicesIn = Body(...),
+) -> Emulator2GuardCaptureOut:
+    """把当前所有设备的设置记成守卫基准。开启守卫时调一次。
+
+    只记用户显式设过的字段：模拟器默认值和从没设过的项没有「应该是什么」可言，
+    写进基准等于替用户决定。
+    """
+    try:
+        result = await service.capture_baselines(payload.emulatorId)
+    except Exception as e:
+        return Emulator2GuardCaptureOut(**_error(e))
+    return Emulator2GuardCaptureOut(**result)

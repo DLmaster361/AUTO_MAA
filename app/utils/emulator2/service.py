@@ -31,6 +31,7 @@ from app.utils import get_logger
 
 from .detect import DetectResult, probe_install_path
 from .facade import DeviceUnavailableError, Emulator2Manager, dump_paths
+from .guard import capture, dump_baselines
 from .ldplayer14 import BossKeyUnavailableError
 from .settings import SettingsConflictError, validate_changes
 from .slots import PathRecord, SlotTable, make_path_id
@@ -134,6 +135,55 @@ async def _save(emulator_id: str, paths: list[PathRecord], slots: SlotTable) -> 
         emulator_id,
         {"Info": {"Paths": dump_paths(paths), "Slots": slots.to_json()}},
     )
+
+
+async def _save_baselines(
+    emulator_id: str, baselines: dict[str, dict[str, int]]
+) -> None:
+    from app.core import Config
+
+    await Config.update_emulator(
+        emulator_id, {"Info": {"Baselines": dump_baselines(baselines)}}
+    )
+
+
+async def capture_baselines(emulator_id: str) -> dict:
+    """把当前所有设备的设置记成守卫基准。开启守卫时调一次。
+
+    只记用户显式设过的字段——见 :func:`.guard.capture`。
+    """
+    manager = await build_manager(emulator_id)
+
+    baselines: dict[str, dict[str, int]] = {}
+    for record in manager.slots.records:
+        if record.state != "active":
+            continue
+        try:
+            settings = await manager.read_settings(record.slot)
+        except Exception as e:  # noqa: BLE001 - 单台读不出不该拖垮整批
+            logger.warning(f"读取设备 #{record.slot} 设置失败，跳过基准: {e}")
+            continue
+        fields = capture(settings)
+        if fields:
+            baselines[record.slot] = fields
+
+    await _save_baselines(emulator_id, baselines)
+    return {
+        "slots": sorted(baselines, key=lambda x: int(x) if x.isdecimal() else 0),
+        "count": len(baselines),
+    }
+
+
+async def _record_baseline(emulator_id: str, slot: str, applied: dict) -> None:
+    """用户刚保存的设置就是新的基准——否则守卫会把他刚改的值又还原回去。"""
+    manager = await build_manager(emulator_id)
+    if not manager.config.get("Info", "ConfigGuard"):
+        return
+    baselines = dict(manager.baselines)
+    merged = dict(baselines.get(str(slot), {}))
+    merged.update({k: int(v) for k, v in applied.items()})
+    baselines[str(slot)] = merged
+    await _save_baselines(emulator_id, baselines)
 
 
 async def build_manager(emulator_id: str) -> Emulator2Manager:
@@ -508,6 +558,7 @@ async def apply_settings(
             "conflicts": e.fields,
             "message": "配置在编辑期间被改动，请刷新后重试",
         }
+    await _record_baseline(emulator_id, str(slot), applied)
     return {"ok": True, "conflicts": [], "applied": applied, "message": ""}
 
 
@@ -571,6 +622,7 @@ async def apply_settings_to_all(emulator_id: str, changes: dict) -> dict:
                 {"slot": record.slot, "ok": False, "message": readable_error(e)}
             )
             continue
+        await _record_baseline(emulator_id, record.slot, cleaned)
         results.append({"slot": record.slot, "ok": True, "message": ""})
 
     return {

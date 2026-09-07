@@ -564,6 +564,29 @@ const isReachable = (device: Emulator2DeviceItem) => device.availability === 'ok
 // 开关本身在上层的配置栏里（它是配置级设置，不该在设备表每行重复一遍）。
 // 这里只提供「按当前配置把所有设备压到安全状态」的动作，由父组件在开关打开时调用。
 
+/**
+ * 记录配置守卫的基准。开关打开时调一次。
+ *
+ * 基准只取用户显式设过的字段——模拟器默认值和从没设过的项没有「应该是什么」可言。
+ */
+const captureBaselines = async (): Promise<number | null> => {
+  try {
+    const response = await Emulator20Service.captureBaselinesApiEmulator2GuardCapturePost({
+      emulatorId: props.emulatorId,
+    })
+    if (response.code !== 200) {
+      message.error(response.message)
+      return null
+    }
+    return response.count ?? 0
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    logger.error(`记录配置基准失败: ${detail}`)
+    message.error(t('emulator2.toast.guardFailed'))
+    return null
+  }
+}
+
 const applyStableMode = async (): Promise<number | null> => {
   try {
     const response = await Emulator20Service.applyStableModeApiEmulator2StableModeApplyPost({
@@ -694,7 +717,7 @@ onUnmounted(() => {
   if (refreshTimer) clearInterval(refreshTimer)
 })
 
-defineExpose({ reload: loadDevices, applyStableMode, openPaths })
+defineExpose({ reload: loadDevices, applyStableMode, captureBaselines, openPaths })
 </script>
 
 <template>

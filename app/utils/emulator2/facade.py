@@ -42,6 +42,7 @@ from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
 
+from .guard import drift, load_baselines
 from .ldplayer14 import LDPlayer14Manager
 from .ldplayer14 import build_manager as build_ldplayer_manager
 from .mumu6 import MuMu6Manager
@@ -108,6 +109,8 @@ class Emulator2Manager(DeviceBase):
         self.config = config
         self.paths: list[PathRecord] = load_paths(config.get("Info", "Paths"))
         self.slots: SlotTable = SlotTable.from_json(config.get("Info", "Slots"))
+        #: 配置守卫的基准：{设备号: {字段: 值}}。只读，写由服务层负责。
+        self.baselines = load_baselines(config.get("Info", "Baselines"))
 
         self._managers: dict[str, Backend] = {}
         self._manager_lock = asyncio.Lock()
@@ -192,8 +195,39 @@ class Emulator2Manager(DeviceBase):
 
     # ---- DeviceBase ------------------------------------------------------
 
+    async def enforce_baseline(self, slot: str, when: str) -> list[str]:
+        """按基准核验一台设备的设置，对不上就写回去。
+
+        启动前和关闭后各调一次：模拟器可能在这两个时刻之外改掉用户的设置
+        （升级、崩溃恢复、在多开器里手滑，某些版本关机时还会按内存态整体写回）。
+        没开守卫、或这台没有基准时什么都不做。
+        """
+        if not self.config.get("Info", "ConfigGuard"):
+            return []
+        baseline = self.baselines.get(str(slot))
+        if not baseline:
+            return []
+
+        try:
+            manager, native_index = await self._dispatch(slot)
+            current = await manager.read_instance_settings(native_index)
+            changes = drift(baseline, current)
+            if not changes:
+                return []
+            # 不传 expected：这里就是要以基准覆盖现状，冲突比对反而会拦住我们
+            await manager.write_instance_settings(native_index, changes)
+        except Exception as e:  # noqa: BLE001 - 守卫失败不该拦住启动或关闭
+            logger.warning(f"设备 #{slot} {when}核验配置失败: {e}")
+            return []
+
+        logger.info(f"设备 #{slot} {when}发现配置偏离基准，已还原: {changes}")
+        return list(changes)
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         manager, native_index = await self._dispatch(idx)
+
+        # 守卫先于稳定模式：两者管的字段不重叠，但都要在实例真正起来之前写完
+        await self.enforce_baseline(idx, "启动前")
 
         # 稳定模式是配置级开关，启动前顺带确保一次：这样在模拟器自己那边新建的实例，
         # 或者用户后来改回去的项，都会在真正跑任务之前被压住，而不是只在点开关的
@@ -210,7 +244,12 @@ class Emulator2Manager(DeviceBase):
 
     async def close(self, idx: str) -> DeviceStatus:
         manager, native_index = await self._dispatch(idx)
-        return await manager.close(native_index)
+        status = await manager.close(native_index)
+
+        # 关闭之后再核一次：雷电旧配置守卫的还原也在 close 里做，
+        # 放在它后面才能保证最终以用户在 MAS 里定的值为准。
+        await self.enforce_baseline(idx, "关闭后")
+        return status
 
     async def getStatus(self, idx: str) -> DeviceStatus:
         try:

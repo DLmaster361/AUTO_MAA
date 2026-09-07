@@ -148,6 +148,12 @@ class EmulatorConfig_Info(BaseModel):
     )
     BossKey: Optional[str] = Field(default=None, description="老板键快捷键配置")
     MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间（秒）")
+    ConfigGuard: Optional[bool] = Field(
+        default=None, description="Emulator 2.0: 配置守卫是否开启"
+    )
+    Baselines: Optional[str] = Field(
+        default=None, description="Emulator 2.0: 配置守卫的基准, JSON 字符串"
+    )
     StableMode: Optional[bool] = Field(
         default=None, description="Emulator 2.0: 稳定模式是否开启"
     )
@@ -3258,6 +3264,11 @@ class Emulator2SettingsApplyOut(OutBase):
         default_factory=list, description="编辑期间被改动的字段名"
     )
     applied: Dict[str, int] = Field(default_factory=dict, description="真正落盘的字段")
+
+
+class Emulator2GuardCaptureOut(OutBase):
+    slots: List[str] = Field(default_factory=list, description="记下基准的设备号")
+    count: int = Field(default=0, description="记下基准的设备台数")
 
 
 class Emulator2StableModeIn(BaseModel):

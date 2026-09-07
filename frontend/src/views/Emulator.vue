@@ -35,6 +35,7 @@ interface EmulatorInfo {
   boss_keys: string[]
   force_kill_on_close: boolean
   stable_mode: boolean
+  config_guard: boolean
 }
 
 // 安全的 JSON 解析函数
@@ -241,6 +242,31 @@ const toggleStableMode = async (uuid: string, checked: boolean) => {
   }
 }
 
+/**
+ * 配置守卫开关。
+ *
+ * 打开时先把当前设置记成基准，之后每次启动前和关闭后各核验一次，对不上就按基准
+ * 写回去。必须先记基准再开——否则守卫没有「应该是什么」可依据，等于没开。
+ */
+const guardSwitching = ref<Set<string>>(new Set())
+
+const toggleConfigGuard = async (uuid: string, checked: boolean) => {
+  guardSwitching.value = new Set(guardSwitching.value).add(uuid)
+  try {
+    if (checked) {
+      const count = await emulator2Panels.value[uuid]?.captureBaselines?.()
+      if (count === null || count === undefined) return
+      message.success(t('emulator2.toast.guardOk', { count }))
+    }
+    getEditingData(uuid).config_guard = checked
+    await handleSaveChange(uuid, 'config_guard', checked)
+  } finally {
+    const next = new Set(guardSwitching.value)
+    next.delete(uuid)
+    guardSwitching.value = next
+  }
+}
+
 const buildEditingData = (configData: any): EmulatorInfo => ({
   name: configData?.Info?.Name || '',
   type: configData?.Info?.Type || '',
@@ -249,6 +275,7 @@ const buildEditingData = (configData: any): EmulatorInfo => ({
   boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
   force_kill_on_close: configData?.Info?.ForceKillOnClose === true,
   stable_mode: configData?.Info?.StableMode === true,
+  config_guard: configData?.Info?.ConfigGuard === true,
 })
 
 // 获取当前模拟器的编辑数据
@@ -397,6 +424,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { BossKey: JSON.stringify(value) } }
     } else if (key === 'stable_mode') {
       configData = { Info: { StableMode: value } }
+    } else if (key === 'config_guard') {
+      configData = { Info: { ConfigGuard: value } }
     } else if (key === 'force_kill_on_close') {
       configData = { Info: { ForceKillOnClose: value } }
     }
@@ -1045,6 +1074,20 @@ const handleBossKeyInputChange = (uuid: string) => {
                         :loading="stableSwitching.has(element.uid)"
                         size="small"
                         @change="(checked: any) => toggleStableMode(element.uid, !!checked)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="isEmulator2(element.uid)">
+                      <template #label>
+                        <span>{{ t('emulator2.configGuard') }}</span>
+                        <a-tooltip :title="t('emulator2.guardTip')">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        :checked="getEditingData(element.uid).config_guard"
+                        :loading="guardSwitching.has(element.uid)"
+                        size="small"
+                        @change="(checked: any) => toggleConfigGuard(element.uid, !!checked)"
                       />
                     </a-descriptions-item>
                     <a-descriptions-item v-if="!isEmulator2(element.uid)">

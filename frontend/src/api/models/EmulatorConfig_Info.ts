@@ -32,6 +32,18 @@ export type EmulatorConfig_Info = {
      */
     MaxWaitTime?: (number | null);
     /**
+     * Emulator 2.0: 配置守卫是否开启
+     */
+    ConfigGuard?: (boolean | null);
+    /**
+     * Emulator 2.0: 配置守卫的基准, JSON 字符串
+     */
+    Baselines?: (string | null);
+    /**
+     * Emulator 2.0: 稳定模式是否开启
+     */
+    StableMode?: (boolean | null);
+    /**
      * 关闭 MuMu 时强力清理残留进程
      */
     ForceKillOnClose?: (boolean | null);

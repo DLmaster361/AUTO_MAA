@@ -6,6 +6,8 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
+import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
 import type { Emulator2SettingsApplyAllOut } from '../models/Emulator2SettingsApplyAllOut';
 import type { Emulator2SettingsApplyIn } from '../models/Emulator2SettingsApplyIn';
@@ -175,6 +177,29 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/stable-mode/apply',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 记录配置守卫的基准
+     * 把当前所有设备的设置记成守卫基准。开启守卫时调一次。
+     *
+     * 只记用户显式设过的字段：模拟器默认值和从没设过的项没有「应该是什么」可言，
+     * 写进基准等于替用户决定。
+     * @param requestBody
+     * @returns Emulator2GuardCaptureOut Successful Response
+     * @throws ApiError
+     */
+    public static captureBaselinesApiEmulator2GuardCapturePost(
+        requestBody: Emulator2DevicesIn,
+    ): CancelablePromise<Emulator2GuardCaptureOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/guard/capture',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

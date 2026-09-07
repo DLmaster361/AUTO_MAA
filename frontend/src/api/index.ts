@@ -38,6 +38,7 @@ export type { Emulator2BatchResult } from './models/Emulator2BatchResult';
 export type { Emulator2DeviceItem } from './models/Emulator2DeviceItem';
 export type { Emulator2DevicesIn } from './models/Emulator2DevicesIn';
 export type { Emulator2DevicesOut } from './models/Emulator2DevicesOut';
+export type { Emulator2GuardCaptureOut } from './models/Emulator2GuardCaptureOut';
 export type { Emulator2InstanceCreateIn } from './models/Emulator2InstanceCreateIn';
 export type { Emulator2InstanceCreateOut } from './models/Emulator2InstanceCreateOut';
 export type { Emulator2InstanceDeleteIn } from './models/Emulator2InstanceDeleteIn';

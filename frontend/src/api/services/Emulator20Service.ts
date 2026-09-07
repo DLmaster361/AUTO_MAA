@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
+import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2InstanceCreateIn } from '../models/Emulator2InstanceCreateIn';
 import type { Emulator2InstanceCreateOut } from '../models/Emulator2InstanceCreateOut';
 import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
@@ -283,6 +284,29 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/stable-mode/apply',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 记录配置守卫的基准
+     * 把当前所有设备的设置记成守卫基准。开启守卫时调一次。
+     *
+     * 只记用户显式设过的字段：模拟器默认值和从没设过的项没有「应该是什么」可言，
+     * 写进基准等于替用户决定。
+     * @param requestBody
+     * @returns Emulator2GuardCaptureOut Successful Response
+     * @throws ApiError
+     */
+    public static captureBaselinesApiEmulator2GuardCapturePost(
+        requestBody: Emulator2DevicesIn,
+    ): CancelablePromise<Emulator2GuardCaptureOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/guard/capture',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

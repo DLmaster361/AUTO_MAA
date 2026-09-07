@@ -16,19 +16,13 @@ const { t } = useI18n()
 const VDD_DOWNLOAD_URL =
   'https://github.com/nomi-san/parsec-vdd/releases/download/v0.45.1/ParsecVDisplay-v0.45-setup.exe'
 
-// 只列驱动 advertise 且实测能切上去的模式。驱动的刷新率只有 24/30/60/144/240，
-// 写一个 120 会被 ChangeDisplaySettingsEx 以 BADMODE 拒绝。
-// 100% 缩放那几档单独标出来：分辨率再高 Windows 会自动上缩放，游戏窗口又要面对
-// DPI 虚拟化。选项要放在 computed 里，t() 是响应式的。
+// 分辨率固定 1920x1080：实测只有它 Windows 给 100% 缩放，再高会被自动上缩放，
+// 游戏窗口又要面对 DPI 虚拟化——而虚拟屏本来就是为了绕开这类问题。所以这里只让用户
+// 选刷新率。驱动的刷新率表是 24/30/60/144/240，写 120 会被 BADMODE 拒绝。
+// 选项放在 computed 里，t() 是响应式的。
 const virtualDisplayModeOptions = computed(() => [
-  { label: `1920x1080 @60Hz  (${t('setting.display.nativeScale')})`, value: '1920x1080@60' },
-  { label: `1920x1080 @144Hz (${t('setting.display.nativeScale')})`, value: '1920x1080@144' },
-  { label: `2560x1080 @60Hz  (${t('setting.display.nativeScale')})`, value: '2560x1080@60' },
-  { label: `1600x900 @60Hz   (${t('setting.display.nativeScale')})`, value: '1600x900@60' },
-  { label: `1280x720 @60Hz   (${t('setting.display.nativeScale')})`, value: '1280x720@60' },
-  { label: '2560x1440 @60Hz  (125%)', value: '2560x1440@60' },
-  { label: '3440x1440 @60Hz  (150%)', value: '3440x1440@60' },
-  { label: '3840x2160 @60Hz  (200%)', value: '3840x2160@60' },
+  { label: `60 Hz（${t('setting.display.refreshDefault')}）`, value: '1920x1080@60' },
+  { label: `30 Hz（${t('setting.display.refreshLowPower')}）`, value: '1920x1080@30' },
 ])
 
 const vddChecking = ref(false)

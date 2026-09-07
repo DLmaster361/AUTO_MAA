@@ -2708,10 +2708,11 @@ export default {
       enable: 'Enable virtual display',
       enableTip:
         'Only attaches one when the desktop really is too small; nothing is added while a monitor works normally. The virtual display disappears on its own once MAS exits.',
-      mode: 'Resolution and refresh rate',
+      mode: 'Refresh rate',
       modeTip:
-        'Must be a mode the driver supports. The ones marked as native scaling are shown by Windows at 100%, so the game window never goes through DPI scaling.',
-      nativeScale: 'native scaling',
+        'The resolution is fixed at 1920x1080 — it is the only one Windows shows at 100%, so the game window never goes through DPI scaling. Higher resolutions get scaled up automatically, which brings the problem back. A virtual display only runs scripts, so a high refresh rate buys nothing.',
+      refreshDefault: 'recommended',
+      refreshLowPower: 'lighter on the GPU',
       check: 'Driver check',
       checkTip:
         'Checks whether the driver is installed, whether it can be driven, and whether a display can actually be attached. The last step briefly changes your monitor layout.',

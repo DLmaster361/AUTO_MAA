@@ -3907,24 +3907,14 @@ class GlobalConfig(ConfigBase):
         self.Display_IfEnableVirtualDisplay = ConfigItem(
             "Display", "IfEnableVirtualDisplay", False, BoolValidator()
         )
-        ## 虚拟显示器的分辨率与刷新率。
-        ## 取值必须在驱动 advertise 的模式表里，否则会被 BADMODE 拒绝（例如没有 120Hz）。
+        ## 虚拟显示器的刷新率（分辨率固定 1920x1080）。
+        ## 分辨率固定是因为只有它 Windows 给 100% 缩放，再高会被自动上缩放，游戏窗口
+        ## 又要面对 DPI 虚拟化。取值必须在驱动 advertise 的模式表里，否则会被 BADMODE 拒绝。
         self.Display_VirtualDisplayMode = ConfigItem(
             "Display",
             "VirtualDisplayMode",
             "1920x1080@60",
-            OptionsValidator(
-                [
-                    "1920x1080@60",
-                    "1920x1080@144",
-                    "2560x1440@60",
-                    "2560x1080@60",
-                    "3440x1440@60",
-                    "3840x2160@60",
-                    "1600x900@60",
-                    "1280x720@60",
-                ]
-            ),
+            OptionsValidator(["1920x1080@60", "1920x1080@30"]),
         )
 
         ## Voice ------------------------------------------------------------

@@ -1491,12 +1491,20 @@ ipcMain.handle('open-url', async (_event, url: string) => {
 })
 
 // 打开文件
+// shell.openPath 失败时不 reject，而是 resolve 一条非空的错误信息（没有关联程序、
+// 文件不存在都走这条），丢掉返回值的话调用方永远收不到失败。
 ipcMain.handle('open-file', async (_event, filePath: string) => {
   try {
-    await shell.openPath(filePath)
+    const failure = await shell.openPath(filePath)
+    if (failure) {
+      logger.error(`打开文件失败: ${failure}`)
+      return { success: false, error: failure }
+    }
+    return { success: true }
   } catch (error) {
-    logger.error(`打开文件失败: ${error}`)
-    throw error
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(`打开文件失败: ${message}`)
+    return { success: false, error: message }
   }
 })
 

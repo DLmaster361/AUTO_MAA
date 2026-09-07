@@ -527,7 +527,12 @@ export function useInitializationFlow() {
     }
 
     try {
-      await window.electronAPI.openFile(target)
+      const result = await window.electronAPI.openFile(target)
+      if (!result.success) {
+        message.error(
+          t('init.failure.openLogFailed', { error: result.error ?? t('init.msg.execFailed') })
+        )
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       message.error(t('init.failure.openLogFailed', { error: errorMessage }))

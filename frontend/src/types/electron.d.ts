@@ -313,7 +313,7 @@ export interface ElectronAPI {
   loadLogsFromFile: () => Promise<string | null>
 
   // 文件系统操作
-  openFile: (filePath: string) => Promise<void>
+  openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>

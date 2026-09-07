@@ -268,6 +268,10 @@ export const useHomeQuickStart = () => {
         await navigateTo('/scheduler')
         void playSound('task_started')
       }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`首页开始任务失败: ${errorMsg}`)
+      message.error(t('home.quickStart.startError'))
     } finally {
       startingHomeTask.value = false
     }

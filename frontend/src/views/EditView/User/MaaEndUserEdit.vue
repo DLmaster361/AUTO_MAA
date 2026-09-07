@@ -180,7 +180,7 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers } = useUserApi()
+const { addUser, updateUser, getUsers, error: userError } = useUserApi()
 const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
 const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -331,6 +331,23 @@ interface FieldChange {
 const pendingFieldSaves = new Map<string, any>()
 let fieldSavePromise: Promise<boolean> | null = null
 
+const restoreFailedFieldSaves = (changes: Array<[string, any]>) => {
+  for (const [key, value] of changes) {
+    // 保存请求期间的新值优先，失败批次只补回尚未被覆盖的字段。
+    if (!pendingFieldSaves.has(key)) {
+      pendingFieldSaves.set(key, value)
+    }
+  }
+}
+
+const reportFieldSaveFailure = () => {
+  const errorMsg = userError.value
+  if (!errorMsg || errorMsg.includes('HTTP error')) {
+    message.error(t('edit.couldNotSaveUser'))
+  }
+  logger.error(`保存用户字段失败: ${errorMsg || '用户 API 未返回成功'}`)
+}
+
 const formData = reactive({
   userName: '',
   ...getDefaultMaaEndUserData(),
@@ -370,10 +387,11 @@ const saveUserFields = async (changes: FieldChange[]) => {
   if (fieldSavePromise) return fieldSavePromise
 
   const savePromise = (async (): Promise<boolean> => {
+    let currentChanges: Array<[string, any]> = []
     try {
       while (pendingFieldSaves.size > 0) {
         const userData: Record<string, any> = {}
-        const currentChanges = Array.from(pendingFieldSaves.entries())
+        currentChanges = Array.from(pendingFieldSaves.entries())
         pendingFieldSaves.clear()
 
         currentChanges.forEach(([key, value]) => {
@@ -387,14 +405,18 @@ const saveUserFields = async (changes: FieldChange[]) => {
         })
 
         if (!(await updateUser(scriptId, userId, userData))) {
-          pendingFieldSaves.clear()
+          restoreFailedFieldSaves(currentChanges)
+          reportFieldSaveFailure()
           return false
         }
+        currentChanges = []
       }
       return true
     } catch (error) {
-      pendingFieldSaves.clear()
-      logger.error(`保存用户字段失败: ${error instanceof Error ? error.message : String(error)}`)
+      restoreFailedFieldSaves(currentChanges)
+      reportFieldSaveFailure()
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      logger.error(`保存用户字段异常: ${errorMessage}`)
       return false
     } finally {
       fieldSavePromise = null

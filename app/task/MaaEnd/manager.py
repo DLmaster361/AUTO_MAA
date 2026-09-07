@@ -197,6 +197,7 @@ class MaaEndManager(TaskExecuteBase):
         return (
             self.task_info.mode == "ScriptConfig"
             and self.script_config_mode == "直控"
+            and not self.stopped_manually
             and bool(self.script_info.user_list)
             and self.script_info.user_list[0].status == "完成"
         )
@@ -313,7 +314,9 @@ class MaaEndManager(TaskExecuteBase):
                     ),
                 )
 
-        if any(user.status == "异常" for user in self.script_info.user_list):
+        if self.stopped_manually or any(
+            user.status == "异常" for user in self.script_info.user_list
+        ):
             self.script_info.status = "异常"
         else:
             self.script_info.status = "完成"

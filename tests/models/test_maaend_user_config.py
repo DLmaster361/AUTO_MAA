@@ -3,7 +3,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from pydantic import ValidationError
+
 from app.models.config import MaaEndPlanConfig, MaaEndUserConfig
+from app.models.schema import MaaEndUserConfig_Task
 
 UTC4 = timezone(timedelta(hours=4))
 WEEKDAY_NAMES = (
@@ -45,6 +48,13 @@ class MaaEndUserConfigTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(config.get("Task", "SanityTaskType"), "CrisisDrills")
         self.assertEqual(config.get("Task", "RewardsSetOption"), "RewardsSetB")
+
+    def test_daily_once_tasks_schema_uses_json_string_contract(self) -> None:
+        config = MaaEndUserConfig_Task(DailyOnceTasks='["IfSanity"]')
+
+        self.assertEqual(config.DailyOnceTasks, '["IfSanity"]')
+        with self.assertRaises(ValidationError):
+            MaaEndUserConfig_Task(DailyOnceTasks=["IfSanity"])
 
     async def test_plan_load_migrates_legacy_slot_to_key(self) -> None:
         config = MaaEndPlanConfig()

@@ -104,9 +104,9 @@ export type MaaEndUserConfig_Task = {
      */
     AutoCollectCommonRoutes?: (Array<'CommonRoute1' | 'CommonRoute2' | 'CommonRoute3' | 'CommonRoute4' | 'CommonRoute5' | 'CommonRoute6' | 'CommonRoute7' | 'CommonRoute8'> | null);
     /**
-     * 每日正常完成一次后当天跳过的 MaaEnd 任务名列表
+     * 每日正常完成一次后当天跳过的 MaaEnd 任务名列表（JSON 字符串）
      */
-    DailyOnceTasks?: (string | Array<string> | null);
+    DailyOnceTasks?: (string | null);
     /**
      * 选剑演武
      */

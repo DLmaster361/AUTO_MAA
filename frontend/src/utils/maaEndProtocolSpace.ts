@@ -210,9 +210,9 @@ export const MAAEND_TASK_GROUPS = [
 
 export type MaaEndTaskSwitch = (typeof MAAEND_TASK_GROUPS)[number]['tasks'][number]['name']
 
-export type MaaEndDailyOnceTask = MaaEndTaskSwitch | 'SeizeDeliveryJobs' | 'AutoCollect'
+export type MaaEndDailyOnceTask = MaaEndTaskSwitch | 'SeizeDeliveryJobs'
 
-// 独立阶段也纳入每日一次选项，名称使用 MaaEnd interface 中的 taskName。
+// 自动采集由自身的路线周期独立管理，不纳入每日仅执行一次任务。
 export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
   name: MaaEndDailyOnceTask
   label: string
@@ -223,10 +223,7 @@ export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
       options.push({ name: task.name, label: task.label })
     }
   }
-  options.push(
-    { name: 'SeizeDeliveryJobs', label: '🚚 抢委托送货' },
-    { name: 'AutoCollect', label: '🧭 自动采集' }
-  )
+  options.push({ name: 'SeizeDeliveryJobs', label: '🚚 抢委托送货' })
   return options
 })()
 

@@ -201,6 +201,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        if self.stopped_manually:
+            logger.info("MaaEnd 脚本设置任务被手动中止，不保存未完成的配置修改")
+            self.cur_user_item.status = "异常"
+            return
+
         if self.use_mas_config and self.config_file_path:
             shutil.rmtree(self.config_file_path, ignore_errors=True)
             self.config_file_path.mkdir(parents=True, exist_ok=True)

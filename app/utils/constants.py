@@ -72,7 +72,7 @@ MAAEND_RUN_MOOD_BOOK = {
 """MaaEnd 自动代理运行模式映射表"""
 
 MAAEND_DELIVERY_TASK = "SeizeDeliveryJobs"
-"""MaaEnd 送货阶段使用的任务名称"""
+"""MaaEnd v2 送货阶段使用的任务名称"""
 
 MAAEND_AUTO_COLLECT_TASK = "AutoCollect"
 """MaaEnd 自动采集阶段使用的任务名称"""

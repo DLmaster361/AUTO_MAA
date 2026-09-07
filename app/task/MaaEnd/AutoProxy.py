@@ -263,9 +263,13 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     def _daily_once_task_names(self) -> set[str]:
-        return set(
-            _load_json_list(self.cur_user_config.get("Task", "DailyOnceTasks"))
-        )
+        return {
+            task_name
+            for task_name in _load_json_list(
+                self.cur_user_config.get("Task", "DailyOnceTasks")
+            )
+            if task_name != MAAEND_AUTO_COLLECT_TASK
+        }
 
     def _daily_task_records(self) -> dict[str, str]:
         raw_records = _load_json_dict(
@@ -480,8 +484,6 @@ class AutoProxyTask(TaskExecuteBase):
                 return "MaaEnd 配置中不存在自动采集任务", True
             if not has_task(MAAEND_AUTO_COLLECT_TASK, enabled_only=True):
                 return "自动采集任务未启用", False
-            if self._daily_once_task_done(MAAEND_AUTO_COLLECT_TASK):
-                return "自动采集任务今日已完成", False
             return None, False
         if not any(
             _task_enabled_for_mode(
@@ -517,14 +519,52 @@ class AutoProxyTask(TaskExecuteBase):
                 for task_name in MAAEND_TASKS
             ):
                 return "快速配置未开启任何日常任务", False
-            return None, False
+
+            tasks = self._source_maaend_tasks()
+            if tasks is None:
+                return None, False
+
+            target_sanity_task_name: str | None = None
+            for task in tasks:
+                task_name = str(task.get("taskName", ""))
+                if task_name.startswith("__MXU_") or task_name in {
+                    _MAAEND_ACCOUNT_SWITCH_TASK,
+                    MAAEND_DELIVERY_TASK,
+                    MAAEND_AUTO_COLLECT_TASK,
+                }:
+                    continue
+                if task_name in _MAAEND_SANITY_TASK_NAMES:
+                    if not self.cur_user_config.get("Task", "IfSanity"):
+                        continue
+                    if target_sanity_task_name is None:
+                        sanity_task_key, _ = (
+                            self.cur_user_config.get_effective_sanity_task_key()
+                        )
+                        target_sanity_task_name = (
+                            "AutoEssence"
+                            if sanity_task_key["SanityTaskType"] == "Essence"
+                            else "ProtocolSpace"
+                        )
+                    if task_name == target_sanity_task_name:
+                        if not self._quick_task_daily_once_done("Sanity"):
+                            return None, False
+                    continue
+                if task_name in MAAEND_TASKS:
+                    if self.cur_user_config.get(
+                        "Task", f"If{task_name}"
+                    ) and not self._quick_task_daily_once_done(task_name):
+                        return None, False
+                    continue
+                if bool(task.get("enabled", False)):
+                    return None, False
+            return "MaaEnd 配置中没有可执行的日常任务", False
 
         tasks = self._source_maaend_tasks()
         if tasks is None:
             return None, False
         if not any(str(task.get("taskName", "")) == task_name for task in tasks):
             return f"MaaEnd 配置中不存在{task_label}任务", True
-        if self._daily_once_task_done(task_name):
+        if mode == "Delivery" and self._daily_once_task_done(task_name):
             return f"{task_label}任务今日已完成", False
         return None, False
 

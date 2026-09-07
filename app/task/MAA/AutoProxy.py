@@ -104,11 +104,13 @@ def _current_month_marker(now: datetime) -> str:
 def _is_marked_today(completed_date: str, now: datetime) -> bool:
     """判断「每天一次」类完成标记是否已落在本游戏日（UTC+4）内。
 
-    MAS 托管会还原 MAA 目录，MAA 自带的每日去重（如借战、访问好友）
-    不跨运行生效，因此由 MAS 在日志中检测完成后自行记录。
+    completed_date 为按游戏日记录的标记（形如 "2026-09-07"）；now 接受
+    任意时区，内部归一到 UTC+4 后比较。MAS 托管会还原 MAA 目录，MAA
+    自带的每日去重（如借战、访问好友）不跨运行生效，因此由 MAS 在
+    日志中检测完成后自行记录。
     """
 
-    return completed_date == now.strftime("%Y-%m-%d")
+    return completed_date == now.astimezone(UTC4).strftime("%Y-%m-%d")
 
 
 # 信用收支的每日子任务：任务参数键 → 完成日志标记 → 用户存档中的日期字段

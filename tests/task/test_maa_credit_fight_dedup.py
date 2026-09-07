@@ -21,3 +21,11 @@ def test_marked_date_anchor_is_utc4() -> None:
 
     assert _is_marked_today("2026-09-07", beijing_early_morning.astimezone(UTC4))
     assert not _is_marked_today("2026-09-06", beijing_early_morning.astimezone(UTC4))
+
+
+def test_non_utc4_datetime_is_normalized_internally() -> None:
+    # UTC 时间 2026-09-07 20:00 即东四区的 2026-09-08 00:00：跨入新游戏日的临界时刻
+    utc_boundary = datetime(2026, 9, 7, 20, 0, tzinfo=timezone.utc)
+
+    assert _is_marked_today("2026-09-08", utc_boundary)
+    assert not _is_marked_today("2026-09-07", utc_boundary)

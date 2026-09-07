@@ -86,6 +86,28 @@ _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 剩余理智",
 )
 _MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
+# MAA 的停滞提示：只说明任务没有推进，本身不是推进信号。若让它参与 latest_time
+# 更新，MAA 每隔一个提醒间隔（默认 30 分钟）写一条就会把停滞计时重置一次，卡死的
+# 任务永远攒不满超时阈值，等不到 "MAA 进程超时"。这些片段仅从 latest_time 活跃度
+# 判定中排除，日志本身照常写入任务日志。
+# 每条按 MAA 支持的 5 种界面语言取一段不含 {0}/{1} 变量的固定文本，已逐条核对在
+# MAA 本地化资源中只命中该消息本身。
+_MAA_STALL_NOTICE_MARKERS = (
+    # TaskStallWarning：MAA 现行文案
+    "任务日志输出已超过",
+    "任務日誌輸出已超過",
+    "Task log output has not been updated for",
+    "タスクログ出力が",
+    "작업 로그 출력이",
+    # TaskTimeoutWarning：旧版 MAA 文案，保留以兼容未升级的 MAA
+    "如果长时间无进一步日志更新，可能需要手动干预。",
+    "若長時間無進一步日誌更新，可能需要手動干預。",
+    "If there are no further log updates for a long time, manual intervention may be required.",
+    "長時間ログの更新がない場合、手動で介入する必要があるかもしれません。",
+    # 韩文旧文案在句中换行，换行后那半是独立一行、无时间戳，本就不影响
+    # latest_time，故取带时间戳那半行的固定结尾。
+    "분째 실행 중입니다",
+)
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -514,7 +536,7 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 20),
             "%Y-%m-%d %H:%M:%S",
             self.check_log,
-            except_logs=["如果长时间无进一步日志更新，可能需要手动干预。"],
+            except_logs=list(_MAA_STALL_NOTICE_MARKERS),
         )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()

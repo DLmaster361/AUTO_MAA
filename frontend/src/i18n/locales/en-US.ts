@@ -1626,7 +1626,7 @@ export default {
   emulator2: {
     pathsTitle: 'Emulators',
     pathsHint:
-      'Add several installs; their instances are merged into one table. LDPlayer 14 is supported now, MuMu 6 comes later.',
+      'Add several installs; their instances are merged into one table. LDPlayer 14 and MuMu 6 are supported.',
     noPath: 'No emulator added yet',
     searchAndAdd: 'Search and add',
     removePath: 'Remove path',
@@ -1666,6 +1666,14 @@ export default {
       'Fields you fill in are written to all {count} devices; empty fields are left alone.',
     batchHint: 'Applied on next start; running instances keep their current configuration.',
     batchFailures: 'Devices that were not updated',
+    field: {
+      width: 'Width',
+      height: 'Height',
+      dpi: 'DPI',
+      cpu: 'CPU cores',
+      memoryMb: 'Memory',
+      fps: 'Frame rate',
+    },
     colStable: 'Stable mode',
     stableMode: 'Stable mode',
     stableOn: 'On',
@@ -1701,7 +1709,7 @@ export default {
       'After deletion device {slot} becomes "not found", affecting {count} script(s). The device number is kept: creating an instance in the same slot later gets the same number.',
     addTitle: 'Add emulator',
     addHint:
-      'Only LDPlayer 14 is supported right now; MuMu 6 comes in a later version. Other versions can still be added as a legacy config.',
+      'LDPlayer 14 and MuMu 6 are supported. Other versions can still be added as a legacy config.',
     add: 'Add',
     removeTitle: 'Remove emulator path',
     removeWarning:
@@ -1724,6 +1732,7 @@ export default {
       probe_failed: 'Version not recognised',
     },
     toast: {
+      settingsConflict: '{fields} changed while you were editing; refresh and try again',
       stableOk: 'Stable mode is on for {count} device(s)',
       stableFailed: 'Failed to turn on stable mode',
       settingsOk: 'Settings saved',

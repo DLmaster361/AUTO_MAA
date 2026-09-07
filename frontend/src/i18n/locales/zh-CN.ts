@@ -1550,7 +1550,7 @@ export default {
   },
   emulator2: {
     pathsTitle: '模拟器',
-    pathsHint: '可以添加多个，实例合并成一张表管理。当前支持雷电 14，MuMu 6 后续接入',
+    pathsHint: '可以添加多个，实例合并成一张表管理。支持雷电 14 与 MuMu 6',
     noPath: '还没有添加模拟器',
     searchAndAdd: '自动搜索并添加',
     removePath: '移除路径',
@@ -1587,6 +1587,14 @@ export default {
     batchWarning: '填写的项会写入全部 {count} 台设备，留空的项不改动。',
     batchHint: '保存后下次启动生效；正在运行的实例仍使用旧配置。',
     batchFailures: '未能应用的设备',
+    field: {
+      width: '宽度',
+      height: '高度',
+      dpi: 'DPI',
+      cpu: 'CPU 核数',
+      memoryMb: '内存',
+      fps: '帧率',
+    },
     colStable: '稳定模式',
     stableMode: '稳定模式',
     stableOn: '已开启',
@@ -1621,7 +1629,7 @@ export default {
     deleteWarning:
       '删除后设备 {slot} 会变成「未找到」，影响 {count} 个脚本。该设备号会保留：以后在同一位置新建实例仍然是这个号。',
     addTitle: '添加模拟器',
-    addHint: '当前只支持雷电 14，MuMu 6 会在后续版本接入；其余版本可以到旧配置里单独添加。',
+    addHint: '支持雷电 14 与 MuMu 6；其余版本可以到旧配置里单独添加。',
     add: '添加',
     removeTitle: '移除模拟器路径',
     removeWarning:
@@ -1644,6 +1652,7 @@ export default {
       probe_failed: '版本认不出',
     },
     toast: {
+      settingsConflict: '{fields} 在编辑期间被改动，请刷新后重试',
       stableOk: '已为 {count} 台设备开启稳定模式',
       stableFailed: '开启稳定模式失败',
       settingsOk: '设置已保存',

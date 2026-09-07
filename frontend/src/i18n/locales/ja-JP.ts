@@ -1607,7 +1607,7 @@ export default {
   emulator2: {
     pathsTitle: 'エミュレーター',
     pathsHint:
-      '複数追加でき、インスタンスは 1 つの表にまとめて管理します。現在は LDPlayer 14 に対応、MuMu 6 は今後対応予定です。',
+      '複数追加でき、インスタンスは 1 つの表にまとめて管理します。LDPlayer 14 と MuMu 6 に対応しています。',
     noPath: 'エミュレーターが追加されていません',
     searchAndAdd: '自動検索して追加',
     removePath: 'パスを削除',
@@ -1646,6 +1646,14 @@ export default {
     batchWarning: '入力した項目が全 {count} 台に書き込まれます。空欄の項目は変更されません。',
     batchHint: '次回起動時に反映されます。実行中のインスタンスは現在の構成のままです。',
     batchFailures: '適用できなかったデバイス',
+    field: {
+      width: '幅',
+      height: '高さ',
+      dpi: 'DPI',
+      cpu: 'CPU コア数',
+      memoryMb: 'メモリ',
+      fps: 'フレームレート',
+    },
     colStable: '安定モード',
     stableMode: '安定モード',
     stableOn: 'オン',
@@ -1681,7 +1689,7 @@ export default {
       '削除するとデバイス {slot} は「見つかりません」になり、{count} 個のスクリプトに影響します。デバイス番号は保持され、同じ位置にインスタンスを作り直すと同じ番号になります。',
     addTitle: 'エミュレーターを追加',
     addHint:
-      '現在は LDPlayer 14 のみ対応しています。MuMu 6 は今後のバージョンで対応予定です。他のバージョンは旧設定から追加できます。',
+      'LDPlayer 14 と MuMu 6 に対応しています。他のバージョンは旧設定から追加できます。',
     add: '追加',
     removeTitle: 'エミュレーターのパスを削除',
     removeWarning:
@@ -1704,6 +1712,7 @@ export default {
       probe_failed: 'バージョンを判別できません',
     },
     toast: {
+      settingsConflict: '編集中に {fields} が変更されました。更新してからやり直してください',
       stableOk: '{count} 台のデバイスで安定モードを有効にしました',
       stableFailed: '安定モードの有効化に失敗しました',
       settingsOk: '設定を保存しました',

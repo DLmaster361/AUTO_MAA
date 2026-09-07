@@ -310,6 +310,13 @@ const fieldOf = (device: Emulator2DeviceItem, name: FieldName): Emulator2Setting
 const fieldValue = (device: Emulator2DeviceItem, name: FieldName) =>
   fieldOf(device, name)?.value ?? null
 
+/** 字段名 → 用户文案。后端只给字段名，措辞在这里定。 */
+const fieldLabel = (name: string) => {
+  const key = `emulator2.field.${name}`
+  const text = t(key)
+  return text === key ? name : text
+}
+
 /** 表里显示的值。空着的显示破折号，而不是 0 或 null。 */
 const fieldText = (device: Emulator2DeviceItem, name: FieldName) => {
   const value = fieldValue(device, name)
@@ -378,7 +385,16 @@ const confirmSettings = async () => {
       expected: settingsBaseline.value,
     })
     if (response.code !== 200 || !response.ok) {
-      message.error(response.message)
+      // 冲突是最常见的失败，后端只给字段名；文案在这里按词表拼，
+      // 免得把后端的中文原句直接甩进英文 / 日文界面
+      const conflicts = response.conflicts || []
+      message.error(
+        conflicts.length
+          ? t('emulator2.toast.settingsConflict', {
+              fields: conflicts.map(fieldLabel).join(' / '),
+            })
+          : response.message
+      )
       return
     }
     message.success(t('emulator2.toast.settingsOk'))

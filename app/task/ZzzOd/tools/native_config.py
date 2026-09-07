@@ -91,16 +91,6 @@ _APP_META_DEFAULTS: dict[str, Any] = {
 }
 
 
-def native_account_field_meta() -> list[dict[str, Any]]:
-    """直控账号字段元数据（key/title/options），供前端渲染静态表单。
-
-    当前直控页面字段与用户配置页对齐（区服/路径/语言/账密/B服名），
-    由本表数据驱动；新增字段 = 加一个表项并同步前端表单。
-    """
-
-    return [dict(item) for item in _NATIVE_ACCOUNT_FIELDS]
-
-
 def read_native_account_fields(root, slot_idx: int) -> list[dict]:
     """读取实例原生账号配置为字段列表（缺失字段合并默认值，与一条龙 GUI 一致）。"""
 
@@ -189,14 +179,13 @@ def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
 
 
 def save_native_tasks(root, slot_idx: int, tasks: list[dict]) -> None:
-    """整表写回实例原生任务编排：只保留启用项（缺席 = 不加入编排）。"""
+    """整表写回实例原生任务编排：保留完整顺序与启用状态（含未启用项）。
 
-    enabled = [
-        {"app_id": str(item["app_id"]), "enabled": True}
-        for item in tasks
-        if str(item.get("app_id") or "").strip() and item.get("enabled")
-    ]
-    write_app_group(instance_dir(root, int(slot_idx)), enabled)
+    对齐一条龙原生队列语义：未启用项可以排在任意位置（关闭 = 原位保留），
+    「启用在前、禁用在后」的整理只在用户显式触发时进行。
+    """
+
+    write_app_group(instance_dir(root, int(slot_idx)), tasks)
 
 
 def read_native_instance_run(root) -> str:

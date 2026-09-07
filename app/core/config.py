@@ -30,7 +30,6 @@ import sys
 import time
 import uuid
 from collections import defaultdict
-from contextlib import suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
@@ -41,6 +40,8 @@ import truststore
 # 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
 if TYPE_CHECKING:
     import uvicorn
+
+    from app.utils.config_restore import ConfigRestoreService
 from jinja2 import Environment, FileSystemLoader
 
 from app.models.config import (
@@ -1728,32 +1729,6 @@ class AppConfig(GlobalConfig):
             ],
         )
 
-    def _zzzod_archive_backups(self, root: Path, script_id: str, user_cfg) -> None:
-        """归档点（MAS 运行注入前 / 配置会话基线注入前）的双视角快照。
-
-        一条龙原生配置（one_dragon.yml + 原生实例目录）与 MAS 用户槽各自
-        独立归档，内容无变化自动跳过；此时 zzz-od 尚未被本次 MAS 操作触碰。
-        """
-
-        from app.task.ZzzOd.tools import (
-            archive_mas_backup,
-            archive_onedragon_backup,
-            collect_mas_user_info,
-        )
-
-        with suppress(Exception):
-            archive_onedragon_backup(script_id, root)
-        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
-        if slot > 0:
-            slot_dir = root / "config" / f"{slot:02d}"
-            with suppress(Exception):
-                archive_mas_backup(
-                    script_id,
-                    slot,
-                    slot_dir,
-                    meta=collect_mas_user_info(user_cfg),
-                )
-
     async def restore_zzzod_backup(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> int:
@@ -1772,6 +1747,7 @@ class AppConfig(GlobalConfig):
             collect_mas_user_info,
             get_mas_backup_dir,
             instance_dir,
+            normalize_app_group_entries,
             read_app_group,
             read_game_account,
             restore_mas_backup,
@@ -1810,11 +1786,8 @@ class AppConfig(GlobalConfig):
 
         slot_dir = instance_dir(root, slot)
         account = read_game_account(slot_dir)
-        enabled_apps = [
-            {"app_id": str(item["app_id"]), "enabled": True}
-            for item in read_app_group(slot_dir)
-            if item.get("enabled") and str(item.get("app_id") or "").strip()
-        ]
+        # 任务编排整表回填（含未启用项原位保留顺序，运行侧只消费启用项）
+        all_apps = normalize_app_group_entries(read_app_group(slot_dir))
         await user_cfg.set(
             "Game", "GameRegion", str(account.get("game_region") or "cn")
         )
@@ -1829,7 +1802,7 @@ class AppConfig(GlobalConfig):
         await user_cfg.set("Game", "Account", str(account.get("account") or ""))
         await user_cfg.set("Game", "Password", str(account.get("password") or ""))
         await user_cfg.set(
-            "OneDragon", "AppList", json.dumps(enabled_apps, ensure_ascii=False)
+            "OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False)
         )
         # 信息字段回填（用户名/启用/模式/启动器/剩余天数/备注/节点详情推送）：
         # 旧备份可能没有该快照，缺失字段跳过，保持向前兼容
@@ -1845,7 +1818,7 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.save()
         logger.info(
             f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到 MAS 配置 "
-            f"(槽 {slot:02d} + 字段回填, 任务 {len(enabled_apps)} 项)"
+            f"(槽 {slot:02d} + 字段回填, 任务 {len(all_apps)} 项)"
         )
         return slot
 
@@ -1874,6 +1847,7 @@ class AppConfig(GlobalConfig):
             archive_mas_backup,
             collect_mas_user_info,
             instance_dir,
+            normalize_app_group_entries,
             read_app_group,
             read_game_account,
         )
@@ -1894,11 +1868,8 @@ class AppConfig(GlobalConfig):
         native_root, instance = self._zzzod_native_instance(script_id, instance_idx)
         source_dir = instance_dir(native_root, int(instance_idx))
         game_account = read_game_account(source_dir)
-        enabled_apps = [
-            {"app_id": str(item["app_id"]), "enabled": True}
-            for item in read_app_group(source_dir)
-            if item.get("enabled") and str(item.get("app_id") or "").strip()
-        ]
+        # 任务编排整表导入（含未启用项原位保留顺序，运行侧只消费启用项）
+        all_apps = normalize_app_group_entries(read_app_group(source_dir))
 
         field_map = {
             "GameRegion": "game_region",
@@ -1925,7 +1896,7 @@ class AppConfig(GlobalConfig):
             imported_accounts += 1
 
         await user_cfg.set(
-            "OneDragon", "AppList", json.dumps(enabled_apps, ensure_ascii=False)
+            "OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False)
         )
 
         # 实例级持久配置对齐来源实例：
@@ -1933,7 +1904,7 @@ class AppConfig(GlobalConfig):
         # - team.yml（预备编队：名称 + 绑定配队方案 + 成员）在实例根
         # - one_dragon/ 全部 per-app 配置（charge_plan.yml 体力计划、coffee.yml
         #   咖啡店、suibian_temple.yml 随便观等）随导入整目录对齐
-        # _group.yml 例外：任务编排走上面的 AppList 启用项语义，不整搬。
+        # _group.yml 例外：任务编排走上面的 AppList 整表语义（含未启用项），不整搬。
         # 均不经 MAS 用户字段承载，直接对齐到绑定槽（注入运行的实例目录）；
         # 用户尚无绑定槽时按全局查重分配（语义与运行注入的 ensure_user_slot
         # 一致）。来源缺失的文件对齐为删除 = 沿用 zzz-od 默认
@@ -1975,14 +1946,14 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.save()
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
-            f"(账号字段 {imported_accounts} 项, 任务 {len(enabled_apps)} 项, "
+            f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
             f"应用通知/体力计划已对齐槽 {slot:02d})"
         )
         return {
             "instanceIdx": int(instance_idx),
             "instanceName": str(instance.get("name", "")),
             "importedAccountCount": imported_accounts,
-            "importedTaskCount": len(enabled_apps),
+            "importedTaskCount": len(all_apps),
             "slot": slot,
         }
 
@@ -2257,7 +2228,7 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """把直控页面改动直接写回所选实例原生配置（可选增量，缺省字段不写回）。
 
-        账号字段白名单过滤 + 只写非默认值；任务编排只保留启用项；
+        账号字段白名单过滤 + 只写非默认值；任务编排保留完整顺序（含未启用项）；
         instance_run 白名单校验。由调用方按需传参：任务开关/运行实例等
         即时写入只传对应字段，避免把未确认的账号草稿一并落盘。
         """

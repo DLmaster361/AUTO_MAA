@@ -24,7 +24,7 @@
               <span class="plan-field-label">{{ col.title }}</span>
               <a-select
                 v-if="isSelectColumn(col)"
-                :value="plan[col.field] ?? undefined"
+                :value="selectValue(plan, col)"
                 :options="columnOptions(col, plan)"
                 size="small"
                 class="plan-field-control"

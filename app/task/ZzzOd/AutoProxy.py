@@ -145,11 +145,55 @@ _ZZZOD_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("指令[ 一条龙 ] 执行失败", "ZZZ-OD 一条龙运行失败"),
 )
 
+# 重跑关键应用名单（app_id 对应 zzz-od 应用目录）：运行记录 diff 中仅名单内的
+# 应用失败才把本轮判为异常并触发重跑；名单外的应用失败只记录进任务报告、不
+# 重跑（次日运行时 zzz-od 会按运行记录自行重试失败节点）。名单为空 = 任何
+# 节点失败都不重跑（致命日志关键词仍然立即终止并重跑）。按需解开注释维护。
+_ZZZOD_CRITICAL_APPS: frozenset[str] = frozenset({
+    # "charge_plan",        # 体力刷本
+    # "daily_signin",       # 每日签到
+    # "engagement_reward",  # 活跃度奖励
+    # "ridu_weekly",        # 丽都周纪（领奖励）
+    # "notorious_hunt",     # 恶名狩猎
+    # "coffee",             # 咖啡店
+    # "email",              # 邮件
+    # "redemption_code",    # 兑换码
+})
+
 # 一条龙应用终态成功标志（每次运行恰好出现一次）：出现即代表全部实例执行
 # 完毕（对齐 ok-ww 的成功标志行行为）。出现后立即结束日志等待，不等启动器
 # 进程退出（LogMonitor 静默期回调节流最长延迟 60s）；终态成败仍由 main_task
 # 的运行记录 diff 统一判定——组内个别任务失败不影响该标志出现。
 _ZZZOD_ONE_DRAGON_SUCCESS = "指令[ 一条龙 ] 执行成功"
+
+
+# 汇总信号应用：上游「通知」应用在本轮存在失败任务时会把自己标失败
+# （通知消息本身已发出，fire-and-forget），从失败名单剔除避免误导
+_SUMMARY_APP_IDS = frozenset({"notify"})
+
+
+def _match_fatal(log: str) -> str | None:
+    """扫描内置致命关键词，命中返回状态文案，否则 None（三处判定共用）。"""
+
+    return next(
+        (msg for needle, msg in _ZZZOD_BUILTIN_FATAL if needle in log), None
+    )
+
+
+def _failed_apps(diffs: list) -> list[str]:
+    """从运行记录 diff 中提取本轮失败的应用 id（剔除汇总信号应用）。"""
+
+    return [
+        app_id
+        for app_id, _, new in diffs
+        if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
+    ]
+
+
+def _has_critical_failure(failed: list[str]) -> bool:
+    """失败名单中是否包含重跑关键名单内的应用。"""
+
+    return any(app_id in _ZZZOD_CRITICAL_APPS for app_id in failed)
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -265,18 +309,6 @@ def collect_used_slot_idxs(
             if bound > 0:
                 used.add(bound)
     return used
-
-
-def find_duplicate_user_names(
-    exclude_uid: uuid.UUID, name: str, user_config: MultipleConfig[ZzzOdUserConfig]
-) -> bool:
-    """同脚本内是否已有其他用户使用给定名称（ZzzOd 要求同脚本用户名唯一）。"""
-
-    return any(
-        str(cfg.get("Info", "Name") or "").strip() == name
-        for uid, cfg in user_config.items()
-        if uid != exclude_uid
-    )
 
 
 def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
@@ -737,6 +769,14 @@ class AutoProxyTask(TaskExecuteBase):
                 self.log_collect.collect(*rule)
         self.run_book = False
 
+    def _resolve_log_file_path(self) -> Path:
+        """一条龙统一日志路径（zzz-od 按日期滚动，当天固定为 log.txt）。
+
+        LogMonitor 每轮循环重新解析，跨日后自动跟随当日文件。
+        """
+
+        return self.script_root_path / _ZZZOD_REL_LOG
+
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -895,7 +935,7 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await asyncio.sleep(1)
                 await self.log_monitor.start_monitor_file(
-                    self.script_log_path, self.log_start_time
+                    self._resolve_log_file_path, self.log_start_time
                 )
 
                 self.wait_event.clear()
@@ -978,22 +1018,26 @@ class AutoProxyTask(TaskExecuteBase):
         log_status = "ZZZ-OD 正常运行中"
         user_status: str | None = None
 
-        for needle, msg in _ZZZOD_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
-                user_status = "异常"
-                break
+        fatal = _match_fatal(log)
+        if fatal is not None:
+            log_status = fatal
+            user_status = "异常"
         else:
             diffs = diff_run_records(records_before, records_after)
-            failed_apps = [
-                app_id for app_id, _, new in diffs if new == RUN_STATUS_FAILED
-            ]
-            if failed_apps:
+            failed_apps = _failed_apps(diffs)
+            # 仅关键名单内的失败触发重跑；非关键失败只记录不重跑
+            if _has_critical_failure(failed_apps):
                 failed_names = "、".join(
                     self._app_display_name(app_id) for app_id in failed_apps
                 )
                 log_status = f"ZZZ-OD 部分任务执行失败: {failed_names}"
                 user_status = "异常"
+            elif failed_apps:
+                failed_names = "、".join(
+                    self._app_display_name(app_id) for app_id in failed_apps
+                )
+                log_status = f"ZZZ-OD 部分任务执行失败: {failed_names}"
+                user_status = "完成"
             elif any(new == RUN_STATUS_SUCCESS for _, _, new in diffs):
                 log_status = "Success!"
                 user_status = "完成"
@@ -1066,18 +1110,17 @@ class AutoProxyTask(TaskExecuteBase):
         未完成则进入重试（zzz-od 按运行记录跳过已完成任务）。
         """
 
-        fatal = next(
-            (msg for needle, msg in _ZZZOD_BUILTIN_FATAL if needle in log), None
-        )
+        fatal = _match_fatal(log)
         all_ok = True
 
         for slot, (user_item, cfg) in self._slot_users.items():
             before = self._slot_records_before.get(slot, {})
             after = snapshot_run_records(self.script_root_path, slot)
             diffs = diff_run_records(before, after)
-            failed = any(new == RUN_STATUS_FAILED for _, _, new in diffs)
+            # 仅关键名单内的失败把该用户判异常并触发重跑；非关键失败只记录
+            failed_apps = _failed_apps(diffs)
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
-            ok = fatal is None and success and not failed
+            ok = fatal is None and success and not _has_critical_failure(failed_apps)
             all_ok = all_ok and ok
 
             user_item.status = "完成" if ok else "异常"
@@ -1094,9 +1137,7 @@ class AutoProxyTask(TaskExecuteBase):
                 record_status = fatal
             else:
                 failed_names = "、".join(
-                    self._app_display_name(app_id)
-                    for app_id, _, new in diffs
-                    if new == RUN_STATUS_FAILED
+                    self._app_display_name(app_id) for app_id in failed_apps
                 )
                 record_status = "ZZZ-OD 部分任务执行失败" + (
                     f": {failed_names}" if failed_names else ""
@@ -1127,6 +1168,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.run_book = all_ok
         self._multi_ran = True
 
+    async def _apply_proxy_success(self, cfg: ZzzOdUserConfig) -> None:
+        """代理成功的数据写回三步（单实例与多实例路径共用）：
+        首次代理扣剩余天数 → 累计次数 → 落「成功」状态。"""
+
+        if cfg.get("Data", "ProxyTimes") == 0 and cfg.get("Info", "RemainedDay") != -1:
+            await cfg.set("Info", "RemainedDay", cfg.get("Info", "RemainedDay") - 1)
+        await cfg.set("Data", "ProxyTimes", cfg.get("Data", "ProxyTimes") + 1)
+        await cfg.set("Data", "LastProxyStatus", "成功")
+
     async def _persist_multi_user_result(
         self, cfg: ZzzOdUserConfig, ok: bool, judged_before: bool
     ) -> None:
@@ -1139,13 +1189,7 @@ class AutoProxyTask(TaskExecuteBase):
         if ok:
             if cfg.get("Data", "LastProxyStatus") == "成功" and judged_before:
                 return
-            if (
-                cfg.get("Data", "ProxyTimes") == 0
-                and cfg.get("Info", "RemainedDay") != -1
-            ):
-                await cfg.set("Info", "RemainedDay", cfg.get("Info", "RemainedDay") - 1)
-            await cfg.set("Data", "ProxyTimes", cfg.get("Data", "ProxyTimes") + 1)
-            await cfg.set("Data", "LastProxyStatus", "成功")
+            await self._apply_proxy_success(cfg)
         else:
             if judged_before:
                 return
@@ -1191,12 +1235,11 @@ class AutoProxyTask(TaskExecuteBase):
         user_item_status: str | None = None
         need_stop = False
 
-        for needle, msg in _ZZZOD_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
-                user_item_status = "异常"
-                need_stop = True
-                break
+        fatal = _match_fatal(log)
+        if fatal is not None:
+            log_status = fatal
+            user_item_status = "异常"
+            need_stop = True
         else:
             if _ZZZOD_ONE_DRAGON_SUCCESS in log:
                 # 一条龙应用执行完毕即结束等待（成功标志行，对齐 ok-ww）；
@@ -1305,21 +1348,7 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         if self.run_book:
-            if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
-            ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
-                )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
-            )
-            await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
+            await self._apply_proxy_success(self.cur_user_config)
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
         else:

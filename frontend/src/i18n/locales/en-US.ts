@@ -1616,7 +1616,6 @@ export default {
     zzzodTeamsLoadFailed: 'Could not load predefined teams',
     zzzodTeamsSaveFailed: 'Could not save predefined teams',
     zzzodTeamsSaveButton: 'Save',
-    zzzodRestoreTitle: 'Config restore',
     zzzodLauncherMode: 'OneDragon launcher',
     zzzodLauncherAuto: 'Auto',
     zzzodLauncherOriginal: 'Original',
@@ -1671,40 +1670,7 @@ export default {
     configRestorePreviewAccount: 'Account',
     configRestorePreviewPassword: 'Password',
     configRestorePreviewBilibili: 'Bilibili account name',
-    zzzodRestoreTargetOd: 'OneDragon config',
-    zzzodRestoreTargetMas: 'MAS config',
-    zzzodRestoreDesc:
-      'Backups of the OneDragon\'s own config (instance list and per-instance config files), protecting it from accidental damage; created before each run or OneDragon config session, latest 10 kept',
-    zzzodRestoreMasDesc:
-      'Backups of the MAS user config (account, task list, and team setups maintained in the OneDragon UI); same timing, latest 10 kept',
-    zzzodRestoreEmpty: 'No backups yet; they are created automatically before runs or config sessions',
-    zzzodRestoreView: 'View',
-    zzzodRestorePreview: 'Preview config',
-    zzzodRestoreDetailView: 'View details',
-    zzzodRestorePreviewTitle: 'Config preview',
-    zzzodRestorePreviewFailed: 'Failed to load config preview',
-    zzzodRestorePreviewNoTasks: 'No task orchestration in this backup',
-    zzzodRestorePreviewEmpty: 'Nothing to preview in this backup',
-    zzzodPreviewConfigMode: 'Config mode',
     zzzodPreviewUnlimited: 'Unlimited',
-    zzzodPreviewActive: 'Active',
-    zzzodRestoreViewHintOd: 'Restore and open the OneDragon to inspect its own instances',
-    zzzodRestoreViewHintMas: 'Restore and open the OneDragon to inspect the MAS instance',
-    zzzodRestoreViewNoteOd:
-      'Click OK to open the script page and view the detailed config. Make sure no other script with the same name is running!',
-    zzzodRestoreViewNoteMas:
-      'Click OK to open the script page and view the detailed config. Make sure no other script with the same name is running!',
-    zzzodRestoreAction: 'Restore',
-    zzzodRestoreSuccess: 'OneDragon config restored',
-    zzzodRestoreConfirmTitle: 'Restore OneDragon config',
-    zzzodRestoreConfirmDesc:
-      'Restores the OneDragon native config from that time; current config is backed up first and can be restored anytime. MAS config is not affected',
-    zzzodRestoreMasSuccess: 'MAS config restored',
-    zzzodRestoreMasConfirmTitle: 'Restore MAS config',
-    zzzodRestoreMasConfirmDesc:
-      'Restores the MAS user config from that time to your dedicated instance and fills the account and task list back into this page; the OneDragon native config is not affected',
-    zzzodRestoreFailed: 'Could not restore the config',
-    zzzodBackupListFailed: 'Could not load the backup list',
     zzzodOpenNativeConfig: 'Configure in OneDragon',
     zzzodOpenNativeConfigHint:
       'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-<user>) seeded from this page, task list and account changes made in the GUI read back here automatically, and the previous active instance is restored on close',
@@ -1751,7 +1717,9 @@ export default {
     zzzodDirectBindAlert:
       'Account fields only write back when you click Save settings; task toggles and Run instances take effect immediately. Entering/leaving Direct mode auto-creates a backup you can restore from Config restore',
     zzzodDirectTasksDesc:
-      'Task switches and order are written straight back to the selected instance\'s native task list; flip a switch to include it, drag the card handle to reorder.',
+      'Task switches and order are written straight back to the selected instance\'s native task list; flip a switch to include it, drag the card handle to reorder. Disabled tasks can stay anywhere in the list.',
+    zzzodSortTasks: 'Tidy up',
+    zzzodSortTasksHint: 'Move enabled tasks before disabled ones (keeping their relative order) and write back',
     zzzodDragSortHint: 'Drag to reorder',
     zzzodInstancesManage: 'Instance management',
     zzzodInstancesManageHint:
@@ -1818,18 +1786,12 @@ export default {
     zzzodBilibiliAccount: 'Bilibili account name',
     zzzodEnterBilibiliAccount: 'Enter the Bilibili account name',
     zzzodBilibiliAccountHint: 'The account name saved in the Bilibili login panel',
-    zzzodLoadAccountFailed: 'Could not load the account settings',
-    zzzodSaveAccountFailed: 'Could not save the account settings',
     zzzodOneDragonConfig: 'Task configuration',
     zzzodOneDragonConfigHint:
       'Stored in this user config; MAS writes them into the one-dragon at run time. Tasks with the switch on run in order',
     zzzodOneDragonDesc:
-      'One-dragon series tasks on one screen: flip a switch to include a task in the run; drag the card handle to adjust the run order.',
-    zzzodTaskNotAdded: 'Not added',
-    zzzodTaskMoveUp: 'Move up',
-    zzzodTaskMoveDown: 'Move down',
+      'One-dragon series tasks on one screen: flip a switch to include a task in the run, and it stays in place when turned off; drag the card handle to adjust the run order.',
     zzzodLoadOneDragonFailed: 'Could not load the one-dragon task list',
-    zzzodSaveOneDragonFailed: 'Could not save the one-dragon task list',
     zzzodPushLogModeHint: 'How per-task results (success/failure/skipped) appear in the run report',
   },
   emulator: {

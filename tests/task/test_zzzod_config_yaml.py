@@ -362,8 +362,8 @@ def test_native_account_default_merge_and_default_skip(tmp_path: Path) -> None:
     assert data["game_path"] == r"G:\Games\ZZZ.exe"
 
 
-def test_native_tasks_merge_and_enabled_only_writeback(tmp_path: Path) -> None:
-    """直控任务编排：目录并入可选项（enabled 保持原生状态）；保存只写启用项。"""
+def test_native_tasks_merge_and_full_order_writeback(tmp_path: Path) -> None:
+    """直控任务编排：目录并入可选项（enabled 保持原生状态）；保存保留完整顺序。"""
     root = _make_root(tmp_path)
     catalog = [
         {"app_id": "email", "app_name": "邮件", "default_group": True, "priority": 200},
@@ -377,17 +377,22 @@ def test_native_tasks_merge_and_enabled_only_writeback(tmp_path: Path) -> None:
     assert tasks[1]["enabled"] is False
     assert tasks[0]["app_name"] == "邮件"
 
-    # 关闭 email + 开启 coffee → _group.yml 只保留启用项且顺序为本次编排顺序
+    # 保存保留完整顺序与启用状态（未启用项原位保留，对齐原生队列语义）
     save_native_tasks(root, 1, tasks)
     assert read_app_group(instance_dir(root, 1)) == [
-        {"app_id": "email", "enabled": True}
+        {"app_id": "email", "enabled": True},
+        {"app_id": "coffee", "enabled": False},
     ]
 
+    # 翻转启用状态后顺序不变
     tasks[0]["enabled"] = False
     tasks[1]["enabled"] = True
     save_native_tasks(root, 1, tasks)
     app_list = read_app_group(instance_dir(root, 1))
-    assert app_list == [{"app_id": "coffee", "enabled": True}]
+    assert app_list == [
+        {"app_id": "email", "enabled": False},
+        {"app_id": "coffee", "enabled": True},
+    ]
 
 
 def test_native_instance_manage_add_rename_flag_remove(tmp_path: Path) -> None:

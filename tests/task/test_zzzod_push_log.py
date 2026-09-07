@@ -59,6 +59,21 @@ class ZzzodResolveTest(unittest.TestCase):
             ["❌ 失败: 影院约会（超时）"],
         )
 
+    def test_notify_fail_is_summary_signal_dropped(self) -> None:
+        # 「通知」失败 = 上游「本轮存在失败」汇总信号（消息已发出），剔除不展示；
+        # 真实失败节点照常输出；「通知」成功仍正常展示
+        resolve = make_zzzod_resolve({"丽都城募", "通知"}, {})
+        results = [
+            (LogType.NORMAL, "SEG:1", T),
+            (LogType.NORMAL, "FAIL:丽都城募|找不到 丽都城募", T),
+            (LogType.NORMAL, "FAIL:通知|失败", T),
+            (LogType.NORMAL, "OK:通知", T),
+        ]
+        self.assertEqual(
+            [text for _, text, _ in resolve(results)],
+            ["❌ 失败: 丽都城募（找不到 丽都城募）", "✅ 成功: 通知"],
+        )
+
     def test_retry_round_keeps_last_state_and_battery(self) -> None:
         # MAS 重试轮：同节点与同账号电量都取最后一次
         resolve = make_zzzod_resolve({"体力刷本"}, {1: "寒风"})

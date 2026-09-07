@@ -747,10 +747,18 @@
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
               </h3>
-              <a-button size="small" class="restore-entry" @click="openRestoreModal">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
+              <div class="section-header-actions">
+                <a-tooltip :title="t('edit.zzzodSortTasksHint')">
+                  <a-button size="small" class="restore-entry" @click="handleSortTasks">
+                    <template #icon><SortAscendingOutlined /></template>
+                    {{ t('edit.zzzodSortTasks') }}
+                  </a-button>
+                </a-tooltip>
+                <a-button size="small" class="restore-entry" @click="openRestoreModal">
+                  <template #icon><HistoryOutlined /></template>
+                  {{ t('edit.configRestoreTitle') }}
+                </a-button>
+              </div>
             </div>
 
             <p class="section-desc">
@@ -982,8 +990,10 @@ import {
   PlusOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
+  SortAscendingOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
+import { useZzzOdTaskBoard, type ZzzOdTaskCard } from '@/composables/useZzzOdTaskBoard'
 import {
   Service,
   ZzzOdBackupRestoreIn,
@@ -1124,6 +1134,13 @@ const gameLanguageOptions = [
   { label: t('edit.zzzodLanguageCn'), value: 'cn' },
   { label: t('edit.zzzodLanguageEn'), value: 'en' },
 ]
+// options 表派生 value→label 映射（备份预览反显共用，避免枚举双份维护）
+const gameRegionLabels: Record<string, string> = Object.fromEntries(
+  gameRegionOptions.map(o => [o.value, o.label])
+)
+const gameLanguageLabels: Record<string, string> = Object.fromEntries(
+  gameLanguageOptions.map(o => [o.value, o.label])
+)
 
 // 用户名失焦：同脚本内禁止重名（绑定槽名与统计都依赖名字区分）
 const handleNameBlur = async () => {
@@ -1226,14 +1243,8 @@ const handleConfigModeChange = async (value: boolean | string) => {
   formData.Info.Mode = value as '用户' | '直控'
   await saveField('Info.Mode', formData.Info.Mode)
   if (value === '直控') {
-    // 进入直控：先确保一条龙原生配置已有「改动前」备份（指纹去重，防误操作改坏后无法找回）
-    await ensureDirectBackup()
-    // 尚未选实例时默认选中第一个直接进入原生编辑（不自动改全局活跃，
-    // 直控页只负责编辑；要跑谁在实例管理里显式「设为活跃」）
-    if (nativeInstanceIdx.value === null && instances.value.length) {
-      nativeInstanceIdx.value = instances.value[0].idx
-      await loadNativeConfig(instances.value[0].idx)
-    }
+    // 进入直控：公共初始化（备份 + 默认实例 + 加载原生配置）
+    await enterDirectMode()
   } else if (prev === '直控') {
     // 离开直控（切回用户）：补一份「配置完成时」的备份
     await ensureDirectBackup()
@@ -1251,6 +1262,18 @@ const ensureDirectBackup = async (): Promise<void> => {
     // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）
     logger.warn(e instanceof Error ? e.message : String(e))
     message.warning(t('edit.zzzodBackupFailed'))
+  }
+}
+
+/** 进入直控的公共初始化（模式切换与页面加载共用）：
+ * 补「改动前」备份 → 默认选第一个实例 → 加载所选实例原生配置 */
+const enterDirectMode = async () => {
+  await ensureDirectBackup()
+  if (nativeInstanceIdx.value === null && instances.value.length) {
+    nativeInstanceIdx.value = instances.value[0].idx
+  }
+  if (nativeInstanceIdx.value !== null) {
+    await loadNativeConfig(nativeInstanceIdx.value)
   }
 }
 
@@ -1559,16 +1582,7 @@ const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
   Object.keys(nativeAccountValues).forEach(k => delete nativeAccountValues[k])
   Object.assign(nativeAccountValues, values)
   nativeInstanceRun.value = data.instanceRun || '仅运行当前'
-  nativeTasks.value = (data.tasks ?? []).map(
-    t =>
-      ({
-        app_id: t.app_id,
-        app_name: t.app_name,
-        enabled: !!t.enabled,
-        configurable: t.configurable,
-        jump: t.jump,
-      }) as TaskCard
-  )
+  nativeTasks.value = toTaskCards(data.tasks ?? [])
 }
 
 const loadNativeConfig = async (instanceIdx: number) => {
@@ -1630,6 +1644,19 @@ type NativeSaveSection = 'all' | 'tasks' | 'instanceRun'
 /** 提交给后端的任务条目（后端只认 app_id/enabled） */
 const toNativeTaskIn = (list: TaskCard[]): { app_id: string; enabled: boolean }[] =>
   list.map(t => ({ app_id: t.app_id, enabled: !!t.enabled }))
+
+/** 后端任务条目 → 卡片（加载与保存回读共用） */
+const toTaskCards = (tasks: NonNullable<ZzzOdNativeConfigOut['tasks']>) =>
+  tasks.map(
+    t =>
+      ({
+        app_id: t.app_id,
+        app_name: t.app_name,
+        enabled: !!t.enabled,
+        configurable: t.configurable,
+        jump: t.jump,
+      }) as TaskCard
+  )
 const saveNativeConfig = async (
   payload: {
     account?: Record<string, string>
@@ -1651,16 +1678,7 @@ const saveNativeConfig = async (
       throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
     }
     if (section === 'tasks') {
-      nativeTasks.value = (resp.tasks ?? []).map(
-        t =>
-          ({
-            app_id: t.app_id,
-            app_name: t.app_name,
-            enabled: !!t.enabled,
-            configurable: t.configurable,
-            jump: t.jump,
-          }) as TaskCard
-      )
+      nativeTasks.value = toTaskCards(resp.tasks ?? [])
     } else if (section === 'instanceRun') {
       nativeInstanceRun.value = resp.instanceRun || '仅运行当前'
     } else {
@@ -1687,7 +1705,8 @@ const saveNativeAccount = () =>
     'all'
   )
 
-const selectDirectGamePath = async () => {
+/** 弹出文件选择并校验为 ZenlessZoneZero.exe，取消/选错返回 null（两处共用） */
+const pickZzzGameExe = async (): Promise<string | null> => {
   const paths = await window.electronAPI?.selectFile([
     {
       name: 'ZenlessZoneZero.exe',
@@ -1695,13 +1714,18 @@ const selectDirectGamePath = async () => {
     },
   ])
   const path = paths?.[0]
-  if (!path) return
+  if (!path) return null
   const fileName = path.split(/[\\/]/).pop()
   if (fileName?.toLowerCase() !== 'zenlesszonezero.exe') {
     message.error(t('edit.zzzodPickGameExe'))
-    return
+    return null
   }
-  nativeAccountValues.game_path = path
+  return path
+}
+
+const selectDirectGamePath = async () => {
+  const path = await pickZzzGameExe()
+  if (path) nativeAccountValues.game_path = path
 }
 
 // ══ 任务目录（中文名渲染；一条龙系列 = zzz-od 默认编组应用）══
@@ -1922,14 +1946,6 @@ const previewFieldLabels: Record<string, string> = {
 
 // 枚举值为后端/一条龙原生取值（驱动文案映射需保持原样），展示走词表
 const formatPreviewValue = (key: string, raw: string): string => {
-  const regions: Record<string, string> = {
-    cn: t('edit.zzzodRegionCn'),
-    cn_b: t('edit.zzzodRegionCnB'),
-    us: t('edit.zzzodRegionUs'),
-    eu: t('edit.zzzodRegionEu'),
-    asia: t('edit.zzzodRegionAsia'),
-    twhkmo: t('edit.zzzodRegionTwHkMo'),
-  }
   switch (key) {
     case 'status':
       return raw === 'true' ? t('edit.yes') : t('edit.no')
@@ -1958,9 +1974,9 @@ const formatPreviewValue = (key: string, raw: string): string => {
             ? t('edit.pushLogModeSummary')
             : raw
     case 'game_region':
-      return regions[raw] ?? raw
+      return gameRegionLabels[raw] ?? raw
     case 'game_language':
-      return raw === 'cn' ? t('edit.zzzodLanguageCn') : raw === 'en' ? t('edit.zzzodLanguageEn') : raw
+      return gameLanguageLabels[raw] ?? raw
     default:
       return raw || '—'
   }
@@ -2037,13 +2053,8 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 }
 
 // ══ 一条龙任务（OneDragon.AppList JSON 字段，打开页面即可开关）══
-interface TaskCard {
-  app_id: string
-  app_name: string
-  enabled: boolean
-  configurable?: boolean
-  jump?: boolean
-}
+// 卡片结构与操作封装见 useZzzOdTaskBoard（用户模式与直控模式共用）
+type TaskCard = ZzzOdTaskCard
 
 const savedApps = computed<{ app_id: string; enabled: boolean }[]>(() => {
   try {
@@ -2061,6 +2072,7 @@ const taskCards = computed<TaskCard[]>(() => {
       { name: item.app_name, configurable: item.configurable, jump: item.jump },
     ])
   )
+  // AppList 全量条目按原顺序渲染（含未启用项原位保留，对齐原生队列语义）
   const cards: TaskCard[] = savedApps.value
     .filter(item => item && typeof item.app_id === 'string')
     .map(item => ({
@@ -2102,52 +2114,30 @@ watch(
   { immediate: true }
 )
 
-/** 拖拽结束：按最终顺序写回（直控落盘实例原生编排；用户模式写回 AppList） */
-const handleTaskDragEnd = () => {
-  if (isInitializing.value || pageLoading.value) return
-  const list = [...taskDragCards.value]
-  if (formData.Info.Mode === '直控') {
-    nativeTasks.value = list
-    void saveNativeConfig({ tasks: toNativeTaskIn(list) }, 'tasks', true)
-    return
-  }
-  persistAppList(
-    list.filter(card => card.enabled).map(card => ({ app_id: card.app_id, enabled: true }))
-  )
-}
-
 const persistAppList = (list: { app_id: string; enabled: boolean }[]) => {
   formData.OneDragon.AppList = JSON.stringify(list)
   void saveField('OneDragon.AppList', formData.OneDragon.AppList)
 }
 
-/** 开关即配置：开=加入编排末尾；关=移出编排（直控直接写回实例原生 YAML） */
-const toggleTask = (card: TaskCard) => {
+/** 按当前模式落盘任务看板：直控写实例原生编排；用户模式写 AppList 字段 */
+const commitTaskBoard = (list: TaskCard[]) => {
   if (formData.Info.Mode === '直控') {
-    const list = [...nativeTasks.value]
-    const idx = list.findIndex(item => item.app_id === card.app_id)
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], enabled: !list[idx].enabled }
-    } else {
-      list.push({ app_id: card.app_id, app_name: card.app_name, enabled: true, configurable: card.configurable, jump: card.jump })
-    }
     nativeTasks.value = list
     void saveNativeConfig({ tasks: toNativeTaskIn(list) }, 'tasks', true)
     return
   }
-  const list = [...savedApps.value]
-  const idx = list.findIndex(item => item.app_id === card.app_id)
-  if (idx >= 0) {
-    if (list[idx].enabled) {
-      list.splice(idx, 1)
-    } else {
-      list[idx] = { ...list[idx], enabled: true }
-    }
-  } else {
-    list.push({ app_id: card.app_id, enabled: true })
-  }
-  persistAppList(list)
+  persistAppList(list.map(card => ({ app_id: card.app_id, enabled: !!card.enabled })))
 }
+
+// 任务看板共用操作（开关/拖拽/一键整理），两种模式仅落盘方式不同
+const {
+  toggle: toggleTask,
+  commitDragOrder: handleTaskDragEnd,
+  sortEnabledFirst: handleSortTasks,
+} = useZzzOdTaskBoard(taskDragCards, {
+  editable: () => !isInitializing.value && !pageLoading.value,
+  commit: commitTaskBoard,
+})
 
 // ══ 原生 GUI 设置会话（直控模式专用；viewOnly 为只读查看会话）══
 const {
@@ -2188,19 +2178,8 @@ const handleCancel = async () => {
 }
 
 const selectGamePath = async () => {
-  const paths = await window.electronAPI?.selectFile([
-    {
-      name: 'ZenlessZoneZero.exe',
-      extensions: ['exe'],
-    },
-  ])
-  const path = paths?.[0]
+  const path = await pickZzzGameExe()
   if (!path) return
-  const fileName = path.split(/[\\/]/).pop()
-  if (fileName?.toLowerCase() !== 'zenlesszonezero.exe') {
-    message.error(t('edit.zzzodPickGameExe'))
-    return
-  }
   formData.Game.GamePath = path
   void saveField('Game.GamePath', path)
 }
@@ -2261,16 +2240,9 @@ onMounted(async () => {
     await loadInstances()
     await loadLaunchers()
     await loadCatalog()
-    // 已是直控模式的用户：确保原生配置已有最新备份（指纹去重，幂等），
-    // 并加载所选实例的原生配置（运行实例等全局设置）。
+    // 已是直控模式的用户：公共初始化（备份 + 默认实例 + 加载原生配置）
     if (formData.Info.Mode === '直控') {
-      await ensureDirectBackup()
-      if (nativeInstanceIdx.value === null && instances.value.length) {
-        nativeInstanceIdx.value = instances.value[0].idx
-      }
-      if (nativeInstanceIdx.value !== null) {
-        await loadNativeConfig(nativeInstanceIdx.value)
-      }
+      await enterDirectMode()
     }
   }
 })
@@ -2368,6 +2340,13 @@ onUnmounted(() => {
   margin-bottom: 6px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .section-header h3 {

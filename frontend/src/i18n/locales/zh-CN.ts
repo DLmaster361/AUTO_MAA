@@ -1555,7 +1555,6 @@ export default {
     zzzodTeamsLoadFailed: '加载预备编队失败',
     zzzodTeamsSaveFailed: '保存预备编队失败',
     zzzodTeamsSaveButton: '保存',
-    zzzodRestoreTitle: '配置恢复',
     zzzodLauncherMode: '一条龙启动器',
     zzzodLauncherAuto: '自动',
     zzzodLauncherOriginal: '原始',
@@ -1608,40 +1607,7 @@ export default {
     configRestorePreviewAccount: '账号',
     configRestorePreviewPassword: '密码',
     configRestorePreviewBilibili: 'B服账号名',
-    zzzodRestoreTargetOd: '恢复一条龙配置',
-    zzzodRestoreTargetMas: '恢复 MAS 配置',
-    zzzodRestoreDesc:
-      '一条龙自身配置的备份（实例列表与各实例配置文件），防止配置被意外破坏；运行或打开一条龙配置前自动创建，保留最近 10 份',
-    zzzodRestoreMasDesc:
-      'MAS 用户配置的备份（账号、任务编排及在一条龙里维护的配队等）；创建时机相同，保留最近 10 份',
-    zzzodRestoreEmpty: '暂无备份；运行或打开一条龙配置后会自动创建',
-    zzzodRestoreView: '查看配置',
-    zzzodRestorePreview: '预览配置',
-    zzzodRestoreDetailView: '查看详细配置',
-    zzzodRestorePreviewTitle: '配置预览',
-    zzzodRestorePreviewFailed: '加载配置预览失败',
-    zzzodRestorePreviewNoTasks: '该备份无任务编排',
-    zzzodRestorePreviewEmpty: '该备份无可展示的配置摘要',
-    zzzodPreviewConfigMode: '配置模式',
     zzzodPreviewUnlimited: '不限',
-    zzzodPreviewActive: '活跃',
-    zzzodRestoreViewHintOd: '恢复后打开一条龙，查看它自己的实例',
-    zzzodRestoreViewHintMas: '恢复后打开一条龙，查看 MAS 实例',
-    zzzodRestoreViewNoteOd:
-      '点击确定将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
-    zzzodRestoreViewNoteMas:
-      '点击确定将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
-    zzzodRestoreAction: '一键恢复',
-    zzzodRestoreSuccess: '一条龙配置已恢复',
-    zzzodRestoreConfirmTitle: '恢复一条龙配置',
-    zzzodRestoreConfirmDesc:
-      '恢复该时间点的一条龙原生配置；当前配置已自动备份，可随时找回。MAS 配置不受影响',
-    zzzodRestoreMasSuccess: 'MAS 配置已恢复',
-    zzzodRestoreMasConfirmTitle: '恢复 MAS 配置',
-    zzzodRestoreMasConfirmDesc:
-      '恢复该时间点的 MAS 用户配置到你的专属实例，并回填本页账号与任务编排；一条龙原生配置不受影响',
-    zzzodRestoreFailed: '恢复配置失败',
-    zzzodBackupListFailed: '加载备份列表失败',
     zzzodOpenNativeConfig: '在一条龙内配置',
     zzzodOpenNativeConfigHint:
       '打开 zzz-od 原生界面配置配队等复杂设置；以本页配置为基线打开该用户绑定的专属实例（MAS-用户名），GUI 内的任务编排与账号改动会自动回读到本页，关闭后恢复原活跃实例',
@@ -1686,7 +1652,9 @@ export default {
     zzzodDirectBindAlert:
       '账号字段点「保存设置」才写回；任务开关与运行实例改动即时生效。进入/退出直控会自动备份，可在「配置恢复」找回',
     zzzodDirectTasksDesc:
-      '任务开关与顺序直接写回所选实例的原生任务编排；打开即加入，拖动卡片手柄调整执行顺序。',
+      '任务开关与顺序直接写回所选实例的原生任务编排；打开即加入，拖动卡片手柄调整执行顺序，未启用项可停留在任意位置。',
+    zzzodSortTasks: '一键整理',
+    zzzodSortTasksHint: '启用任务排到未启用任务之前（各自保持原有相对顺序）并写回',
     zzzodDragSortHint: '拖拽调整执行顺序',
     zzzodInstancesManage: '实例管理',
     zzzodInstancesManageHint:
@@ -1752,18 +1720,12 @@ export default {
     zzzodBilibiliAccount: 'B服账号名',
     zzzodEnterBilibiliAccount: '请输入B服登录账号名',
     zzzodBilibiliAccountHint: 'B服登录面板中已保存的账号名',
-    zzzodLoadAccountFailed: '加载账号配置失败',
-    zzzodSaveAccountFailed: '保存账号配置失败',
     zzzodOneDragonConfig: '任务配置',
     zzzodOneDragonConfigHint:
       '保存在本用户配置中，运行时由 MAS 写入一条龙；打开开关的任务会按顺序执行',
     zzzodOneDragonDesc:
-      '一条龙系列任务一屏可见，打开开关即加入并按顺序执行；拖动卡片手柄调整执行顺序。',
-    zzzodTaskNotAdded: '未加入',
-    zzzodTaskMoveUp: '上移',
-    zzzodTaskMoveDown: '下移',
+      '一条龙系列任务一屏可见，打开开关即加入并按顺序执行，关闭后原位保留；拖动卡片手柄调整执行顺序。',
     zzzodLoadOneDragonFailed: '加载一条龙任务失败',
-    zzzodSaveOneDragonFailed: '保存一条龙任务失败',
     zzzodPushLogModeHint: '任务报告中各任务的执行结果展示方式（成功/失败/跳过）',
   },
   emulator: {

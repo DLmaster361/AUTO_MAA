@@ -51,6 +51,7 @@ from .tools import (
     collect_mas_user_info,
     find_active_instance,
     instance_dir,
+    normalize_app_group_entries,
     read_app_group,
     read_game_account,
     restore_instance_view,
@@ -190,8 +191,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
         - 区服/路径/语言/B服名：无条件回读（客观字段，槽值即真相）；
         - 账号/密码：槽值非空才回读（留空=沿用登录态语义，避免清空被读回）；
-        - 任务编排：取 ``_group.yml`` 全量条目顺序，仅启用项进 AppList
-          （与注入侧语义对称，未启用任务由前端网格补全展示）。
+        - 任务编排：取 ``_group.yml`` 全量条目顺序（含未启用项）整表进 AppList
+          （运行侧 parse_user_apps 只消费启用项，未启用项原位保留顺序）。
         """
 
         cfg = self.cur_user_config
@@ -211,16 +212,12 @@ class ScriptConfigTask(TaskExecuteBase):
             await cfg.set("Game", "Account", str(account.get("account")))
         if str(account.get("password") or "").strip():
             await cfg.set("Game", "Password", str(account.get("password")))
-        enabled_apps = [
-            {"app_id": str(item["app_id"]), "enabled": True}
-            for item in read_app_group(slot_dir)
-            if item.get("enabled") and str(item.get("app_id") or "").strip()
-        ]
+        all_apps = normalize_app_group_entries(read_app_group(slot_dir))
         await cfg.set(
-            "OneDragon", "AppList", json.dumps(enabled_apps, ensure_ascii=False)
+            "OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False)
         )
         logger.info(
-            f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(enabled_apps)} 项)"
+            f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(all_apps)} 项)"
         )
 
     def _restore_native_active(self) -> None:

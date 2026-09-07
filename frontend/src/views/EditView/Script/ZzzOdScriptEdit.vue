@@ -382,6 +382,11 @@ interface ZzzOdRunForm {
 }
 
 interface ZzzOdGameForm {
+  Enabled: boolean
+  LaunchBeforeTask: boolean
+  Path: string
+  Arguments: string
+  WaitTime: number
   CloseOnFinish: boolean
   AccountSwitch: '单实例切换' | '多实例切换' | 'MAS切换'
 }

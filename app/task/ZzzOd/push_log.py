@@ -79,6 +79,10 @@ ACCOUNT_PREFIX_RE = re.compile(r"^【(.+?)】(.*)$")
 _KIND_STATUS = {"OK": "✅ 成功", "FAIL": "❌ 失败", "SKIP": "⏭ 跳过"}
 _KIND_RE = re.compile(r"^(OK|FAIL|SKIP):(.*)$")
 
+# 「通知」应用失败 = 上游汇总信号（本轮存在失败任务时它把自己标失败），
+# 消息本身已发出（fire-and-forget），真实失败由对应节点行体现，剔除避免误导
+_SUMMARY_FAIL_APP_NAMES = frozenset({"通知"})
+
 
 def make_zzzod_resolve(
     app_names: set[str], idx_names: dict[int, str]
@@ -121,6 +125,9 @@ def make_zzzod_resolve(
                 node, extra = node.split("|", 1)
             if kind in ("OK", "FAIL") and node not in app_names:
                 # 辅助指令（返回大世界/进入游戏/切换账号等）不是应用节点
+                continue
+            if kind == "FAIL" and node in _SUMMARY_FAIL_APP_NAMES:
+                # 「通知」失败是上游的「本轮存在失败」汇总信号，非发送失败
                 continue
             if kind == "OK" and extra is not None and extra.startswith("🔋"):
                 # 体力刷本的最终电量：节点行照常输出（不带后缀），电量记录

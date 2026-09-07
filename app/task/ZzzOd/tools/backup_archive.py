@@ -29,9 +29,9 @@
   账号/任务编排与用户在原生 GUI 里维护的配队等；恢复到槽并回填本页字段。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
-``app.utils.config_archive`` 提供，本模块只保留 zzz-od 特有的文件集收集
-（排除 MAS 槽）、恢复语义（先清合成视图、恢复前强制归档当前）与归档目录
-布局。两类各自独立保留 :data:`KEEP_COUNT` 份。
+``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
+zzz-od 特有的文件集收集（排除 MAS 槽）、恢复语义（先清合成视图、恢复前
+强制归档当前）与归档目录布局。
 """
 
 import shutil
@@ -56,9 +56,6 @@ from .zzz_od_config import (
 )
 
 logger = get_logger("ZZZ-OD 配置备份")
-
-KEEP_COUNT = 10
-"""每类保留的归档份数（超出清理最旧的；与公共原语默认一致）"""
 
 MAS_SLOT_PREFIX = "MAS-"
 """MAS 用户槽在注册表中的实例名前缀"""

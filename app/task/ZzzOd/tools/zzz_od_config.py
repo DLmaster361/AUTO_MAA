@@ -49,14 +49,8 @@ ZZZOD_GAME_REGION_LABELS = {
 }
 """区服取值（英文）到中文展示的映射"""
 
-ZZZOD_GAME_REGION_VALUES = {v: k for k, v in ZZZOD_GAME_REGION_LABELS.items()}
-"""中文展示到区服取值（英文）的映射"""
-
 ZZZOD_GAME_LANGUAGE_LABELS = {"cn": "中文", "en": "英文"}
 """游戏语言取值到中文展示的映射"""
-
-ZZZOD_GAME_LANGUAGE_VALUES = {v: k for k, v in ZZZOD_GAME_LANGUAGE_LABELS.items()}
-"""中文展示到游戏语言取值的映射"""
 
 # zzz-od 运行记录 run_status 取值（AppRunRecord）
 RUN_STATUS_NOT_RUN = 0
@@ -436,6 +430,19 @@ def write_game_account(config_dir: Path, patch: dict) -> dict:
         return data
 
 
+def normalize_app_group_entries(items: list) -> list[dict]:
+    """把任务编排条目归一化为 ``{"app_id": str, "enabled": bool}``（剔空）。
+
+    ``_group.yml`` 写盘与 AppList 整表回填共用的同一套规则。
+    """
+
+    return [
+        {"app_id": str(item["app_id"]), "enabled": bool(item.get("enabled"))}
+        for item in items
+        if isinstance(item, dict) and str(item.get("app_id") or "").strip()
+    ]
+
+
 def read_app_group(config_dir: Path) -> list[dict]:
     """读取一条龙任务编排（app_list，顺序即执行顺序，元素含 app_id/enabled）。"""
 
@@ -448,14 +455,9 @@ def read_app_group(config_dir: Path) -> list[dict]:
 def write_app_group(config_dir: Path, app_list: list[dict]) -> None:
     """整表写回一条龙任务编排（app_id + enabled，顺序即执行顺序）。"""
 
-    normalized = [
-        {"app_id": str(item["app_id"]), "enabled": bool(item.get("enabled"))}
-        for item in app_list
-        if str(item.get("app_id") or "").strip()
-    ]
     write_file(
         config_dir / "one_dragon" / "_group.yml",
-        {"app_list": normalized},
+        {"app_list": normalize_app_group_entries(app_list)},
     )
 
 

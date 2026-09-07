@@ -45,6 +45,8 @@ import httpx
 from app.utils import LazyProxy, get_logger
 from app.utils.platform import secret as platform_secret
 
+from .openclaw_common import RemoteHTTPError, split_text
+
 Config = LazyProxy("app.core", "Config")
 logger = get_logger("微信Claw")
 
@@ -114,42 +116,6 @@ class WeixinStatus:
     connected: bool
     state: str
     message: str
-
-
-class RemoteHTTPError(RuntimeError):
-    """远端返回明确 HTTP 状态码的请求错误。"""
-
-    def __init__(self, status_code: int, message: str) -> None:
-        self.status_code = status_code
-        super().__init__(message)
-
-
-def split_text(text: str, limit: int = TEXT_CHUNK_LIMIT) -> list[str]:
-    """将文本按字符上限拆分，并尽量在换行处断开。
-
-    iLink 的网关对过长文本可能返回业务失败；通知正文不能依赖模型自行分段，
-    因此这里在协议适配层做确定性拆分。
-    """
-
-    if limit < 1:
-        raise ValueError("文本分段长度必须大于 0")
-    if not text:
-        return [""]
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    remaining = text
-    while len(remaining) > limit:
-        boundary = remaining.rfind("\n", 0, limit + 1)
-        if boundary <= 0:
-            boundary = limit
-        chunks.append(remaining[:boundary].rstrip("\n"))
-        remaining = remaining[boundary:]
-        remaining = remaining.lstrip("\n")
-    if remaining:
-        chunks.append(remaining)
-    return chunks
 
 
 def _is_valid_https_url(value: str) -> bool:

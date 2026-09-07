@@ -43,6 +43,8 @@ import httpx
 from app.utils import LazyProxy, get_logger
 from app.utils.platform import secret as platform_secret
 
+from .openclaw_common import RemoteHTTPError, split_text
+
 Config = LazyProxy("app.core", "Config")
 logger = get_logger("QQ官方机器人")
 
@@ -80,14 +82,6 @@ class _RuntimeCredentials:
     user_openid: str
 
 
-class RemoteHTTPError(RuntimeError):
-    """远端返回明确 HTTP 状态码的请求错误。"""
-
-    def __init__(self, status_code: int, message: str) -> None:
-        self.status_code = status_code
-        super().__init__(message)
-
-
 @dataclass(frozen=True)
 class QrStartResult:
     """创建二维码后的公开结果。"""
@@ -114,29 +108,6 @@ class QQStatus:
     connected: bool
     state: str
     message: str
-
-
-def split_text(text: str, limit: int = TEXT_CHUNK_LIMIT) -> list[str]:
-    """将通知文本按字符上限拆分，并尽量在换行处断开。"""
-
-    if limit < 1:
-        raise ValueError("文本分段长度必须大于 0")
-    if not text:
-        return [""]
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    remaining = text
-    while len(remaining) > limit:
-        boundary = remaining.rfind("\n", 0, limit + 1)
-        if boundary <= 0:
-            boundary = limit
-        chunks.append(remaining[:boundary].rstrip("\n"))
-        remaining = remaining[boundary:].lstrip("\n")
-    if remaining:
-        chunks.append(remaining)
-    return chunks
 
 
 def _as_int(value: Any) -> int | None:

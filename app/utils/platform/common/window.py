@@ -20,3 +20,5 @@ get_window_rect = _unsupported
 is_minimized = _unsupported
 restore_window = _unsupported
 force_activate_window = _unsupported
+get_client_size = _unsupported
+set_client_size = _unsupported

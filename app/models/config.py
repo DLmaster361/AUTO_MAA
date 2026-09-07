@@ -2474,6 +2474,17 @@ class MaaFWConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
+        ## Win32 controller 下把游戏窗口客户区调整为指定尺寸。
+        ## Win32 controller 截的是客户区，脚本侧的分辨率闸门校验的也是它；显示器
+        ## 断开导致桌面回落到小分辨率时，游戏窗口会被压小并被游戏自己记住，之后
+        ## 每次运行都不达标。默认 Off：MAS 无从知道某个项目要的是什么比例，只在
+        ## 用户明确指定时才动窗口。
+        self.Game_WindowSize = ConfigItem(
+            "Game",
+            "WindowSize",
+            "Off",
+            OptionsValidator(["Off", "Fit", "1280x720", "1600x900", "1920x1080"]),
+        )
 
         ## Update ----------------------------------------------------------
         ## 项目自动更新时机：Off 不更新 / BeforeRun 运行前 / AfterRun 全部用户跑完后。

@@ -1240,6 +1240,11 @@ export default {
     maximumLinesWindowBefore: '範囲の最大行数。これに達すると強制的に閉じます',
     pasteLogLinesTest: 'テストしたいログ行を貼り付けてください（1 行に 1 件）...',
     closeLaunchedProcessAfterwards: '終了後に起動したプロセスを閉じる',
+    gameWindowSize: 'ゲームウィンドウサイズ',
+    gameWindowSizeTip:
+      'タスク開始前にゲームウィンドウの描画領域を指定サイズへ調整します。モニターを外したり電源を切ったりすると Windows は非常に低い解像度へ退避し、ゲームウィンドウが縮んだまま記憶されるため、以降の実行が常に条件を満たさなくなります。既定では調整しません。',
+    gameWindowSizeOff: '調整しない',
+    gameWindowSizeFit: '自動（画面に収まる最大サイズ）',
     endPattern: '終了用の正規表現',
     keepEditing: '編集を続ける',
     editHsrScript: 'HSR スクリプトを編集',

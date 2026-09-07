@@ -49,6 +49,13 @@ from app.task.MaaFW.tools.notify import push_notification
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
+from app.utils.platform.display import (
+    can_host_client,
+    describe_monitors,
+    find_host_monitor,
+    monitor_from_window,
+)
+from app.utils.platform.window import get_client_size, set_client_size
 
 from .project_path import release_project_path, try_reserve_project_path
 from .runtime_route import MaaFWManagedExecutionRoute, managed_execution_route
@@ -76,6 +83,17 @@ _ADB_SCREENCAP_EMULATOR_EXTRAS = 1 << 6
 _ADB_INPUT_DEFAULT = -9
 _ADB_INPUT_ALL = -1
 _ADB_INPUT_EMULATOR_EXTRAS = 1 << 3
+# 游戏窗口整形的目标客户区。只给 16:9 的标准档：MAS 无从知道某个 MaaFW 项目要的
+# 是什么比例，任意尺寸只会把「窗口太小」换成「窗口比例怪」。
+_WIN32_WINDOW_SIZE_PRESETS = {
+    "1280x720": (1280, 720),
+    "1600x900": (1600, 900),
+    "1920x1080": (1920, 1080),
+}
+# Fit 模式从大到小挑第一个放得下的。
+_WIN32_WINDOW_FIT_ORDER = ((1920, 1080), (1600, 900), (1280, 720))
+_WIN32_WINDOW_MIN_CLIENT = (1280, 720)
+
 _WIN32_SCREENCAP_METHODS = {
     "GDI": 1,
     "FramePool": 1 << 1,
@@ -394,6 +412,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             elif game_path_error is not None:
                 self.cur_user_item.status = "异常"
                 return game_path_error
+            elif self.run_plan.controllerType == "Win32":
+                desktop_error = await asyncio.to_thread(self._check_desktop_capacity)
+                if desktop_error is not None:
+                    self.cur_user_item.status = "异常"
+                    return desktop_error
 
             keep_reservation = True
             return "Pass"
@@ -691,6 +714,110 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return resource.name
         return None
 
+
+
+    def _check_desktop_capacity(self) -> str | None:
+        """开了窗口整形时，先确认桌面上真有一块屏放得下目标客户区。
+
+        只在用户明确指定尺寸时才拦：没开整形就说明用户自己管窗口，MAS 不该替他
+        决定多大算够。放不下时当场说清楚，而不是让任务跑一轮再被脚本侧的分辨率
+        闸门打掉——那条路径给出的信息量少得多。
+        """
+
+        mode = str(self.script_config.get("Game", "WindowSize") or "Off")
+        if mode == "Off":
+            return None
+        target = _WIN32_WINDOW_SIZE_PRESETS.get(mode, _WIN32_WINDOW_MIN_CLIENT)
+        try:
+            if find_host_monitor(*target) is not None:
+                return None
+            detail = describe_monitors()
+        except Exception:
+            # 查不到显示器信息不足以判定桌面不可用，放行交给后续流程。
+            return None
+        return (
+            f"桌面上没有一块显示器放得下 {target[0]}x{target[1]} 的游戏窗口，"
+            f"当前显示器: {detail}。"
+            "显示器断开或关闭时 Windows 会回落到很小的分辨率，请接回显示器、"
+            "使用显示器假负载，或把「游戏窗口尺寸」改小"
+        )
+
+    def _win32_window_target(self, monitor) -> tuple[int, int] | None:
+        """按脚本配置解析目标客户区；Off 或放不下时返回 None。
+
+        目标只给 16:9 的几档预设，不做任意尺寸：MAS 无从知道某个 MaaFW 项目要的
+        是什么比例，硬凑一个非标尺寸只会把问题从「窗口太小」换成「窗口比例怪」。
+        """
+
+        mode = str(self.script_config.get("Game", "WindowSize") or "Off")
+        if mode == "Off":
+            return None
+        if mode in _WIN32_WINDOW_SIZE_PRESETS:
+            return _WIN32_WINDOW_SIZE_PRESETS[mode]
+        if mode != "Fit":
+            return None
+        if monitor is None:
+            return None
+        for size in _WIN32_WINDOW_FIT_ORDER:
+            if can_host_client(monitor, *size):
+                return size
+        return None
+
+    def _prepare_win32_window(self, hwnd: int) -> None:
+        """记录桌面与窗口实测尺寸，并按配置把游戏窗口整形成目标客户区。
+
+        Win32 controller 截的是客户区，脚本侧的分辨率闸门校验的也是它。诊断这一段
+        无论是否整形都要打：真出问题时 MAS 自己必须能说出屏幕、DPI 和客户区三个
+        实测数字，而不是只能靠脚本自己的日志倒推。
+
+        整形失败一律只记日志不抛错——它是尽力而为的改善项，不该反过来把本来能跑的
+        任务打掉。
+        """
+
+        try:
+            self._append_log(f"桌面显示器: {describe_monitors()}")
+        except Exception as exc:
+            self._append_log(f"读取显示器信息失败: {exc}")
+            return
+
+        try:
+            monitor = monitor_from_window(hwnd)
+            before = get_client_size(hwnd)
+            self._append_log(
+                f"游戏窗口客户区: {_format_client_size(before)}"
+                f"{_format_physical_suffix(hwnd, before)}"
+                f"; 所在显示器: {monitor.describe() if monitor else '未知'}"
+            )
+
+            target = self._win32_window_target(monitor)
+            if target is None:
+                return
+            if before == target:
+                self._append_log(
+                    f"游戏窗口客户区已是 {target[0]}x{target[1]}，无需调整"
+                )
+                return
+
+            after = set_client_size(hwnd, *target)
+            if after is None:
+                self._append_log(
+                    f"游戏窗口无法调整为 {target[0]}x{target[1]}"
+                    "（全屏或无边框窗口没有可调整的外框），保持原样继续"
+                )
+                return
+            if after != target:
+                self._append_log(
+                    f"游戏窗口客户区调整为 {_format_client_size(after)}"
+                    f"，与目标 {target[0]}x{target[1]} 不一致，游戏可能限制了窗口尺寸"
+                )
+                return
+            self._append_log(
+                f"游戏窗口客户区已调整: {_format_client_size(before)}"
+                f" -> {_format_client_size(after)}"
+            )
+        except Exception as exc:
+            self._append_log(f"调整游戏窗口尺寸失败，保持原样继续: {exc}")
+
     async def _build_device_config(
         self,
         plan: MaaFWRunPlan,
@@ -713,9 +840,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if plan.controllerType == "Win32":
             controller = _find_controller(interface_model, plan.controllerName)
             win32_config = controller.win32
+            hwnd = await self._resolve_window_handle(controller)
+            await asyncio.to_thread(self._prepare_win32_window, hwnd)
             return MaaFWDeviceConfig(
                 type="Win32",
-                hWnd=await self._resolve_window_handle(controller),
+                hWnd=hwnd,
                 screencapMethod=_resolve_win32_method(
                     self.script_config.get("Device", "Win32ScreencapMethod"),
                     win32_config.screencap if win32_config else None,
@@ -1948,6 +2077,30 @@ def _is_process_path_running(executable_path: Path) -> bool:
             if raw_exe and Path(raw_exe).resolve() == target_path:
                 return True
     return False
+
+
+def _format_physical_suffix(hwnd: int, size: tuple[int, int] | None) -> str:
+    """缩放不是 100% 时补一个物理像素尺寸。
+
+    窗口自身坐标系与物理像素在高 DPI 下不一样，截图链路最终看到哪一个取决于
+    MaaFW 自己的 DPI 感知级别。诊断日志两个都给出来，出问题时不用再猜。
+    """
+
+    try:
+        physical = get_client_size(hwnd, physical=True)
+    except Exception:
+        return ""
+    if physical is None or physical == size:
+        return ""
+    return f"（物理 {physical[0]}x{physical[1]}）"
+
+
+def _format_client_size(size: tuple[int, int] | None) -> str:
+    """客户区尺寸的日志写法；取不到时明说取不到，不要写成 0x0。"""
+
+    if size is None:
+        return "未知"
+    return f"{size[0]}x{size[1]}"
 
 
 def _optional_int(value: Any) -> int | None:

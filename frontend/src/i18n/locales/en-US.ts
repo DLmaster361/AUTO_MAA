@@ -1299,6 +1299,11 @@ export default {
     maximumLinesWindowBefore: 'Maximum lines in a window before it is force-closed',
     pasteLogLinesTest: 'Paste the log lines to test, one per line...',
     closeLaunchedProcessAfterwards: 'Close the launched process afterwards',
+    gameWindowSize: 'Game window size',
+    gameWindowSizeTip:
+      'Resize the game window’s drawing area before the task starts. When a monitor is disconnected or powered off, Windows falls back to a very small resolution; the game window shrinks and the game remembers it, so every later run is undersized. Off by default.',
+    gameWindowSizeOff: 'Do not resize',
+    gameWindowSizeFit: 'Fit (largest size the screen can hold)',
     endPattern: 'End pattern',
     keepEditing: 'Keep editing',
     editHsrScript: 'Edit the HSR script',

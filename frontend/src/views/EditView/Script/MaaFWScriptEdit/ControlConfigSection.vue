@@ -294,6 +294,28 @@
             </a-form-item>
           </a-col>
         </a-row>
+
+        <a-row v-if="isDesktopController" :gutter="24" class="control-detail-row">
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <a-tooltip :title="t('edit.gameWindowSizeTip')">
+                  <span class="form-label">
+                    {{ t('edit.gameWindowSize') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-select
+                v-model:value="maafwConfig.Game.WindowSize"
+                :options="windowSizeOptions"
+                size="large"
+                style="width: 100%"
+                @change="emit('change', 'Game', 'WindowSize', maafwConfig.Game.WindowSize)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
       </div>
     </Transition>
   </div>
@@ -346,6 +368,15 @@ const emit = defineEmits<{
   'emulator-select-change': [emulatorId: string]
   'select-launch-path': []
 }>()
+
+// 选项要放在 computed 里：t() 是响应式的，模块级常量数组切语言时不会更新。
+const windowSizeOptions = computed(() => [
+  { label: t('edit.gameWindowSizeOff'), value: 'Off' },
+  { label: t('edit.gameWindowSizeFit'), value: 'Fit' },
+  { label: '1280x720', value: '1280x720' },
+  { label: '1600x900', value: '1600x900' },
+  { label: '1920x1080', value: '1920x1080' },
+])
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
 const launchModeDescription = computed(() => {

@@ -215,6 +215,8 @@ export type MaaFWLaunchMode = 'AttachOnly' | 'DirectExe'
 /** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
 export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
 
+export type MaaFWWindowSize = 'Off' | 'Fit' | '1280x720' | '1600x900' | '1920x1080'
+
 export interface MaaFWScriptConfig {
   Info: {
     Name: string
@@ -246,6 +248,8 @@ export interface MaaFWScriptConfig {
     Arguments: string
     WaitTime: number
     CloseOnFinish: boolean
+    /** Win32 controller 下把游戏窗口画面区域调整为指定尺寸；Off 不调整，Fit 取屏幕放得下的最大一档。 */
+    WindowSize: MaaFWWindowSize
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */

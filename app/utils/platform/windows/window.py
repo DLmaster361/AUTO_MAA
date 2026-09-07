@@ -6,6 +6,14 @@ import win32con
 import win32gui
 import win32process
 
+from .display import (
+    dpi_for_window,
+    frame_size_for_client,
+    monitor_from_window,
+    per_monitor_dpi,
+    window_dpi_context,
+)
+
 
 def get_window_handles(pid: int) -> list[int]:
     """获取指定进程的所有窗口句柄"""
@@ -272,3 +280,88 @@ def force_activate_window(hwnd: int) -> bool:
         return True
     except Exception:
         return False
+
+
+def get_client_size(hwnd: int, physical: bool = False) -> tuple[int, int] | None:
+    """窗口客户区尺寸。
+
+    Win32 controller 截的就是客户区，脚本侧的分辨率闸门校验的也是它，所以诊断和
+    判据都要看这个数，而不是窗口外框或屏幕分辨率。
+
+    默认取**窗口自己坐标系**下的尺寸（DPI-unaware 的窗口就是它认知里的逻辑像素）；
+    `physical=True` 取物理像素。两者在缩放不为 100% 时不一样，诊断日志两个都要打：
+    截图链路最终看到哪一个取决于 MaaFW 自身的 DPI 感知级别，不该由这里替它假设。
+    """
+
+    if not hwnd:
+        return None
+    context = per_monitor_dpi() if physical else window_dpi_context(hwnd)
+    with context:
+        try:
+            left, top, right, bottom = win32gui.GetClientRect(hwnd)
+        except Exception:
+            return None
+    width, height = right - left, bottom - top
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _is_resizable_window(hwnd: int) -> bool:
+    """全屏/无边框窗口没有可调整的外框，整形对它们无意义也不安全。"""
+
+    try:
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
+    except Exception:
+        return False
+    return bool(style & win32con.WS_CAPTION) and bool(style & win32con.WS_THICKFRAME)
+
+
+def set_client_size(
+    hwnd: int, client_width: int, client_height: int
+) -> tuple[int, int] | None:
+    """把窗口客户区调整为目标尺寸，返回实际结果；不可调整时返回 None。
+
+    位置尽量保持不动，放不下时才挪回所在显示器的可用区域内——窗口跑到屏幕外面
+    会让 ScreenDC 之类基于屏幕 DC 的截图方式抓到垃圾像素。
+    """
+
+    if not hwnd or client_width <= 0 or client_height <= 0:
+        return None
+    if not _is_resizable_window(hwnd):
+        return None
+
+    monitor = monitor_from_window(hwnd)
+    # 用窗口自己的 DPI，不是显示器的：DPI-unaware 的窗口在 150% 缩放下按物理像素
+    # 去设根本取不到目标值（1280 -> 实测 1278），差的那两像素足以卡住脚本侧的下限。
+    dpi = dpi_for_window(hwnd)
+
+    with window_dpi_context(hwnd):
+        try:
+            style = win32gui.GetWindowLong(hwnd, win32con.GWL_STYLE)
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            frame_width, frame_height = frame_size_for_client(
+                client_width, client_height, dpi, style, ex_style
+            )
+            left, top, _right, _bottom = win32gui.GetWindowRect(hwnd)
+
+            if monitor is not None:
+                work_left, work_top, work_right, work_bottom = monitor.work
+                left = min(
+                    max(left, work_left), max(work_left, work_right - frame_width)
+                )
+                top = min(max(top, work_top), max(work_top, work_bottom - frame_height))
+
+            win32gui.SetWindowPos(
+                hwnd,
+                0,
+                left,
+                top,
+                frame_width,
+                frame_height,
+                win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+            )
+        except Exception:
+            return None
+
+    return get_client_size(hwnd)

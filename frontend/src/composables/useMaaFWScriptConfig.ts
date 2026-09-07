@@ -82,6 +82,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     Arguments: '',
     WaitTime: 60,
     CloseOnFinish: true,
+    WindowSize: 'Off',
   },
   Update: {
     AutoUpdateMode: 'BeforeRun',

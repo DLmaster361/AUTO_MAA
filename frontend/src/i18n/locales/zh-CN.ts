@@ -1230,6 +1230,11 @@ export default {
     maximumLinesWindowBefore: '窗口最大跨行数，达到后强制关闭',
     pasteLogLinesTest: '粘贴要测试的日志行，每行一条...',
     closeLaunchedProcessAfterwards: '结束后关闭启动进程',
+    gameWindowSize: '游戏窗口尺寸',
+    gameWindowSizeTip:
+      '任务开始前把游戏窗口的画面区域调整为指定尺寸。显示器断开或关闭时 Windows 会回落到很小的分辨率，游戏窗口会被压小并被游戏记住，之后每次运行都不达标。默认不调整。',
+    gameWindowSizeOff: '不调整',
+    gameWindowSizeFit: '自适应（取屏幕放得下的最大一档）',
     endPattern: '结束正则',
     keepEditing: '继续编辑',
     editHsrScript: '编辑 HSR 脚本',

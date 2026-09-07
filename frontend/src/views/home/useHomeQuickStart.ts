@@ -189,7 +189,6 @@ export const useHomeQuickStart = () => {
       }
 
       schedulerTaskOptions.value = buildMockSchedulerTasks()
-      selectedHomeTaskIds.value = []
       if (!options?.quiet) {
         message.warning(t('home.quickStart.listUnavailable'))
       }
@@ -197,7 +196,6 @@ export const useHomeQuickStart = () => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取首页任务列表失败: ${errorMsg}`)
       schedulerTaskOptions.value = buildMockSchedulerTasks()
-      selectedHomeTaskIds.value = []
       if (!options?.quiet) {
         message.warning(t('home.quickStart.listUnavailable'))
       }

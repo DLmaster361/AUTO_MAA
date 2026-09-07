@@ -12,8 +12,8 @@ describe('HomeCommandCard structure', () => {
     expect(source).toContain("'update:selectedTaskIds': [value: string[]]")
   })
 
-  it('keeps the start action disabled until a task is selected', () => {
-    expect(source).toContain(':disabled="selectedTaskIds.length === 0"')
+  it('keeps the start action disabled while loading or no task is selected', () => {
+    expect(source).toContain(':disabled="schedulerTasksLoading || selectedTaskIds.length === 0"')
     expect(source).not.toContain('selectedTaskId: string | null')
   })
 })

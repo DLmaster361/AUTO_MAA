@@ -143,6 +143,7 @@ export const useHomeQuickStart = () => {
   const restoreSelectedHomeTaskIds = async () => {
     try {
       const config = await getConfig()
+      if (selectionTouched) return
       savedSelectedTaskIds = normalizeHomeQuickStartSelection(config.homeQuickStartSelectedTaskIds)
       selectedHomeTaskIds.value = [...savedSelectedTaskIds]
     } catch (error) {
@@ -212,7 +213,9 @@ export const useHomeQuickStart = () => {
   }
 
   const startHomeTask = async () => {
-    const taskIds = normalizeHomeQuickStartSelection(selectedHomeTaskIds.value)
+    if (schedulerTasksLoading.value) return
+
+    const taskIds = retainSelectedTaskIds(selectedHomeTaskIds.value, schedulerTaskOptions.value)
     if (!taskIds.length) {
       message.error(t('home.quickStart.selectTask'))
       return

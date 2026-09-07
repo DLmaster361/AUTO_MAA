@@ -54,7 +54,7 @@
               size="large"
               class="launcher-start"
               :loading="startingHomeTask"
-              :disabled="selectedTaskIds.length === 0"
+              :disabled="schedulerTasksLoading || selectedTaskIds.length === 0"
               @click="$emit('start')"
             >
               <template #icon>

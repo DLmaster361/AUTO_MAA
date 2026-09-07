@@ -48,16 +48,25 @@ _TS_PATTERN = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
 def list_times(root: Path) -> list[str]:
     """返回 ``root`` 下全部归档时间戳，时间倒序（目录名即时间戳）。
 
-    Args:
-        root: 归档根目录；不存在时返回空列表。
-
-    Returns:
-        时间倒序的时间戳字符串列表。
+    排序键按 ``(基础时间戳, 同秒顺延序号)`` 解析——同秒目录名带 ``-N``
+    后缀，直接按字符串倒序会让 ``-10`` 排到 ``-9`` 之前（同秒归档超过
+    9 次时 ``times[0]`` 不再是最新那份）。
     """
 
     if not root.is_dir():
         return []
-    return sorted((p.name for p in root.iterdir() if p.is_dir()), reverse=True)
+
+    def sort_key(name: str) -> tuple[str, int]:
+        # 目录名：YYYYMMDD-HHMMSS 或 YYYYMMDD-HHMMSS-N（同秒顺延）；
+        # 末段为非 6 位纯数字时视为顺延序号，按数值参与排序
+        base, _, serial = name.rpartition("-")
+        if serial.isdigit() and len(serial) != 6:
+            return (base, int(serial))
+        return (name, 0)
+
+    return sorted(
+        (p.name for p in root.iterdir() if p.is_dir()), key=sort_key, reverse=True
+    )
 
 
 def dir_files(source: Path) -> dict[str, Path]:

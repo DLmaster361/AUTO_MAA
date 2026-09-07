@@ -1921,41 +1921,6 @@ async def list_zzzod_backups_api(
         )
 
 
-@router.post(
-    "/zzzod/direct-backup/ensure",
-    tags=["ZZZ-OD"],
-    summary="直控前置保护：进入直控前确保一条龙原生配置已有备份",
-    response_model=ZzzOdDirectBackupOut,
-    status_code=200,
-)
-async def ensure_zzzod_direct_backup_api(
-    script: ZzzOdDirectBackupIn = Body(...),
-) -> ZzzOdDirectBackupOut:
-    """指纹对比当前原生配置与最近备份，无备份或内容已变则立即归档（防误操作）。"""
-
-    try:
-        result = Config.ensure_zzzod_direct_backup(script.scriptId)
-        return ZzzOdDirectBackupOut(
-            code=200,
-            status="success",
-            message=(
-                "已为直控生成原生配置备份"
-                if result["created"]
-                else "一条龙原生配置已有最新备份"
-            ),
-            created=result["created"],
-            time=result["time"],
-        )
-    except Exception as e:
-        return ZzzOdDirectBackupOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            created=False,
-            time="",
-        )
-
-
 @router.get(
     "/zzzod/launchers",
     tags=["ZZZ-OD"],

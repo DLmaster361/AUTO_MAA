@@ -422,21 +422,6 @@ class ZzzOdNativeConfigIn(BaseModel):
     )
 
 
-class ZzzOdDirectBackupIn(BaseModel):
-    """直控前置保护：进入直控前确保一条龙原生配置已有备份"""
-
-    scriptId: str = Field(..., description="所属脚本ID")
-
-
-class ZzzOdDirectBackupOut(OutBase):
-    """直控前置备份结果"""
-
-    created: bool = Field(
-        ..., description="本次是否新建备份（指纹对比后内容与最近备份一致时为 False）"
-    )
-    time: str = Field(..., description="最新一条龙原生配置备份时间戳（无备份时为空）")
-
-
 class ZzzOdLauncherOut(OutBase):
     """ZZZ-OD 启动器可用性（独立配置侧切换原始/集成启动器用）"""
 

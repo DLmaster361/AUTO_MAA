@@ -149,7 +149,7 @@ script=实例折叠列表，ZzzOd 结构）。不完全适配的专项（字段�
 - [ ] 目标池顺序 MAS 在前、脚本原生在后；`key` 与前端 `targets` 一致
 - [ ] `preview` 返回结构遵循 info/account/tasks/instances 约定
 - [ ] 恢复回调内恢复前 `force` 归档当前（误恢复可找回）
-- [ ] **归档三时机**（`snapshot` + `service.ensure`）：进入编辑页归档原生配置（操作前原始态）、退出编辑页归档 MAS 侧终态、运行前归档；全部指纹去重
+- [ ] **归档三时机**（`snapshot` + `service.ensure`，推广方向、存量专项按接入进度跟进）：进入编辑页归档原生配置（操作前原始态）、退出编辑页归档 MAS 侧终态、运行前归档；全部指纹去重
 - [ ] 覆盖性操作（导入/恢复）前强制归档
 - [ ] 前端 `api` 函数闭包捕获 scriptId/userId，target 字符串按需断言为生成类型
 - [ ] `onDetail` 完成「确认 → 恢复 → 拉起查看会话 + GuiSessionMask」

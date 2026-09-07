@@ -833,7 +833,8 @@
                               :value="f.value"
                               size="small"
                               style="min-width: 100px"
-                              @change="(v: any) => saveTaskConfigField(card, f, v)"
+                              @change="(v: any) => scheduleTaskConfigSave(card, f, v)"
+                              @blur="() => flushTaskConfigSave(card, f)"
                             />
                           </div>
                         </template>
@@ -1252,11 +1253,17 @@ const handleConfigModeChange = async (value: boolean | string) => {
   }
 }
 
-/** 直控前置保护：指纹对比后若无最新备份立即归档，返回最新备份时间戳 */
-const ensureDirectBackup = async (): Promise<void> => {
+/** 直控/用户共用的按需归档入口（ensureZzzodBackupApi 三时机，指纹去重）。
+ * onedragon=一条龙原生配置当前状态；mas=绑定槽 MAS 终态（未绑定槽跳过） */
+const ensurePoolBackup = async (
+  target: ZzzOdBackupEnsureIn['target']
+): Promise<void> => {
+  if (!userId.value) return
   try {
-    const resp = await Service.ensureZzzodDirectBackupApiApiScriptsZzzodDirectBackupEnsurePost({
+    const resp = await Service.ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost({
       scriptId,
+      userId: userId.value,
+      target,
     })
     if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
   } catch (e) {
@@ -1266,26 +1273,11 @@ const ensureDirectBackup = async (): Promise<void> => {
   }
 }
 
-/** 按需归档目标池当前配置（ensureZzzodBackupApi 三时机入口，指纹去重） */
-const ensurePoolBackup = async (
-  target: ZzzOdBackupEnsureIn['target']
-): Promise<void> => {
-  try {
-    const resp = await Service.ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost({
-      scriptId,
-      userId: userId.value!,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
-  } catch (e) {
-    logger.warn(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.zzzodBackupFailed'))
-  }
-}
+/** 一条龙原生配置按需归档（进入直控/用户编辑页、退出直控时调用） */
+const ensureDirectBackup = () => ensurePoolBackup(ZzzOdBackupEnsureIn.target.ONEDRAGON)
 
 /** 用户模式进入时机：归档一条龙原生配置（MAS 操作前原始态） */
-const ensureOnedragonBackup = () =>
-  ensurePoolBackup(ZzzOdBackupEnsureIn.target.ONEDRAGON)
+const ensureOnedragonBackup = () => ensureDirectBackup()
 
 /** 用户模式退出时机：归档绑定槽 MAS 终态 + 一条龙原生配置终态（编辑会话包络） */
 const ensureUserExitBackups = () =>
@@ -1852,6 +1844,52 @@ const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
   }
 }
 
+/** 数值框保存策略：@change 防抖合并（stepper 连点/长按自动步进/键入各合并
+ * 为一次请求），失焦立即落盘待保存值；清空/纯空白/值未变由
+ * saveTaskConfigField 守卫拦下 */
+const TASK_CONFIG_SAVE_DELAY = 600
+interface PendingTaskConfigSave {
+  timer: ReturnType<typeof setTimeout>
+  card: TaskCard
+  field: TaskConfigField
+  value: any
+}
+const taskConfigPending = new Map<string, PendingTaskConfigSave>()
+
+const taskConfigKey = (card: TaskCard, field: TaskConfigField) =>
+  `${card.app_id}::${field.field}`
+
+const scheduleTaskConfigSave = (
+  card: TaskCard,
+  field: TaskConfigField,
+  value: any
+) => {
+  const key = taskConfigKey(card, field)
+  const existing = taskConfigPending.get(key)
+  if (existing) clearTimeout(existing.timer)
+  const timer = setTimeout(() => {
+    taskConfigPending.delete(key)
+    void saveTaskConfigField(card, field, value)
+  }, TASK_CONFIG_SAVE_DELAY)
+  taskConfigPending.set(key, { timer, card, field, value })
+}
+
+const flushTaskConfigSave = (card: TaskCard, field: TaskConfigField) => {
+  const pending = taskConfigPending.get(taskConfigKey(card, field))
+  if (!pending) return
+  clearTimeout(pending.timer)
+  taskConfigPending.delete(taskConfigKey(card, field))
+  void saveTaskConfigField(pending.card, pending.field, pending.value)
+}
+
+const flushAllTaskConfigSaves = () => {
+  for (const pending of [...taskConfigPending.values()]) {
+    clearTimeout(pending.timer)
+    void saveTaskConfigField(pending.card, pending.field, pending.value)
+  }
+  taskConfigPending.clear()
+}
+
 const saveTaskConfigField = async (
   card: TaskCard,
   field: TaskConfigField,
@@ -2328,6 +2366,8 @@ const refreshAfterSession = () => {
 }
 
 onUnmounted(() => {
+  // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
+  flushAllTaskConfigSaves()
   // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
   // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
   // ensureOnedragonBackup 配对）。指纹去重，内容无变化不产生新条目

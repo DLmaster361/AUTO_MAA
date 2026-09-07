@@ -354,8 +354,6 @@ export type { ZzzOdConfig } from './models/ZzzOdConfig';
 export type { ZzzOdConfig_Game } from './models/ZzzOdConfig_Game';
 export type { ZzzOdConfig_Info } from './models/ZzzOdConfig_Info';
 export type { ZzzOdConfig_Run } from './models/ZzzOdConfig_Run';
-export type { ZzzOdDirectBackupIn } from './models/ZzzOdDirectBackupIn';
-export type { ZzzOdDirectBackupOut } from './models/ZzzOdDirectBackupOut';
 export type { ZzzOdImportIn } from './models/ZzzOdImportIn';
 export type { ZzzOdImportOut } from './models/ZzzOdImportOut';
 export type { ZzzOdInstanceActiveIn } from './models/ZzzOdInstanceActiveIn';

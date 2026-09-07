@@ -101,8 +101,12 @@ def instance_dir(root: Path, idx: int) -> Path:
     return root / "config" / f"{int(idx):02d}"
 
 
-def validate_root(root: Path) -> None:
-    """校验 zzz-od 源码安装目录（src 目录与实例配置必须存在）。
+def validate_install(root: Path) -> None:
+    """校验是 zzz-od 源码安装（``src`` 目录哨兵；不要求已初始化）。
+
+    供安装目录判定与只读发现路径使用——``config/one_dragon.yml`` 由一条龙
+    首次运行生成，全新安装尚未跑过一次时不存在，不应卡住启动器下拉、
+    实例列表、任务目录等纯发现能力（读写路径自身会按需初始化）。
 
     Raises:
         ValueError: 目录不是有效的 zzz-od 源码安装。
@@ -112,6 +116,16 @@ def validate_root(root: Path) -> None:
         raise ValueError(
             f"{root} 下未找到 src 目录, 请确认是绝区零一条龙的源码安装目录"
         )
+
+
+def validate_root(root: Path) -> None:
+    """校验 zzz-od 源码安装目录已初始化（src 哨兵 + 实例配置存在）。
+
+    Raises:
+        ValueError: 目录不是有效的 zzz-od 源码安装，或一条龙尚未初始化。
+    """
+
+    validate_install(root)
     if not _one_dragon_file(root).is_file():
         raise ValueError(
             f"{root} 下未找到 config/one_dragon.yml, 请先运行一次一条龙本体完成初始化"

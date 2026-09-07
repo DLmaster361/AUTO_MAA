@@ -12,8 +12,6 @@ import type { ZzzOdBackupPreviewOut } from '../models/ZzzOdBackupPreviewOut';
 import type { ZzzOdBackupRestoreIn } from '../models/ZzzOdBackupRestoreIn';
 import type { ZzzOdBackupRestoreOut } from '../models/ZzzOdBackupRestoreOut';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
-import type { ZzzOdDirectBackupIn } from '../models/ZzzOdDirectBackupIn';
-import type { ZzzOdDirectBackupOut } from '../models/ZzzOdDirectBackupOut';
 import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
 import type { ZzzOdInstanceActiveIn } from '../models/ZzzOdInstanceActiveIn';
@@ -404,26 +402,6 @@ export class ZzzOdService {
                 'userId': userId,
                 'target': target,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 直控前置保护：进入直控前确保一条龙原生配置已有备份
-     * 指纹对比当前原生配置与最近备份，无备份或内容已变则立即归档（防误操作）。
-     * @param requestBody
-     * @returns ZzzOdDirectBackupOut Successful Response
-     * @throws ApiError
-     */
-    public static ensureZzzodDirectBackupApiApiScriptsZzzodDirectBackupEnsurePost(
-        requestBody: ZzzOdDirectBackupIn,
-    ): CancelablePromise<ZzzOdDirectBackupOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/direct-backup/ensure',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

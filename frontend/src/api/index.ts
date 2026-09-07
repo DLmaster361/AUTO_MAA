@@ -341,6 +341,8 @@ export type { WSTaskUserInfoData } from './models/WSTaskUserInfoData';
 export type { ZzzOdAppConfigFieldOut } from './models/ZzzOdAppConfigFieldOut';
 export type { ZzzOdAppConfigOut } from './models/ZzzOdAppConfigOut';
 export type { ZzzOdAppConfigSaveIn } from './models/ZzzOdAppConfigSaveIn';
+export { ZzzOdBackupEnsureIn } from './models/ZzzOdBackupEnsureIn';
+export type { ZzzOdBackupEnsureOut } from './models/ZzzOdBackupEnsureOut';
 export type { ZzzOdBackupItemOut } from './models/ZzzOdBackupItemOut';
 export type { ZzzOdBackupListOut } from './models/ZzzOdBackupListOut';
 export { ZzzOdBackupPreviewOut } from './models/ZzzOdBackupPreviewOut';

@@ -2013,6 +2013,39 @@ async def restore_zzzod_backup_api(
 
 
 @router.post(
+    "/zzzod/backup/ensure",
+    tags=["ZZZ-OD"],
+    summary="按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）",
+    response_model=ZzzOdBackupEnsureOut,
+    status_code=200,
+)
+async def ensure_zzzod_backup_api(
+    script: ZzzOdBackupEnsureIn = Body(...),
+) -> ZzzOdBackupEnsureOut:
+    """onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
+    mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。"""
+
+    try:
+        data = await Config.ensure_zzzod_backup(
+            script.scriptId, script.userId, target=script.target
+        )
+        return ZzzOdBackupEnsureOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        return ZzzOdBackupEnsureOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            created=False,
+            time="",
+        )
+
+
+@router.post(
     "/zzzod/import",
     tags=["ZZZ-OD"],
     summary="基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）",

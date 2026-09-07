@@ -5,6 +5,8 @@
 import type { OutBase } from '../models/OutBase';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
+import type { ZzzOdBackupEnsureIn } from '../models/ZzzOdBackupEnsureIn';
+import type { ZzzOdBackupEnsureOut } from '../models/ZzzOdBackupEnsureOut';
 import type { ZzzOdBackupListOut } from '../models/ZzzOdBackupListOut';
 import type { ZzzOdBackupPreviewOut } from '../models/ZzzOdBackupPreviewOut';
 import type { ZzzOdBackupRestoreIn } from '../models/ZzzOdBackupRestoreIn';
@@ -461,6 +463,27 @@ export class ZzzOdService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/zzzod/backup/restore',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）
+     * onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
+     * mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。
+     * @param requestBody
+     * @returns ZzzOdBackupEnsureOut Successful Response
+     * @throws ApiError
+     */
+    public static ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost(
+        requestBody: ZzzOdBackupEnsureIn,
+    ): CancelablePromise<ZzzOdBackupEnsureOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/backup/ensure',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

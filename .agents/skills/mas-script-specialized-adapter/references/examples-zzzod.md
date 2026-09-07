@@ -117,6 +117,13 @@ ZzzOd 的「配置恢复」接入通用能力（专项只喂参数）：
   而非脚本实例名、`targets`/`api`/字段映射/`onRestored`/`onDetail`）。
 - 会话遮罩：配置/查看会话拉起原生 GUI 期间用 `GuiSessionMask`（纯 UI，专项传
   开关/文案/按钮）。
+- **归档三时机落地**（`ConfigRestoreTarget.snapshot` + `service.ensure`）：
+  ① 进入编辑页归档 onedragon（用户模式 `ensureOnedragonBackup`、直控
+  `enterDirectMode` 内 `ensureDirectBackup`）——MAS 操作前原始态；② 退出编辑页
+  `onUnmounted` 归档（直控 onedragon 终态；用户模式绑定槽 mas 终态 + onedragon
+  终态）——MAS 侧配置的编辑会话包络；③ 运行前 `_prepare_injection` 两者都归档
+  （原有）。`ensure_zzzod_mas_backup` 对未绑定槽/空槽跳过（无可恢复内容）。
+  归档全部指纹去重：内容无变化不产生新条目，恢复列表只留真实变更点。
 - 完整用法见 [config-restore.md](config-restore.md)。
 
 ## 陷阱

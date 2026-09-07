@@ -833,8 +833,7 @@
                               :value="f.value"
                               size="small"
                               style="min-width: 100px"
-                              @change="(v: any) => scheduleTaskConfigSave(card, f, v)"
-                              @blur="() => flushTaskConfigSave(card, f)"
+                              @change="(v: any) => saveTaskConfigField(card, f, v)"
                             />
                           </div>
                         </template>
@@ -997,6 +996,7 @@ import draggable from 'vuedraggable'
 import { useZzzOdTaskBoard, type ZzzOdTaskCard } from '@/composables/useZzzOdTaskBoard'
 import {
   Service,
+  ZzzOdBackupEnsureIn,
   ZzzOdBackupRestoreIn,
   type ZzzOdInstanceOut,
   type ZzzOdNativeAccountField,
@@ -1265,6 +1265,34 @@ const ensureDirectBackup = async (): Promise<void> => {
     message.warning(t('edit.zzzodBackupFailed'))
   }
 }
+
+/** 按需归档目标池当前配置（ensureZzzodBackupApi 三时机入口，指纹去重） */
+const ensurePoolBackup = async (
+  target: ZzzOdBackupEnsureIn['target']
+): Promise<void> => {
+  try {
+    const resp = await Service.ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost({
+      scriptId,
+      userId: userId.value!,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
+  } catch (e) {
+    logger.warn(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.zzzodBackupFailed'))
+  }
+}
+
+/** 用户模式进入时机：归档一条龙原生配置（MAS 操作前原始态） */
+const ensureOnedragonBackup = () =>
+  ensurePoolBackup(ZzzOdBackupEnsureIn.target.ONEDRAGON)
+
+/** 用户模式退出时机：归档绑定槽 MAS 终态 + 一条龙原生配置终态（编辑会话包络） */
+const ensureUserExitBackups = () =>
+  Promise.all([
+    ensurePoolBackup(ZzzOdBackupEnsureIn.target.MAS),
+    ensurePoolBackup(ZzzOdBackupEnsureIn.target.ONEDRAGON),
+  ])
 
 /** 进入直控的公共初始化（模式切换与页面加载共用）：
  * 补「改动前」备份 → 默认选第一个实例 → 加载所选实例原生配置 */
@@ -1824,59 +1852,13 @@ const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
   }
 }
 
-/** 数值框保存策略：@change 防抖合并（stepper 连点/键入各一次请求），
- * 失焦立即落盘待保存值；清空/纯空白由 saveTaskConfigField 拦下不落 0 */
-const TASK_CONFIG_SAVE_DELAY = 600
-interface PendingTaskConfigSave {
-  timer: ReturnType<typeof setTimeout>
-  card: TaskCard
-  field: TaskConfigField
-  value: any
-}
-const taskConfigPending = new Map<string, PendingTaskConfigSave>()
-
-const taskConfigKey = (card: TaskCard, field: TaskConfigField) =>
-  `${card.app_id}::${field.field}`
-
-const scheduleTaskConfigSave = (
-  card: TaskCard,
-  field: TaskConfigField,
-  value: any
-) => {
-  const key = taskConfigKey(card, field)
-  const existing = taskConfigPending.get(key)
-  if (existing) clearTimeout(existing.timer)
-  const timer = setTimeout(() => {
-    taskConfigPending.delete(key)
-    void saveTaskConfigField(card, field, value)
-  }, TASK_CONFIG_SAVE_DELAY)
-  taskConfigPending.set(key, { timer, card, field, value })
-}
-
-const flushTaskConfigSave = (card: TaskCard, field: TaskConfigField) => {
-  const pending = taskConfigPending.get(taskConfigKey(card, field))
-  if (!pending) return
-  clearTimeout(pending.timer)
-  taskConfigPending.delete(taskConfigKey(card, field))
-  void saveTaskConfigField(pending.card, pending.field, pending.value)
-}
-
-const flushAllTaskConfigSaves = () => {
-  for (const pending of [...taskConfigPending.values()]) {
-    clearTimeout(pending.timer)
-    void saveTaskConfigField(pending.card, pending.field, pending.value)
-  }
-  taskConfigPending.clear()
-}
-
 const saveTaskConfigField = async (
   card: TaskCard,
   field: TaskConfigField,
   value: any
 ) => {
   // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
-  // int(null/'' ) 报 400）；值未变跳过——防抖 timer 与失焦 flush 双路径
-  // 下避免重复请求与多余「已保存」提示
+  // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
   if (value === null || value === undefined || Number.isNaN(value)) return
   if (typeof value === 'string' && value.trim() === '') return
   if (Number(value) === Number(field.value)) return
@@ -2308,6 +2290,10 @@ onMounted(async () => {
     // 已是直控模式的用户：公共初始化（备份 + 默认实例 + 加载原生配置）
     if (formData.Info.Mode === '直控') {
       await enterDirectMode()
+    } else {
+      // 用户模式进入：归档一条龙原生配置当前状态（MAS 操作前的原始态，
+      // 指纹去重），保证后续 MAS 侧修改始终有可还原的进入时点
+      await ensureOnedragonBackup()
     }
   }
 })
@@ -2342,11 +2328,13 @@ const refreshAfterSession = () => {
 }
 
 onUnmounted(() => {
-  // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
-  flushAllTaskConfigSaves()
-  // 直控页面关闭：补一份「配置完成时」的备份（指纹去重；与进入时的「改动前」备份配对）
+  // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
+  // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
+  // ensureOnedragonBackup 配对）。指纹去重，内容无变化不产生新条目
   if (formData.Info.Mode === '直控') {
     void ensureDirectBackup()
+  } else {
+    void ensureUserExitBackups()
   }
   void stopSession()
   disposeGuiSession()

@@ -331,6 +331,22 @@ class ZzzOdBackupRestoreIn(BaseModel):
     )
 
 
+class ZzzOdBackupEnsureIn(BaseModel):
+    """按需归档目标池当前配置（编辑界面三时机：进入/退出/运行前）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    target: Literal["onedragon", "mas"] = Field(
+        default="onedragon",
+        description="归档目标：onedragon=一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；mas=MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）",
+    )
+
+
+class ZzzOdBackupEnsureOut(OutBase):
+    created: bool = Field(..., description="本次是否新建了归档（False=指纹无变化跳过或无槽可归档）")
+    time: str = Field(..., description="最新备份时间戳（无任何备份为空串）")
+
+
 class ZzzOdBackupRestoreOut(OutBase):
     slot: int = Field(..., description="关联槽 idx（onedragon 恢复为 -1，失败为 -1）")
     target: Literal["onedragon", "mas"] = Field(

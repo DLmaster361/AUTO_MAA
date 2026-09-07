@@ -30,7 +30,6 @@ import sys
 import time
 import uuid
 from collections import defaultdict
-from contextlib import suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
@@ -1510,11 +1509,7 @@ class AppConfig(GlobalConfig):
         """
 
         from app.task.ZzzOd.tools import (
-            archive_mas_backup,
-            archive_onedragon_backup,
-            collect_mas_user_info,
             get_task_app_fields,
-            instance_dir,
             merge_plan_list,
             read_app_config,
             write_app_config,
@@ -1530,7 +1525,6 @@ class AppConfig(GlobalConfig):
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
-        user_cfg = None
 
         if instance_idx is not None:
             self._zzzod_native_instance(script_id, instance_idx)
@@ -1544,23 +1538,6 @@ class AppConfig(GlobalConfig):
             _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
             used = collect_used_slot_idxs(exclude_uids={uid})
             slot = await ensure_user_slot(root, user_cfg, used)
-
-        # 改动前归档（指纹去重，无变化自动跳过）：让「配置恢复」在每次
-        # 任务配置变更前都有恢复点——否则纯改配置（未跑过任务/未进过直控）
-        # 的用户在配置恢复里看不到任何条目
-        if instance_idx is not None:
-            with suppress(Exception):
-                archive_onedragon_backup(script_id, root)
-        elif slot > 0 and instance_dir(root, slot).is_dir() and any(
-            instance_dir(root, slot).iterdir()
-        ):
-            with suppress(Exception):
-                archive_mas_backup(
-                    script_id,
-                    slot,
-                    instance_dir(root, slot),
-                    meta=collect_mas_user_info(user_cfg),
-                )
 
         current = read_app_config(root, slot, app_id) if slot > 0 else {}
         patch: dict = {}
@@ -1693,15 +1670,8 @@ class AppConfig(GlobalConfig):
     ) -> list:
         """整表保存预备编队（名称 + 绑定配队方案，成员按行保留）。"""
 
-        from app.task.ZzzOd.tools import (
-            archive_mas_backup,
-            archive_onedragon_backup,
-            collect_mas_user_info,
-            instance_dir,
-            write_team_list,
-        )
+        from app.task.ZzzOd.tools import instance_dir, write_team_list
 
-        user_cfg = None
         if instance_idx is not None:
             self._zzzod_native_instance(script_id, instance_idx)
             slot = int(instance_idx)
@@ -1714,21 +1684,6 @@ class AppConfig(GlobalConfig):
             _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
             used = collect_used_slot_idxs(exclude_uids={uid})
             slot = await ensure_user_slot(root, user_cfg, used)
-
-        # 改动前归档（指纹去重）：与任务配置保存同语义，编队覆盖前可恢复
-        if instance_idx is not None:
-            with suppress(Exception):
-                archive_onedragon_backup(script_id, self._zzzod_script_root(script_id))
-        else:
-            slot_dir = instance_dir(self._zzzod_script_root(script_id), slot)
-            if slot_dir.is_dir() and any(slot_dir.iterdir()):
-                with suppress(Exception):
-                    archive_mas_backup(
-                        script_id,
-                        slot,
-                        slot_dir,
-                        meta=collect_mas_user_info(user_cfg),
-                    )
 
         saved = write_team_list(instance_dir(self._zzzod_script_root(script_id), slot), teams)
         logger.info(f"ZZZ-OD 预备编队已保存到槽 {slot:02d}: {len(saved)} 个编队")
@@ -1794,6 +1749,12 @@ class AppConfig(GlobalConfig):
                 script_id, user_id, ts, target="onedragon"
             )
 
+        async def snapshot_mas() -> dict:
+            return await self.ensure_zzzod_mas_backup(script_id, user_id)
+
+        async def snapshot_onedragon() -> dict:
+            return self.ensure_zzzod_direct_backup(script_id)
+
         return ConfigRestoreService(
             script_name="一条龙",
             targets=[
@@ -1802,15 +1763,64 @@ class AppConfig(GlobalConfig):
                     list_backups=list_mas,
                     preview=preview_mas,
                     restore=restore_mas,
+                    snapshot=snapshot_mas,
                 ),
                 ConfigRestoreTarget(
                     key="onedragon",
                     list_backups=list_onedragon,
                     preview=preview_onedragon,
                     restore=restore_onedragon,
+                    snapshot=snapshot_onedragon,
                 ),
             ],
         )
+
+    async def ensure_zzzod_backup(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict:
+        """按需归档目标池当前配置（指纹去重，无变化自动跳过）。
+
+        编辑界面三时机的 ZzzOd 入口：进入编辑页归档 onedragon（MAS 操作前
+        原始态）、退出编辑页归档 mas（用户侧终态）、运行前两者都归档
+        （:meth:`ZzzOd.AutoProxyTask._prepare_injection`）。
+        """
+
+        service = self.zzzod_restore_service(script_id, user_id)
+        return await service.ensure(target)
+
+    async def ensure_zzzod_mas_backup(
+        self, script_id: str, user_id: str
+    ) -> dict:
+        """确保 MAS 用户绑定槽有当前状态的备份（指纹去重，无变化跳过）。
+
+        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽或槽目录
+        为空时跳过（没有可恢复的内容），返回 ``created=False``。
+        """
+
+        from app.task.ZzzOd.tools import (
+            archive_mas_backup,
+            collect_mas_user_info,
+            instance_dir,
+            list_mas_backups,
+        )
+
+        _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        slot_dir = instance_dir(self._zzzod_script_root(script_id), slot)
+        if slot <= 0 or not slot_dir.is_dir() or not any(slot_dir.iterdir()):
+            return {"created": False, "time": ""}
+
+        dest = archive_mas_backup(
+            script_id,
+            slot,
+            slot_dir,
+            meta=collect_mas_user_info(user_cfg),
+        )
+        times = list_mas_backups(script_id, slot)
+        return {
+            "created": dest is not None,
+            "time": times[0] if times else "",
+        }
 
     async def restore_zzzod_backup(
         self, script_id: str, user_id: str, ts: str, target: str
@@ -2320,17 +2330,11 @@ class AppConfig(GlobalConfig):
         slot = int(instance_idx)
 
         from app.task.ZzzOd.tools import (
-            archive_onedragon_backup,
             read_native_instance_run,
             save_native_account_fields,
             save_native_instance_run,
             save_native_tasks,
         )
-
-        # 改动前归档（指纹去重）：直控页每次落盘前都有「改动前」恢复点，
-        # 与进入直控时的 ensure_zzzod_direct_backup（进入时点）互补
-        with suppress(Exception):
-            archive_onedragon_backup(script_id, root)
 
         if account is not None:
             save_native_account_fields(root, slot, account)

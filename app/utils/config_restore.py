@@ -59,6 +59,14 @@ class ConfigRestoreTarget:
     restore: Callable[[str], Awaitable[object]] | None = None
     """给定时间戳执行恢复（恢复前归档当前由回调自理）；返回供前端展示的结果。"""
 
+    snapshot: Callable[[], Awaitable[dict]] | None = None
+    """归档当前配置（指纹去重，无变化跳过）；None 表示该目标不支持按需归档。
+
+    供编辑界面的三时机归档使用：进入编辑界面（MAS 会触碰的原生配置捕捉
+    「操作前原始态」）、退出编辑界面（MAS 侧配置终态）、运行前。返回
+    ``{"created": bool, "time": str}``。
+    """
+
 
 class ConfigRestoreService:
     """双目标配置恢复服务：按 key 分发列表/预览/恢复。
@@ -103,3 +111,15 @@ class ConfigRestoreService:
         if target.restore is None:
             raise ValueError(f"目标「{key}」不支持恢复")
         return await target.restore(ts)
+
+    async def ensure(self, key: str) -> dict:
+        """归档目标池当前配置（指纹去重，无变化自动跳过）。
+
+        编辑界面三时机的通用入口：进入时（原生配置「操作前原始态」）、
+        退出时（MAS 侧配置终态）、运行前。返回 ``{"created", "time"}``。
+        """
+
+        target = self.get_target(key)
+        if target.snapshot is None:
+            raise ValueError(f"目标「{key}」不支持按需归档")
+        return await target.snapshot()

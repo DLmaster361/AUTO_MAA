@@ -135,7 +135,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   getLogs: (lines?: number, fileName?: string) =>
     ipcRenderer.invoke('log:getContent', lines, fileName),
-  openLogWindow: () => ipcRenderer.invoke('log:openWindow'),
+  openLogWindow: (file?: 'app' | 'frontend') => ipcRenderer.invoke('log:openWindow', file),
+
+  // 日志窗已经开着时主进程不会重新载入，改由主进程推送要看的那一份
+  onLogSelectFile: (callback: (file: 'app' | 'frontend') => void) => {
+    ipcRenderer.on('log:selectFile', (_, file) => callback(file))
+  },
+  removeLogSelectFileListener: () => {
+    ipcRenderer.removeAllListeners('log:selectFile')
+  },
 
   // 获取模块化日志器（使用 electron-log）
   getLogger: (moduleName: string) => ({

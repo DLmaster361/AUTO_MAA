@@ -3,7 +3,7 @@
  * 使用新的服务
  */
 
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent, app } from 'electron'
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
@@ -166,7 +166,7 @@ export function resolveRuntimeInitContext(): RuntimeInitContext {
   return {
     // 灰度开关升级为三级来源后要按 appRoot 读持久化设置，不能再零参解析。
     mode: resolveRuntimeLaunchMode(getAppRoot()),
-    fallbackLogPath: path.join(path.dirname(app.getPath('exe')), 'debug', 'frontend.log'),
+    fallbackLogPath: path.join(getAppRoot(), 'debug', 'frontend.log'),
     mirrorKeys: listRuntimeMappableMirrorKeys(),
   }
 }

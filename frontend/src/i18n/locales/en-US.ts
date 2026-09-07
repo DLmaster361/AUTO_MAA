@@ -2701,6 +2701,30 @@ export default {
       voiceType: 'Voice style',
       voiceTypeTip: 'How much the voice prompts say',
     },
+    display: {
+      section: 'Virtual display',
+      intro:
+        'When a monitor is disconnected or powered off, Windows falls back to a very small desktop resolution. The managed PC game window shrinks, the game remembers that size, and every later unattended run comes up undersized. Once enabled, MAS attaches a virtual display only when no monitor can hold the game window, and removes it when the run finishes. You must install the Parsec virtual display driver yourself; MAS does not ship it.',
+      enable: 'Enable virtual display',
+      enableTip:
+        'Only attaches one when the desktop really is too small; nothing is added while a monitor works normally. The virtual display disappears on its own once MAS exits.',
+      mode: 'Resolution and refresh rate',
+      modeTip:
+        'Must be a mode the driver supports. The ones marked as native scaling are shown by Windows at 100%, so the game window never goes through DPI scaling.',
+      nativeScale: 'native scaling',
+      check: 'Driver check',
+      checkTip:
+        'Checks whether the driver is installed, whether it can be driven, and whether a display can actually be attached. The last step briefly changes your monitor layout.',
+      checkAction: 'Run check',
+      checkFailed: 'Check request failed',
+      monitors: 'Monitors during the check',
+      download: 'Download the Parsec virtual display driver',
+      stage: {
+        installed: 'Driver installed',
+        openable: 'Driver reachable',
+        effective: 'Actually attached',
+      },
+    },
     notify: {
       contentSection: 'Notification content',
       sendTest: 'Send a test notification',

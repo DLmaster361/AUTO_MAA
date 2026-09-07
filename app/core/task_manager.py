@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Dict, Literal
 
 import app.task as task
+from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
 from app.models.schema import (
     TaskRuntimeSnapshot,
@@ -670,6 +671,10 @@ class Task(TaskExecuteBase):
             self.task_info.script_list[i].status = "跳过"
 
         # 依次运行任务
+        async with ensure_desktop_available():
+            await self._run_script_list(start_index)
+
+    async def _run_script_list(self, start_index: int) -> None:
         for self.task_info.current_index in range(
             start_index, len(self.task_info.script_list)
         ):

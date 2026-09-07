@@ -1,10 +1,54 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { GlobalConfig } from '@/api'
-import { handleExternalLink } from '@/utils/openExternal'
+import { computed, ref } from 'vue'
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
+import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
+import { GetService } from '@/api'
+import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
 
 const { t } = useI18n()
+
+const VDD_DOWNLOAD_URL =
+  'https://github.com/nomi-san/parsec-vdd/releases/download/v0.45.1/ParsecVDisplay-v0.45-setup.exe'
+
+// 只列驱动 advertise 且实测能切上去的模式。驱动的刷新率只有 24/30/60/144/240，
+// 写一个 120 会被 ChangeDisplaySettingsEx 以 BADMODE 拒绝。
+// 100% 缩放那几档单独标出来：分辨率再高 Windows 会自动上缩放，游戏窗口又要面对
+// DPI 虚拟化。选项要放在 computed 里，t() 是响应式的。
+const virtualDisplayModeOptions = computed(() => [
+  { label: `1920x1080 @60Hz  (${t('setting.display.nativeScale')})`, value: '1920x1080@60' },
+  { label: `1920x1080 @144Hz (${t('setting.display.nativeScale')})`, value: '1920x1080@144' },
+  { label: `2560x1080 @60Hz  (${t('setting.display.nativeScale')})`, value: '2560x1080@60' },
+  { label: `1600x900 @60Hz   (${t('setting.display.nativeScale')})`, value: '1600x900@60' },
+  { label: `1280x720 @60Hz   (${t('setting.display.nativeScale')})`, value: '1280x720@60' },
+  { label: '2560x1440 @60Hz  (125%)', value: '2560x1440@60' },
+  { label: '3440x1440 @60Hz  (150%)', value: '3440x1440@60' },
+  { label: '3840x2160 @60Hz  (200%)', value: '3840x2160@60' },
+])
+
+const vddChecking = ref(false)
+const vddResult = ref<VirtualDisplayCheckOut | null>(null)
+
+async function runVirtualDisplayCheck() {
+  vddChecking.value = true
+  try {
+    vddResult.value = await GetService.checkVirtualDisplayApiSettingVirtualDisplayCheckPost()
+  } catch (error) {
+    vddResult.value = null
+    message.error(t('setting.display.checkFailed'))
+  } finally {
+    vddChecking.value = false
+  }
+}
+
+function openVddDownload() {
+  openExternalUrl(VDD_DOWNLOAD_URL)
+}
 
 const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange } = defineProps<{
   settings: GlobalConfig
@@ -281,5 +325,137 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         </a-col>
       </a-row>
     </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>{{ t('setting.display.section') }}</h3>
+      </div>
+      <a-alert type="info" show-icon class="vdd-alert">
+        <template #message>{{ t('setting.display.intro') }}</template>
+      </a-alert>
+      <a-row :gutter="24">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.display.enable') }}</span>
+              <a-tooltip :title="t('setting.display.enableTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="settings.Display?.IfEnableVirtualDisplay"
+              size="large"
+              style="width: 100%"
+              @change="
+                (checked: any) =>
+                  handleSettingChange('Display', 'IfEnableVirtualDisplay', checked)
+              "
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.display.mode') }}</span>
+              <a-tooltip :title="t('setting.display.modeTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="settings.Display?.VirtualDisplayMode"
+              :options="virtualDisplayModeOptions"
+              :disabled="!settings.Display?.IfEnableVirtualDisplay"
+              size="large"
+              style="width: 100%"
+              @change="
+                (value: any) => handleSettingChange('Display', 'VirtualDisplayMode', value)
+              "
+            />
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.display.check') }}</span>
+              <a-tooltip :title="t('setting.display.checkTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-button
+              size="large"
+              style="width: 100%"
+              :loading="vddChecking"
+              @click="runVirtualDisplayCheck"
+            >
+              {{ t('setting.display.checkAction') }}
+            </a-button>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row v-if="vddResult" :gutter="24" class="vdd-result-row">
+        <a-col :span="24">
+          <a-alert
+            :type="(vddResult.results ?? []).every((item) => item.passed) ? 'success' : 'warning'"
+            show-icon
+          >
+            <template #message>{{ vddResult.message }}</template>
+            <template #description>
+              <ul class="vdd-result-list">
+                <li v-for="item in vddResult.results ?? []" :key="item.stage">
+                  <CheckCircleOutlined v-if="item.passed" class="vdd-ok" />
+                  <CloseCircleOutlined v-else class="vdd-fail" />
+                  {{ t(`setting.display.stage.${item.stage}`) }} — {{ item.message }}
+                </li>
+              </ul>
+              <p v-if="vddResult.monitors" class="vdd-monitors">
+                {{ t('setting.display.monitors') }}: {{ vddResult.monitors }}
+              </p>
+              <p v-if="!(vddResult.results ?? []).some((item) => item.stage === 'openable')">
+                <a href="#" @click.prevent="openVddDownload">
+                  {{ t('setting.display.download') }}
+                </a>
+              </p>
+            </template>
+          </a-alert>
+        </a-col>
+      </a-row>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.vdd-alert {
+  margin-bottom: 16px;
+}
+
+.vdd-result-row {
+  margin-top: 16px;
+}
+
+.vdd-result-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.vdd-result-list li {
+  margin: 4px 0;
+}
+
+.vdd-ok {
+  color: var(--ant-color-success);
+}
+
+.vdd-fail {
+  color: var(--ant-color-warning);
+}
+
+.vdd-monitors {
+  margin: 8px 0 0;
+  word-break: break-all;
+  color: var(--ant-color-text-secondary);
+}
+</style>

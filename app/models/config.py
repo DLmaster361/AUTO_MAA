@@ -3898,6 +3898,35 @@ class GlobalConfig(ConfigBase):
             "Function", "IfEnableTelemetry", True, BoolValidator()
         )
 
+        ## Display ----------------------------------------------------------
+        ## 无人值守时是否允许 MAS 挂载虚拟显示器。
+        ## 物理显示器断开或关闭时 Windows 会把桌面回落到很小的兜底分辨率，被托管的
+        ## PC 端游戏窗口随之被压小，脚本侧的分辨率闸门把整轮任务打掉；游戏还会把这个
+        ## 坏尺寸记进自己的配置，之后每轮都在同一处失败。挂一块虚拟屏可从源头断掉。
+        ## 需要用户自行安装 Parsec 虚拟显示驱动，MAS 不分发驱动。
+        self.Display_IfEnableVirtualDisplay = ConfigItem(
+            "Display", "IfEnableVirtualDisplay", False, BoolValidator()
+        )
+        ## 虚拟显示器的分辨率与刷新率。
+        ## 取值必须在驱动 advertise 的模式表里，否则会被 BADMODE 拒绝（例如没有 120Hz）。
+        self.Display_VirtualDisplayMode = ConfigItem(
+            "Display",
+            "VirtualDisplayMode",
+            "1920x1080@60",
+            OptionsValidator(
+                [
+                    "1920x1080@60",
+                    "1920x1080@144",
+                    "2560x1440@60",
+                    "2560x1080@60",
+                    "3440x1440@60",
+                    "3840x2160@60",
+                    "1600x900@60",
+                    "1280x720@60",
+                ]
+            ),
+        )
+
         ## Voice ------------------------------------------------------------
         ## 是否启用语音
         self.Voice_Enabled = ConfigItem("Voice", "Enabled", False, BoolValidator())

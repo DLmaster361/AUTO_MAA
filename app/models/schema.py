@@ -295,6 +295,30 @@ class GlobalConfig_Function(BaseModel):
     )
 
 
+class GlobalConfig_Display(BaseModel):
+    IfEnableVirtualDisplay: Optional[bool] = Field(
+        default=None,
+        description="无人值守时，桌面上没有一块屏够用则挂载虚拟显示器（需自行安装 Parsec 虚拟显示驱动）",
+    )
+    VirtualDisplayMode: Optional[str] = Field(
+        default=None, description="虚拟显示器的分辨率与刷新率，形如 1920x1080@60"
+    )
+
+
+class VirtualDisplayCheckResultItem(BaseModel):
+    """检测的三段之一。分开报是有意的：给用户的下一步动作完全不同。"""
+
+    stage: Literal["installed", "openable", "effective"] = Field(description="检测阶段")
+    passed: bool = Field(description="该阶段是否通过")
+    message: str = Field(description="面向用户的说明")
+
+
+class VirtualDisplayCheckOut(OutBase):
+    driverVersion: Optional[int] = Field(default=None, description="驱动次版本号")
+    monitors: str = Field(default="", description="检测时的显示器概况")
+    results: list[VirtualDisplayCheckResultItem] = Field(default_factory=list)
+
+
 class GlobalConfig_Voice(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="语音功能是否启用")
     Type: Optional[Literal["simple", "noisy"]] = Field(
@@ -430,6 +454,9 @@ class GlobalConfig_Update(BaseModel):
 class GlobalConfig(BaseModel):
     Function: Optional[GlobalConfig_Function] = Field(
         default=None, description="功能相关配置"
+    )
+    Display: Optional[GlobalConfig_Display] = Field(
+        default=None, description="显示器相关配置"
     )
     Voice: Optional[GlobalConfig_Voice] = Field(
         default=None, description="语音相关配置"

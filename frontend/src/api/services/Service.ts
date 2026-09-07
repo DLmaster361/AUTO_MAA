@@ -112,6 +112,7 @@ import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
+import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { WebhookCreateOut } from '../models/WebhookCreateOut';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
@@ -2215,6 +2216,22 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检测虚拟显示驱动
+     * 三段式检测虚拟显示驱动。
+     *
+     * 前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+     * 会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+     * 拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkVirtualDisplayApiSettingVirtualDisplayCheckPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/check',
         });
     }
     /**

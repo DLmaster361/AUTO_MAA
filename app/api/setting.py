@@ -39,6 +39,8 @@ from app.models.schema import (
     PatternDebugResultItem,
     SettingGetOut,
     SettingUpdateIn,
+    VirtualDisplayCheckOut,
+    VirtualDisplayCheckResultItem,
     Webhook,
     WebhookCreateOut,
     WebhookDeleteIn,
@@ -317,3 +319,35 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
     except Exception as e:
         return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
     return OutBase()
+
+
+@router.post(
+    "/virtual-display/check",
+    tags=["Get"],
+    summary="检测虚拟显示驱动",
+    response_model=VirtualDisplayCheckOut,
+    status_code=200,
+)
+async def check_virtual_display() -> VirtualDisplayCheckOut:
+    """三段式检测虚拟显示驱动。
+
+    前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+    会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+    拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+    """
+
+    from app.core.desktop_guard import check_virtual_display_driver
+
+    try:
+        return await check_virtual_display_driver()
+    except Exception as e:
+        return VirtualDisplayCheckOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            results=[
+                VirtualDisplayCheckResultItem(
+                    stage="installed", passed=False, message="检测过程异常"
+                )
+            ],
+        )

@@ -2599,6 +2599,30 @@ export default {
       voiceType: '语音类型',
       voiceTypeTip: '选择语音提示的详细程度',
     },
+    display: {
+      section: '虚拟显示器',
+      intro:
+        '显示器断开或关闭时 Windows 会把桌面回落到很小的分辨率，被托管的电脑端游戏窗口会被压小并被游戏记住，之后每次无人值守运行都不达标。开启后，MAS 只在「桌面上没有一块屏放得下游戏窗口」时临时挂一块虚拟显示器，任务结束即拆除。需先自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动。',
+      enable: '启用虚拟显示器',
+      enableTip:
+        '仅在桌面确实不够用时才挂载，显示器正常时不会多挂一块。MAS 进程退出后虚拟显示器会自动消失。',
+      mode: '分辨率与刷新率',
+      modeTip:
+        '取值必须是驱动支持的档位。标注为原生缩放的几档 Windows 会按 100% 显示，游戏窗口不必经过 DPI 缩放，最省事。',
+      nativeScale: '原生缩放',
+      check: '驱动检测',
+      checkTip:
+        '依次检查驱动装没装、能不能调用、以及能否真的挂出一块屏。最后一步会短暂改变桌面显示器布局。',
+      checkAction: '开始检测',
+      checkFailed: '检测请求失败',
+      monitors: '检测时的显示器',
+      download: '下载 Parsec 虚拟显示驱动',
+      stage: {
+        installed: '驱动安装',
+        openable: '驱动调用',
+        effective: '实际挂载',
+      },
+    },
     notify: {
       contentSection: '通知内容',
       sendTest: '发送测试通知',

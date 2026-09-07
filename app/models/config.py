@@ -32,6 +32,11 @@ from typing import Any, Callable
 from app.utils.constants import (
     CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
+    MAAEND_AUTO_COLLECT_MODES,
+    MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_DELIVERY_COMMISSION_SOURCES,
+    MAAEND_DELIVERY_TASK,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
@@ -124,6 +129,59 @@ def init_maaend_task_config(config) -> None:
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
         StringValidator(),
+    )
+
+    ## 抢委托送货最低接取价格（万）
+    config.Task_SeizeDeliveryJobsReward = ConfigItem(
+        "Task", "SeizeDeliveryJobsReward", 15.9, RangeValidator(0, 9999)
+    )
+    ## 抢委托送货委托接收点
+    config.Task_SeizeDeliveryJobsCommissionSource = ConfigItem(
+        "Task",
+        "SeizeDeliveryJobsCommissionSource",
+        "Unlimited",
+        OptionsValidator(list(MAAEND_DELIVERY_COMMISSION_SOURCES)),
+    )
+    ## 独立送货任务
+    setattr(
+        config,
+        f"Task_If{MAAEND_DELIVERY_TASK}",
+        ConfigItem("Task", f"If{MAAEND_DELIVERY_TASK}", True, BoolValidator()),
+    )
+
+    ## 独立自动采集任务
+    config.Task_IfAutoCollect = ConfigItem(
+        "Task", f"If{MAAEND_AUTO_COLLECT_TASK}", True, BoolValidator()
+    )
+    ## 自动采集路线安排：分散为三日轮换，集中为每三日执行一次
+    config.Task_AutoCollectMode = ConfigItem(
+        "Task",
+        "AutoCollectMode",
+        "Distributed",
+        OptionsValidator(list(MAAEND_AUTO_COLLECT_MODES)),
+    )
+    ## 自动采集区域资源路线
+    config.Task_AutoCollectRoutes = ConfigItem(
+        "Task",
+        "AutoCollectRoutes",
+        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"]),
+        MultipleOptionsValidator(
+            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectRoutes"])
+        ),
+    )
+    ## 自动采集通用资源路线
+    config.Task_AutoCollectCommonRoutes = ConfigItem(
+        "Task",
+        "AutoCollectCommonRoutes",
+        list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"]),
+        MultipleOptionsValidator(
+            list(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS["AutoCollectCommonRoutes"])
+        ),
+    )
+
+    ## 每日正常完成一次后，当天剩余时间跳过的任务名列表
+    config.Task_DailyOnceTasks = ConfigItem(
+        "Task", "DailyOnceTasks", "[ ]", JSONValidator(list)
     )
 
     for task_name in MAAEND_TASKS:
@@ -229,6 +287,25 @@ class MaaEndPlanKeyValidator(ValidatorBase):
 
     def correct(self, value: Any) -> dict[str, str]:
         return normalize_maaend_plan_key(value)
+
+
+class SRAProfileValidator(ValidatorBase):
+    """SRA 配置档案名验证器：只接受能直接拼成文件名的档案 id，空串表示自动。"""
+
+    _FORBIDDEN = frozenset('\\/:*?"<>|')
+
+    def validate(self, value):
+        if not isinstance(value, str):
+            return False
+        if value == "":
+            return True
+        stripped = value.strip()
+        if stripped != value or stripped in {".", ".."}:
+            return False
+        return not any(ch in self._FORBIDDEN or ord(ch) < 32 for ch in value)
+
+    def correct(self, value):
+        return value if self.validate(value) else ""
 
 
 class EmulatorConfig(ConfigBase):
@@ -438,6 +515,10 @@ class QueueConfig(ConfigBase):
                     "Logoff",
                 ]
             ),
+        )
+        ## 完成后操作的延时时长, 单位分钟, 0 表示队列结束后直接进入倒计时
+        self.Info_AfterAccomplishDelay = ConfigItem(
+            "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
         )
 
         ## Data ------------------------------------------------------------
@@ -950,6 +1031,20 @@ class MaaConfig(ConfigBase):
         super().__init__()
 
 
+class MaaEndConfigModeValidator(OptionsValidator):
+    """兼容旧版来源名称，统一为脚本/用户/直控。"""
+
+    LEGACY_MODE_MAP = {"简洁": "脚本", "详细": "用户", "自定义": "用户"}
+
+    def __init__(self) -> None:
+        super().__init__(["脚本", "用户", "直控"])
+
+    def correct(self, value: Any) -> Any:
+        if value in self.LEGACY_MODE_MAP:
+            return self.LEGACY_MODE_MAP[value]
+        return super().correct(value)
+
+
 class MaaEndUserConfig(ConfigBase):
     """MaaEnd用户配置"""
 
@@ -968,9 +1063,7 @@ class MaaEndUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置文件来源
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", MaaEndConfigModeValidator())
         ## 是否启用快速配置
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
@@ -1032,6 +1125,10 @@ class MaaEndUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
+        ## MaaEnd 每日任务完成记录，结构为 daily -> task name -> 日期
+        self.Data_PeriodTaskRecords = ConfigItem(
+            "Data", "PeriodTaskRecords", "{ }", JSONValidator(dict)
+        )
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -1071,7 +1168,6 @@ class MaaEndUserConfig(ConfigBase):
             ):
                 info_data["Mode"] = "脚本"
                 info_data.pop("IfQuickConfig", None)
-
         task_data = data.get("Task")
         if isinstance(task_data, dict):
             _normalize_maaend_sanity_task_type(task_data)
@@ -1204,6 +1300,13 @@ class MaaEndConfig(ConfigBase):
             "AccountSwitchMethod",
             "MAS",
             OptionsValidator(["MAS", "MAAEND"]),
+        )
+        ## 任务切换方式
+        self.Run_TaskTransitionMethod = ConfigItem(
+            "Run",
+            "TaskTransitionMethod",
+            "NoAction",
+            OptionsValidator(["NoAction", "ExitGame"]),
         )
 
         ## Game ------------------------------------------------------------
@@ -1679,6 +1782,20 @@ class HSRUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 用户标签信息（虚拟字段，供前端显示）
@@ -1895,14 +2012,16 @@ class HSRConfig(ConfigBase):
         self.Info_M7APath = ConfigItem("Info", "M7APath", "", FolderValidator())
         ## SRA 路径
         self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
+        ## SRA 配置档案（%APPDATA%\SRA\configs 下的文件名，不含扩展名；空串表示自动）
+        self.Info_SRAProfile = ConfigItem(
+            "Info", "SRAProfile", "", SRAProfileValidator()
+        )
 
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
         self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 游戏启动参数
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
         ## 启动游戏时临时覆盖 1920×1080 注册表分辨率
@@ -3376,8 +3495,6 @@ class GeneralConfig(ConfigBase):
 class OkwwConfig(ConfigBase):
     """OK-WW 配置（ok-script 线）"""
 
-    related_config: dict[str, MultipleConfig] = {}
-
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -3389,10 +3506,6 @@ class OkwwConfig(ConfigBase):
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        ## 兼容旧配置：游戏启动由 Enabled 统一控制
-        self.Game_LaunchBeforeTask = ConfigItem(
-            "Game", "LaunchBeforeTask", False, BoolValidator()
-        )
         ## 鸣潮启动器路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 鸣潮启动参数
@@ -3850,6 +3963,41 @@ class GlobalConfig(ConfigBase):
         )
         ## Koishi Token
         self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
+        ## 是否启用微信 Claw 通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawWeixin = ConfigItem(
+            "Notify", "IfOpenClawWeixin", False, BoolValidator()
+        )
+        ## 是否启用 QQ 官方机器人通知（凭据由扫码登录流程管理）
+        self.Notify_IfOpenClawQQ = ConfigItem(
+            "Notify", "IfOpenClawQQ", False, BoolValidator()
+        )
+        ## QQ 官方机器人应用 ID（由扫码登录响应返回）
+        self.Notify_OpenClawQQAppId = ConfigItem("Notify", "OpenClawQQAppId", "")
+        ## QQ 官方机器人客户端密钥（由扫码登录响应返回）
+        self.Notify_OpenClawQQClientSecret = ConfigItem(
+            "Notify", "OpenClawQQClientSecret", "", EncryptValidator()
+        )
+        ## QQ 官方机器人目标用户 OpenID（由扫码登录响应返回）
+        self.Notify_OpenClawQQTargetOpenId = ConfigItem(
+            "Notify", "OpenClawQQTargetOpenId", ""
+        )
+        self.Notify_OpenClawWeixinServerAddress = ConfigItem(
+            "Notify",
+            "OpenClawWeixinServerAddress",
+            "https://ilinkai.weixin.qq.com",
+            URLValidator(schemes=["https"]),
+        )
+        self.Notify_OpenClawWeixinBotToken = ConfigItem(
+            "Notify", "OpenClawWeixinBotToken", "", EncryptValidator()
+        )
+        ## 微信 Claw 账号 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinAccountId = ConfigItem(
+            "Notify", "OpenClawWeixinAccountId", ""
+        )
+        ## 微信 Claw 用户 ID（由二维码登录响应返回）
+        self.Notify_OpenClawWeixinTargetUserId = ConfigItem(
+            "Notify", "OpenClawWeixinTargetUserId", ""
+        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码
@@ -3979,7 +4127,6 @@ class GlobalConfig(ConfigBase):
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig

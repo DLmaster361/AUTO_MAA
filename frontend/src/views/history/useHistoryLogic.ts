@@ -223,8 +223,13 @@ export function useHistoryLogic() {
     try {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
       if (window.electronAPI && window.electronAPI.openFile) {
-        await window.electronAPI.openFile(logFilePath)
-        message.success(t('history.toast.logOpened'))
+        const result = await window.electronAPI.openFile(logFilePath)
+        if (result.success) {
+          message.success(t('history.toast.logOpened'))
+        } else {
+          logger.error(`打开日志文件失败: ${result.error}`)
+          message.error(t('history.toast.openFileFailed', { error: result.error ?? '' }))
+        }
       } else {
         message.error(t('history.toast.openFileUnsupported'))
       }

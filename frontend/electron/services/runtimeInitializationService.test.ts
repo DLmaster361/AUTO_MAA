@@ -360,6 +360,7 @@ describe('进度桥接', () => {
     bridge.observe('workspace.clone', '正在同步后端仓库', 42.86)
     bridge.observe('workspace.clone', '正在接收后端仓库数据', 63.4)
     expect(updates[2]).toMatchObject({ stage: 'python', status: 'completed', progress: 100 })
+<<<<<<< HEAD
     expect(updates[3]).toMatchObject({
       stage: 'repository',
       status: 'started',
@@ -372,6 +373,11 @@ describe('进度桥接', () => {
       progress: 63,
       indeterminate: false,
     })
+=======
+    // 段开始时带着真实百分比就照发（#570 起的既有行为，当时没同步这条期望值）
+    expect(updates[3]).toMatchObject({ stage: 'repository', status: 'started', progress: 43 })
+    expect(updates[4]).toMatchObject({ stage: 'repository', status: 'running', progress: 63 })
+>>>>>>> dev
   })
 
   it('还没进过任何段时不会顺手把前面的段报成完成', () => {
@@ -388,6 +394,85 @@ describe('进度桥接', () => {
         indeterminate: true,
       },
     ])
+  })
+
+  /**
+   * 一个界面段里装着好几个 Runtime stage（uv.download 之后还有校验、解压、python.*），
+   * 所以 100 只能由段收口发出；running 途中不得让渲染层看到 100，段内也不得倒退。
+   */
+  function expectStageMonotonicAndClosedOnce(
+    updates: BootstrapProgressUpdate[],
+    stage: BootstrapProgressUpdate['stage']
+  ): void {
+    const inStage = updates.filter(u => u.stage === stage)
+    expect(inStage.length).toBeGreaterThan(1)
+
+    expect(inStage.some(u => u.status === 'running' && u.progress === 100)).toBe(false)
+
+    const full = inStage.filter(u => u.progress === 100)
+    expect(full).toHaveLength(1)
+    expect(full[0]).toMatchObject({ status: 'completed', indeterminate: false })
+    expect(inStage[inStage.length - 1]).toBe(full[0])
+
+    for (let i = 1; i < inStage.length; i += 1) {
+      expect(inStage[i].progress).toBeGreaterThanOrEqual(inStage[i - 1].progress)
+    }
+  }
+
+  it('uv.download 末块强制回报的 100 不会把「安装 Python」段提前显示成完成', () => {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+
+    for (const percent of [0, 3.2, 41.7, 88.9, 100]) {
+      bridge.observe('uv.download', '正在下载固定版本 uv', percent)
+    }
+    bridge.finish('运行环境准备完成')
+
+    expectStageMonotonicAndClosedOnce(updates, 'python')
+    // 段内 running 的上限是 99，末块的 100 被钳住而不是透传
+    const running = updates.filter(u => u.stage === 'python' && u.status === 'running')
+    expect(running.map(u => u.progress)).toEqual([10, 42, 89, 99])
+    expect(running.every(u => u.indeterminate === false)).toBe(true)
+  })
+
+  it('repair 链路里 uv 下载完成后 python.* 无 percent 的事件不会把进度压回 10', () => {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+
+    bridge.observe('uv.download', '正在下载固定版本 uv', 0)
+    bridge.observe('uv.download', '正在下载固定版本 uv', 50)
+    bridge.observe('uv.download', '正在下载固定版本 uv', 100)
+    bridge.observe('uv.verify', '固定版本 uv 已校验')
+    bridge.observe('python.check', '正在检查受管 Python')
+    bridge.observe('python.install', '正在准备受管 Python')
+    bridge.observe('python.install', '受管 Python 已就绪')
+    bridge.observe('dependencies.rebuild', '正在重建依赖环境')
+    bridge.finish('运行环境准备完成')
+
+    expectStageMonotonicAndClosedOnce(updates, 'python')
+    expectStageMonotonicAndClosedOnce(updates, 'dependency')
+
+    // 无 percent 的事件仍是 indeterminate，但数字不倒退
+    const pythonAfterDownload = updates.filter(
+      u => u.stage === 'python' && u.status === 'running' && u.indeterminate
+    )
+    expect(pythonAfterDownload.length).toBeGreaterThan(0)
+    expect(pythonAfterDownload.every(u => u.progress === 99)).toBe(true)
+  })
+
+  it('镜像轮换让下载从 0 重来时段内进度不倒退', () => {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+
+    for (const percent of [0, 60, 0, 5]) {
+      bridge.observe('uv.download', '正在下载固定版本 uv', percent)
+    }
+
+    const progress = updates.filter(u => u.stage === 'python').map(u => u.progress)
+    expect(progress).toEqual([10, 60, 60, 60])
+    for (let i = 1; i < progress.length; i += 1) {
+      expect(progress[i]).toBeGreaterThanOrEqual(progress[i - 1])
+    }
   })
 })
 

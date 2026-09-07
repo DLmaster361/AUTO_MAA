@@ -349,6 +349,12 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="Koishi服务器地址"
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
+    IfOpenClawWeixin: Optional[bool] = Field(
+        default=None, description="是否启用微信 Claw 通知"
+    )
+    IfOpenClawQQ: Optional[bool] = Field(
+        default=None, description="是否启用 QQ 官方机器人通知"
+    )
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
     FromAddress: Optional[str] = Field(default=None, description="邮件发送地址")
@@ -357,6 +363,67 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
+
+
+class OpenClawWeixinQrStartOut(OutBase):
+    """微信 Claw 二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawWeixinQrCheckIn(BaseModel):
+    """微信 Claw 二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+    verifyCode: Optional[str] = Field(
+        default=None, max_length=32, description="微信要求时输入的配对码"
+    )
+
+
+class OpenClawWeixinQrCheckOut(OutBase):
+    """微信 Claw 二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawWeixinStatusOut(OutBase):
+    """微信 Claw 通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
+    connected: bool = Field(default=False, description="是否已绑定微信账号")
+    state: str = Field(default="disconnected", description="当前连接状态")
+
+
+class OpenClawQQQrStartOut(OutBase):
+    """QQ 官方机器人二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawQQQrCheckIn(BaseModel):
+    """QQ 官方机器人二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+
+
+class OpenClawQQQrCheckOut(OutBase):
+    """QQ 官方机器人二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawQQStatusOut(OutBase):
+    """QQ 官方机器人通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
+    connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
+    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class GlobalConfig_Update(BaseModel):
@@ -505,6 +572,9 @@ class QueueConfig_Info(BaseModel):
             "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
+    AfterAccomplishDelay: Optional[int] = Field(
+        default=None, ge=0, le=1440, description="完成后操作的延时时长(分钟)"
+    )
 
 
 class QueueConfig(BaseModel):
@@ -1023,21 +1093,10 @@ class GeneralConfig(BaseModel):
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
-class OkwwConfig_Info(GeneralConfig_Info):
-    """OK-WW 脚本基础信息（复用通用字段）"""
-
-
-class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
-
-
 class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
     Enabled: Optional[bool] = Field(default=None, description="游戏相关功能是否启用")
-    LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏"
-    )
     Path: Optional[str] = Field(default=None, description="游戏启动器路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
@@ -1052,15 +1111,10 @@ class OkwwConfig_Game(BaseModel):
     )
 
 
-class OkwwConfig_Run(GeneralConfig_Run):
-    """OK-WW 运行配置（复用通用字段）"""
-
-
 class OkwwConfig(BaseModel):
-    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
-    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
-    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
+    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
 class OkNteConfig_Info(GeneralConfig_Info):
@@ -1166,8 +1220,9 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None,
+        description="配置来源（脚本共享、用户独立、脚本直控）",
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -1183,6 +1238,35 @@ class MaaEndUserConfig_Info(BaseModel):
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+MaaEndAutoCollectRoute = Literal[
+    "Route1",
+    "Route2",
+    "Route3",
+    "Route4",
+    "Route5",
+    "Route6",
+    "Route7",
+    "Route8",
+    "Route9",
+    "Route10",
+    "Route11",
+    "Route12",
+    "Route13",
+    "Route14",
+    "Route15",
+]
+MaaEndAutoCollectCommonRoute = Literal[
+    "CommonRoute1",
+    "CommonRoute2",
+    "CommonRoute3",
+    "CommonRoute4",
+    "CommonRoute5",
+    "CommonRoute6",
+    "CommonRoute7",
+    "CommonRoute8",
+]
 
 
 class MaaEndUserConfig_Task(BaseModel):
@@ -1221,13 +1305,32 @@ class MaaEndUserConfig_Task(BaseModel):
     IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
     IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
     IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    SeizeDeliveryJobsReward: Optional[float] = Field(
+        default=None, ge=0, description="抢委托送货最低接取价格（万）"
+    )
+    SeizeDeliveryJobsCommissionSource: Optional[
+        Literal["Unlimited", "WulingCity", "TestArea"]
+    ] = Field(default=None, description="抢委托送货委托接收点")
+    IfSeizeDeliveryJobs: Optional[bool] = Field(default=None, description="抢委托送货")
     IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
     IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
     IfEnvironmentMonitoring: Optional[bool] = Field(
         default=None, description="环境监测"
     )
     IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    AutoCollectMode: Optional[Literal["Distributed", "Concentrated"]] = Field(
+        default=None, description="自动采集路线安排：分散或集中"
+    )
+    AutoCollectRoutes: Optional[list[MaaEndAutoCollectRoute]] = Field(
+        default=None, description="自动采集区域资源路线"
+    )
+    AutoCollectCommonRoutes: Optional[list[MaaEndAutoCollectCommonRoute]] = Field(
+        default=None, description="自动采集通用资源路线"
+    )
+    DailyOnceTasks: Optional[str] = Field(
+        default=None,
+        description="每日正常完成一次后当天跳过的 MaaEnd 任务名列表（JSON 字符串）",
+    )
     IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(
@@ -1253,6 +1356,9 @@ class MaaEndUserConfig_Data(BaseModel):
     LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
         default=None, description="上次代理状态"
     )
+    PeriodTaskRecords: Optional[str] = Field(
+        default=None, description="MaaEnd 每日任务完成记录"
+    )
 
 
 class MaaEndUserConfig(BaseModel):
@@ -1277,6 +1383,9 @@ class MaaEndConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     AccountSwitchMethod: Optional[Literal["MAS", "MAAEND"]] = Field(
         default=None, description="账号切换方式"
+    )
+    TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame"]] = Field(
+        default=None, description="任务切换方式"
     )
 
 
@@ -1504,12 +1613,15 @@ class HSRConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="HSR 脚本名称")
     M7APath: Optional[str] = Field(default=None, description="M7A 路径")
     SRAPath: Optional[str] = Field(default=None, description="SRA 路径")
+    SRAProfile: Optional[str] = Field(
+        default=None,
+        description="SRA 配置档案 id（%APPDATA%/SRA/configs 下的文件名，不含扩展名）；空串表示自动",
+    )
 
 
 class HSRConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
-    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
     ForceResolution1920x1080: Optional[bool] = Field(
         default=None, description="是否强制 1920x1080"
@@ -1567,6 +1679,14 @@ class HSRUserConfig_Info(BaseModel):
         default=None, description="游戏服务器"
     )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签列表")
 
@@ -1798,12 +1918,29 @@ class HSRManagedField(BaseModel):
     readonly: bool = Field(default=False, description="是否只读")
 
 
+class HSRManagedDroppedOverride(BaseModel):
+    key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
+    reason: Literal["unknown", "type"] = Field(
+        ...,
+        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+    )
+    value: Any = Field(default=None, description="用户保存的覆盖值")
+    message: str = Field(default="", description="人类可读说明")
+
+
 class HSRManagedForm(BaseModel):
     key: Optional[str] = Field(default=None, description="任务键")
     engine: Literal["M7A", "SRA"] = Field(..., description="表单引擎")
     fields: List[HSRManagedField] = Field(default_factory=list, description="表单字段")
     source: Optional[str] = Field(default=None, description="字段来源")
-    warnings: List[str] = Field(default_factory=list, description="表单警告")
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="表单级人类可读提示（如缺少配置说明文件），不含失效覆盖记录",
+    )
+    dropped_overrides: List[HSRManagedDroppedOverride] = Field(
+        default_factory=list,
+        description="在当前原生配置中失效、运行时会被忽略的 Managed.Options 覆盖值",
+    )
 
 
 class HSRManagedTask(BaseModel):
@@ -1833,6 +1970,35 @@ class HSRManagedConfigData(BaseModel):
 
 class HSRManagedConfigOut(OutBase):
     data: Optional[HSRManagedConfigData] = Field(default=None, description="托管配置")
+
+
+class HSRSRAProfile(BaseModel):
+    id: str = Field(..., description="档案 id（文件名，不含扩展名）")
+    path: str = Field(..., description="档案文件路径")
+    selected: bool = Field(default=False, description="是否为当前生效的档案")
+
+
+class HSRSRAProfilesData(BaseModel):
+    engine: Literal["SRA"] = Field(default="SRA", description="原生脚本引擎")
+    root: str = Field(..., description="档案目录（%APPDATA%/SRA/configs）")
+    available: bool = Field(
+        default=False, description="档案目录是否可读且至少有一份档案"
+    )
+    unavailable_reason: Optional[str] = Field(default=None, description="不可用原因")
+    configured: str = Field(default="", description="脚本配置的档案 id；空串表示自动")
+    auto_id: str = Field(..., description="自动模式会选中的档案 id")
+    selected: str = Field(..., description="当前实际生效的档案 id")
+    fallback: bool = Field(
+        default=False, description="配置的档案不存在、已回退到自动选择"
+    )
+    fallback_reason: Optional[str] = Field(default=None, description="回退说明")
+    profiles: List[HSRSRAProfile] = Field(default_factory=list, description="可选档案")
+
+
+class HSRSRAProfilesOut(OutBase):
+    data: Optional[HSRSRAProfilesData] = Field(
+        default=None, description="SRA 配置档案列表"
+    )
 
 
 class HSRDirectConfigImportIn(BaseModel):
@@ -2608,6 +2774,9 @@ class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
     status: Literal["DONE", "ERROR"] = Field(..., description="状态")
     jsonFile: str = Field(..., description="对应JSON文件")
+    result: Optional[str] = Field(
+        default=None, description="运行结果文本，可能带运行阶段前缀"
+    )
 
 
 class PullCountStatistics(BaseModel):

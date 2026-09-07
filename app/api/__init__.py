@@ -27,18 +27,15 @@ from .emulator import router as emulator_router
 from .history import router as history_router
 from .info import router as info_router
 from .ocr import router as ocr_router
+from .openclaw_qq import router as openclaw_qq_router
+from .openclaw_weixin import router as openclaw_weixin_router
 from .plan import router as plan_router
+from .qr_login import router as qr_login_router
 from .queue import router as queue_router
 from .scripts import router as scripts_router
 from .setting import router as setting_router
 from .tools import router as tools_router
 from .update import router as update_router
-
-# 可选补丁：米游社扫码登录（可安全删除以下 2 行及 app/api/qr_login.py）
-try:
-    from .qr_login import router as qr_login_router
-except ImportError:
-    qr_login_router = None
 
 __all__ = [
     "core_router",
@@ -53,5 +50,7 @@ __all__ = [
     "setting_router",
     "update_router",
     "ocr_router",
+    "openclaw_qq_router",
+    "openclaw_weixin_router",
     "qr_login_router",
 ]

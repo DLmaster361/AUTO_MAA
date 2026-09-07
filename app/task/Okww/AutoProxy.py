@@ -151,7 +151,7 @@ def _configure_okww_launcher(
     ):
         raise ValueError(f"当前 OK-WW 安装不支持{resource}资源")
     changed = False
-    if "auto_start" not in app_config:
+    if app_config.get("auto_start") is not True:
         app_config["auto_start"] = True
         changed = True
     if "update_method" not in app_config:
@@ -322,13 +322,6 @@ class AutoProxyTask(TaskExecuteBase):
     def _resolve_log_file_path(self) -> Path:
         return self.script_log_path
 
-    def _okww_mas_config_dir(self) -> Path:
-        return _okww_mas_config_dir(
-            self.script_info.script_id,
-            str(self.cur_user_uid),
-            _okww_config_mode(self.cur_user_config.get("Info", "Mode")),
-        )
-
     def _apply_mas_overrides(self) -> None:
         _update_json(
             self.script_config_path / "Basic Options.json",
@@ -370,7 +363,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
-            mas_config_dir = self._okww_mas_config_dir()
+            mas_config_dir = _okww_mas_config_dir(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                config_mode,
+            )
             tmp_dst = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
             )

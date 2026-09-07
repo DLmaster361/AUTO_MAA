@@ -284,6 +284,8 @@ class AppConfig(GlobalConfig):
             "KillSelf",
             "Logoff",
         ] = "NoAction"
+        # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
+        self.power_delay: int = 0
         self.temp_task: List[asyncio.Task] = []
         # 正在循环运行的队列，供配置改动前的安全检查使用
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
@@ -2651,7 +2653,7 @@ class AppConfig(GlobalConfig):
         return statistics if len(statistics) == len(field_patterns) else None
 
     async def save_maaend_log(
-        self, log_path: Path, logs: list[str], maaend_result: str
+        self, log_path: Path, logs: list[str], maaend_result: str, phase_label: str = ""
     ) -> None:
         """
         Save MaaEnd logs and generate basic statistics data.
@@ -2660,6 +2662,7 @@ class AppConfig(GlobalConfig):
             log_path (Path): Target log file path.
             logs (list[str]): Log lines.
             maaend_result (str): Result label for this run.
+            phase_label (str): 运行阶段标签（送货/日常/自动采集），作为历史结果前缀。
         """
 
         logger.info(
@@ -2672,6 +2675,9 @@ class AppConfig(GlobalConfig):
 
         if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
             maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        if phase_label:
+            maaend_result = f"[{phase_label}] {maaend_result}"
 
         data: Dict[str, Any] = {"maaend_result": maaend_result}
         if has_matrix_flow and matrix_statistics is not None:
@@ -2784,7 +2790,11 @@ class AppConfig(GlobalConfig):
         }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
-            if result_value == "Success!":
+            # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
+            if not isinstance(result_value, str):
+                return False
+            value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
+            if value == "Success!":
                 return True
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
@@ -2865,6 +2875,7 @@ class AppConfig(GlobalConfig):
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
                         "status": "DONE" if success else "ERROR",
                         "jsonFile": str(json_file),
+                        "result": single_data[key],
                     }
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
@@ -3006,6 +3017,37 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    async def clean_debug_diagnostics(self) -> None:
+        """清理 debug 目录下过期的失败诊断文件。
+
+        终末地登录失败截图与 OK-WW / OK-NTE 切号诊断只会随失败新增，
+        此前没有任何回收；保留时长沿用历史记录的保留天数设置。
+        """
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("诊断文件永久保留, 跳过诊断文件清理")
+            return
+
+        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        deleted_count = 0
+        for name in ("maaend-login", "okww-account-switch", "oknte-account-switch"):
+            folder = Path.cwd() / "debug" / name
+            if not folder.is_dir():
+                continue
+            for file in folder.iterdir():
+                if not file.is_file():
+                    continue
+                try:
+                    if file.stat().st_mtime >= cutoff:
+                        continue
+                    file.unlink()
+                except OSError as exc:
+                    logger.warning(f"诊断文件清理失败: {file} - {exc}")
+                    continue
+                deleted_count += 1
+        if deleted_count:
+            logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
 
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""

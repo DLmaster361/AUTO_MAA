@@ -250,6 +250,20 @@ class SlotTable:
                 tombstoned.append(record.slot)
         return tombstoned
 
+    def tombstone_slot(self, slot: str) -> bool:
+        """退役单个设备号：实例被显式删除时用。
+
+        与 :meth:`tombstone_path` 一样**不删记录、不回收号码**——号码回收了，
+        以后新建的实例就可能拿到同一个号，而某个脚本还绑着它，于是悄悄连到另一台设备上。
+
+        墓碑记录不进设备列表，所以删掉的实例不会继续在表里占一行「未找到」。
+        """
+        for position, record in enumerate(self._records):
+            if record.slot == str(slot) and record.state == "active":
+                self._records[position] = replace(record, state="tombstone")
+                return True
+        return False
+
     def revive_path(self, path_id: str) -> list[str]:
         """重新添加同一条路径：复活它的墓碑，沿用原设备号。"""
         revived: list[str] = []

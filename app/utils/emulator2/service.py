@@ -341,11 +341,15 @@ async def preview_delete_instance(emulator_id: str, slot: str) -> dict:
 
 
 async def delete_instance(emulator_id: str, slot: str) -> dict:
-    """删除一个实例。
+    """删除一个实例，并把它的设备号退役。
 
-    **设备号不写墓碑。** 按索引认设备是本设计的口径：以后在同一个原生索引重建实例，
-    仍然是这个设备号。删掉之后该设备号会显示成「未找到」，绑定它的脚本下一次执行直接失败，
-    不会回退到别的设备。
+    早先的做法是不写墓碑，理由是「以后在同一原生索引重建实例还能拿回同一个号」。
+    实测下来那个好处远不如代价：删掉的实例会一直在设备表里占一行「未找到」，
+    用户看到的是一台并不存在的模拟器。
+
+    改成写墓碑：该行从设备表消失，但**号码仍然不回收**——回收了的话，
+    以后新建的实例可能拿到同一个号，而某个脚本还绑着它，就会悄悄连到另一台设备上。
+    绑定了该号的脚本下次执行直接失败，不会回退到别的设备。
     """
     manager = await build_manager(emulator_id)
     record = manager.slots.resolve(str(slot))
@@ -361,6 +365,9 @@ async def delete_instance(emulator_id: str, slot: str) -> dict:
     except RuntimeError as e:
         logger.warning(f"删除实例失败: {e}")
         return {"ok": False, "reason": "delete_failed", "message": str(e)}
+
+    manager.slots.tombstone_slot(str(slot))
+    await _save(emulator_id, manager.paths, manager.slots)
     return {"ok": True, "reason": "ok"}
 
 
@@ -401,6 +408,15 @@ async def list_devices(emulator_id: str) -> dict:
             if record.path_id != path.path_id or record.state != "active":
                 continue
             present = record.native_index in native_indexes
+            if not present:
+                # 枚举成功但没有这台 = 已经确认它不在了（多半是在模拟器自己的
+                # 多开器里删掉的）。列一行「未找到」的空设备只是噪音，用户看到的是
+                # 一台并不存在的模拟器。设备号仍留在槽位表里：以后同一个原生索引
+                # 再出现，还是这个号。
+                #
+                # 与 unavailable 的区别在于「查证不存在」和「没查成」：整条安装
+                # 不可达时我们并不知道实例还在不在，那种照常显示并标暂时不可用。
+                continue
             settings = {}
             stable, unsafe = False, []
             if present:

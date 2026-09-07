@@ -419,8 +419,7 @@ export default {
     whenHighTrafficSettings:
       '开启后运行前会用本页高频配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置',
     maaEndDailyOnceTasks: '每日仅执行一次的任务',
-    maaEndDailyOnceTasksHint:
-      '任务当天正常完成一次后，后续运行会自动跳过；留空则每次运行都执行',
+    maaEndDailyOnceTasksHint: '任务当天正常完成一次后，后续运行会自动跳过；留空则每次运行都执行',
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
     maaEndAutoCollectEnabled: '自动采集',
@@ -1607,7 +1606,6 @@ export default {
     searchAndAdd: '自动搜索并添加',
     removePath: '移除路径',
     slotRange: '设备号 {slots}',
-    bossKeyHint: '老板键从模拟器里自动读取，不用在这里填',
     deviceHint: '下面是各模拟器实例合并后的列表，设备号供脚本绑定',
     refresh: '刷新',
     colSource: '来源',
@@ -1679,7 +1677,7 @@ export default {
     deleteTitle: '删除模拟器实例',
     deleteNeedsOffline: '实例未关闭，无法删除',
     deleteWarning:
-      '删除后设备 {slot} 会变成「未找到」，影响 {count} 个脚本。该设备号会保留：以后在同一位置新建实例仍然是这个号。',
+      '删除后设备 {slot} 会从设备表里消失，影响 {count} 个脚本。该设备号不会再分配给别的实例，绑定它的脚本需要重新选设备。',
     addTitle: '添加模拟器',
     addHint: '支持雷电 14 与 MuMu 6；其余版本可以到旧配置里单独添加。',
     add: '添加',
@@ -1690,6 +1688,11 @@ export default {
       '其中 {count} 个脚本正在运行。移除后它们的下一次执行会失败并提示重新选择设备。',
     affectedScripts: '受影响的脚本',
     running: '运行中',
+    blocked: {
+      unavailable: '该模拟器暂时不可用，无法操作',
+      missing: '找不到这台实例',
+      error: '实例处于错误状态',
+    },
     status: {
       missing: '未找到',
       unavailable: '暂时不可用',

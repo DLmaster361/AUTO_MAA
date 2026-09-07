@@ -1638,7 +1638,6 @@ export default {
     searchAndAdd: '自動検索して追加',
     removePath: 'パスを削除',
     slotRange: 'デバイス番号 {slots}',
-    bossKeyHint: 'ボスキーはエミュレーターから自動で読み取ります。ここでの入力は不要です',
     deviceHint: '各インストールのインスタンスをまとめた一覧です。スクリプトはデバイス番号で紐付けます。',
     refresh: '更新',
     colSource: '取得元',
@@ -1712,7 +1711,7 @@ export default {
     deleteTitle: 'エミュレーターのインスタンスを削除',
     deleteNeedsOffline: 'インスタンスが終了していないため削除できません',
     deleteWarning:
-      '削除するとデバイス {slot} は「見つかりません」になり、{count} 個のスクリプトに影響します。デバイス番号は保持され、同じ位置にインスタンスを作り直すと同じ番号になります。',
+      'デバイス {slot} は一覧から消え、{count} 個のスクリプトに影響します。この番号が他のインスタンスに再割り当てされることはないため、紐づいていたスクリプトはデバイスを選び直してください。',
     addTitle: 'エミュレーターを追加',
     addHint:
       'LDPlayer 14 と MuMu 6 に対応しています。他のバージョンは旧設定から追加できます。',
@@ -1724,6 +1723,11 @@ export default {
       'うち {count} 個は実行中です。削除後、次回の実行は失敗し、デバイスの選び直しを求められます。',
     affectedScripts: '影響するスクリプト',
     running: '実行中',
+    blocked: {
+      unavailable: 'このエミュレーターは現在利用できません',
+      missing: 'このインスタンスが見つかりません',
+      error: 'インスタンスがエラー状態です',
+    },
     status: {
       missing: '見つかりません',
       unavailable: '一時的に利用不可',

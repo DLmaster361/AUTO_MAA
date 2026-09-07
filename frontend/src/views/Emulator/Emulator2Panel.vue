@@ -567,6 +567,20 @@ const confirmStable = async () => {
 const canDelete = (device: Emulator2DeviceItem) =>
   device.availability === 'ok' && (device.status === 1 || device.status === 5)
 
+/**
+ * 按钮为什么用不了。
+ *
+ * 之前不管什么原因都提示「实例未关闭」——设备明明不可达或处于错误状态，
+ * 却被告知「它还在运行」，等于给了一句错的诊断。这里按实际原因分开说。
+ */
+const blockedReason = (device: Emulator2DeviceItem) => {
+  if (device.availability === 'unavailable') return t('emulator2.blocked.unavailable')
+  if (device.availability !== 'ok') return t('emulator2.blocked.missing')
+  if (device.status === 4) return t('emulator2.blocked.error')
+  if (!canDelete(device)) return t('emulator2.deleteNeedsOffline')
+  return ''
+}
+
 /** 设备状态 → Tag。availability 优先：这次没枚举到就不该显示成离线。 */
 const deviceStatus = (device: Emulator2DeviceItem) => {
   if (device.availability === 'unavailable') {
@@ -590,6 +604,21 @@ const deviceStatus = (device: Emulator2DeviceItem) => {
     }
   )
 }
+
+/**
+ * 表格滚动。
+ *
+ * 纳管多条安装时设备行数是各家实例数之和，很容易堆到十几行，页面撑得老长还得整页滚。
+ * 超过阈值就把表体固定高度、表头钉住，在表格内部滚；行少时不设 y，免得留一片空白。
+ */
+const DEVICE_ROWS_BEFORE_SCROLL = 8
+const DEVICE_BODY_MAX_HEIGHT = 420
+
+const tableScroll = computed(() =>
+  devices.value.length > DEVICE_ROWS_BEFORE_SCROLL
+    ? { x: 'max-content' as const, y: DEVICE_BODY_MAX_HEIGHT }
+    : { x: 'max-content' as const }
+)
 
 const deviceColumns = computed(() => [
   { title: t('emulator2.colSource'), key: 'source', width: 150 },
@@ -661,7 +690,6 @@ defineExpose({ reload: loadDevices })
             })
           }}
         </div>
-        <div class="path-sub">{{ t('emulator2.bossKeyHint') }}</div>
       </a-card>
     </div>
 
@@ -712,7 +740,7 @@ defineExpose({ reload: loadDevices })
         :row-key="(record: Emulator2DeviceItem) => record.slot"
         :pagination="false"
         size="small"
-        :scroll="{ x: 'max-content' }"
+        :scroll="tableScroll"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'source'">
@@ -798,7 +826,11 @@ defineExpose({ reload: loadDevices })
               </a-tooltip>
               <a-tooltip
                 :title="
-                  record.stableMode ? t('emulator2.stableAlready') : t('emulator2.stableApply')
+                  !isReachable(record)
+                    ? blockedReason(record)
+                    : record.stableMode
+                      ? t('emulator2.stableAlready')
+                      : t('emulator2.stableApply')
                 "
               >
                 <a-button
@@ -809,7 +841,9 @@ defineExpose({ reload: loadDevices })
                   @click="openStable(record)"
                 />
               </a-tooltip>
-              <a-tooltip :title="t('emulator2.settings')">
+              <a-tooltip
+                :title="isReachable(record) ? t('emulator2.settings') : blockedReason(record)"
+              >
                 <a-button
                   size="small"
                   type="text"
@@ -819,11 +853,7 @@ defineExpose({ reload: loadDevices })
                 />
               </a-tooltip>
               <a-tooltip
-                :title="
-                  canDelete(record)
-                    ? t('emulator2.deleteInstance')
-                    : t('emulator2.deleteNeedsOffline')
-                "
+                :title="canDelete(record) ? t('emulator2.deleteInstance') : blockedReason(record)"
               >
                 <a-button
                   size="small"

@@ -1692,7 +1692,6 @@ export default {
     searchAndAdd: 'Search and add',
     removePath: 'Remove path',
     slotRange: 'Device numbers {slots}',
-    bossKeyHint: 'The boss key is read from the emulator itself; no need to enter it here',
     deviceHint: 'Instances from every install, merged. Scripts bind to the device number.',
     refresh: 'Refresh',
     colSource: 'Source',
@@ -1767,7 +1766,7 @@ export default {
     deleteTitle: 'Delete emulator instance',
     deleteNeedsOffline: 'The instance is still running',
     deleteWarning:
-      'After deletion device {slot} becomes "not found", affecting {count} script(s). The device number is kept: creating an instance in the same slot later gets the same number.',
+      'Device {slot} disappears from the table, affecting {count} script(s). The number is never reassigned, so scripts bound to it need a new device.',
     addTitle: 'Add emulator',
     addHint:
       'LDPlayer 14 and MuMu 6 are supported. Other versions can still be added as a legacy config.',
@@ -1779,6 +1778,11 @@ export default {
       '{count} of them are running. Their next run will fail and ask you to pick a device again.',
     affectedScripts: 'Affected scripts',
     running: 'Running',
+    blocked: {
+      unavailable: 'This emulator is unreachable right now',
+      missing: 'This instance cannot be found',
+      error: 'The instance is in an error state',
+    },
     status: {
       missing: 'Not found',
       unavailable: 'Temporarily unavailable',

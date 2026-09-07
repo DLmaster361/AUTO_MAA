@@ -113,6 +113,38 @@ class SlotNeverReusedTest(unittest.TestCase):
         self.assertEqual(added, [])
         self.assertEqual(self.table.slots_of(self.path_a), ["0", "1"])
 
+    def test_tombstone_slot_retires_one_device_number(self) -> None:
+        """删掉单个实例时用：该行从设备表消失，但号码不回收。"""
+        self.table.sync_path(self.path_a, ["0", "1", "2"])
+
+        self.assertTrue(self.table.tombstone_slot("1"))
+
+        retired = self.table.resolve("1")
+        assert retired is not None
+        self.assertEqual(retired.state, "tombstone")
+        # 同一条路径的其余设备号不受影响
+        for slot in ("0", "2"):
+            with self.subTest(slot=slot):
+                self.assertEqual(self.table.resolve(slot).state, "active")
+
+    def test_tombstoned_slot_number_is_never_reused(self) -> None:
+        """回收号码会让新实例拿到旧号，而某个脚本可能还绑着它。"""
+        self.table.sync_path(self.path_a, ["0", "1"])
+        self.table.tombstone_slot("1")
+
+        added = self.table.sync_path(self.path_a, ["7"])
+
+        self.assertEqual(added[0].slot, "2")
+
+    def test_tombstone_slot_is_idempotent(self) -> None:
+        self.table.sync_path(self.path_a, ["0"])
+
+        self.assertTrue(self.table.tombstone_slot("0"))
+        self.assertFalse(self.table.tombstone_slot("0"))
+
+    def test_tombstone_slot_ignores_unknown_numbers(self) -> None:
+        self.assertFalse(self.table.tombstone_slot("99"))
+
     def test_sync_alone_does_not_revive_a_tombstone(self) -> None:
         """移除过的路径不能因为一次枚举就自己回来。"""
         self.table.sync_path(self.path_a, ["0"])

@@ -51,8 +51,6 @@ from app.utils.constants import BROWSER_ENV, DES_RULE, SKLAND_SM_CONFIG, UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
-from .skland_response import is_skland_already_signed
-
 _skland_sign_lock = asyncio.Lock()
 _device_id_lock = asyncio.Lock()
 _cached_device_id: str | None = None
@@ -71,6 +69,14 @@ SKLAND_ENDFIELD_SIGN_URL = "https://zonai.skland.com/web/v1/game/endfield/attend
 SKLAND_SIGN_INTERVAL = 1.0
 
 logger = get_logger("森空岛签到任务")
+
+
+def is_skland_already_signed(response: dict) -> bool:
+    """判断森空岛签到响应是否表示今日已签到。"""
+    message = str(response.get("message", ""))
+    return response.get("code") == 10001 or any(
+        marker in message for marker in ("请勿重复签到", "Please do not sign in again!")
+    )
 
 
 def _get_arknights_game_id(character: dict[str, Any]) -> Any:

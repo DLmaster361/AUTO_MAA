@@ -26,12 +26,11 @@ from app.core.notify import (
     NotifyTarget,
     dispatch,
     global_target,
-    should_send_result,
     statistic_targets,
     user_target,
 )
 from app.models.config import MaaUserConfig
-from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
+from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
 logger = get_logger("MAA 通知工具")
@@ -95,38 +94,12 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
-        if not should_send_result(message):
-            return DispatchResult()
-
-        message_text = (
-            f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
-            f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
-            f"{message['result']}"
-        )
-        template = Config.notify_env.get_template("MAA_result.html")
-        counts = (
-            f"已完成用户数: {message['completed_count']}, "
-            f"未完成用户数: {message['uncompleted_count']}"
-        )
-        summary_text = (
-            get_task_game_sign_summary(task_info)
-            if task_info is not None and message.get("game_sign_summary")
-            else ""
-        )
-        return await dispatch_task_report(
-            NotifyPayload(
-                title=title,
-                text=message_text,
-                html=template.render(message),
-                signature_sep=SIGNATURE_SEP,
-                system_title=message.get("system_title") or title.replace("报告", "已完成！"),
-                system_message=counts,
-                system_ticker=counts,
-                system_timeout=10,
-            ),
-            [global_target(include_system=True)],
-            task_info,
-            summary_text=summary_text,
+        return await push_proxy_result(
+            title=title,
+            message=message,
+            task_info=task_info,
+            result_template="MAA_result.html",
+            signature_sep=SIGNATURE_SEP,
         )
 
     if mode == "统计信息":

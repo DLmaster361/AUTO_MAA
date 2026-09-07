@@ -833,7 +833,8 @@
                               :value="f.value"
                               size="small"
                               style="min-width: 100px"
-                              @blur="(e: FocusEvent) => saveTaskConfigField(card, f, numberBlurValue(e))"
+                              @change="(v: any) => scheduleTaskConfigSave(card, f, v)"
+                              @blur="() => flushTaskConfigSave(card, f)"
                             />
                           </div>
                         </template>
@@ -1823,10 +1824,49 @@ const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
   }
 }
 
-/** 数值框 @blur 取值：空/纯空白返回 null（跳过保存），否则转数字 */
-const numberBlurValue = (e: FocusEvent) => {
-  const raw = (e.target as HTMLInputElement).value.trim()
-  return raw === '' ? null : Number(raw)
+/** 数值框保存策略：@change 防抖合并（stepper 连点/键入各一次请求），
+ * 失焦立即落盘待保存值；清空/纯空白由 saveTaskConfigField 拦下不落 0 */
+const TASK_CONFIG_SAVE_DELAY = 600
+interface PendingTaskConfigSave {
+  timer: ReturnType<typeof setTimeout>
+  card: TaskCard
+  field: TaskConfigField
+  value: any
+}
+const taskConfigPending = new Map<string, PendingTaskConfigSave>()
+
+const taskConfigKey = (card: TaskCard, field: TaskConfigField) =>
+  `${card.app_id}::${field.field}`
+
+const scheduleTaskConfigSave = (
+  card: TaskCard,
+  field: TaskConfigField,
+  value: any
+) => {
+  const key = taskConfigKey(card, field)
+  const existing = taskConfigPending.get(key)
+  if (existing) clearTimeout(existing.timer)
+  const timer = setTimeout(() => {
+    taskConfigPending.delete(key)
+    void saveTaskConfigField(card, field, value)
+  }, TASK_CONFIG_SAVE_DELAY)
+  taskConfigPending.set(key, { timer, card, field, value })
+}
+
+const flushTaskConfigSave = (card: TaskCard, field: TaskConfigField) => {
+  const pending = taskConfigPending.get(taskConfigKey(card, field))
+  if (!pending) return
+  clearTimeout(pending.timer)
+  taskConfigPending.delete(taskConfigKey(card, field))
+  void saveTaskConfigField(pending.card, pending.field, pending.value)
+}
+
+const flushAllTaskConfigSaves = () => {
+  for (const pending of [...taskConfigPending.values()]) {
+    clearTimeout(pending.timer)
+    void saveTaskConfigField(pending.card, pending.field, pending.value)
+  }
+  taskConfigPending.clear()
 }
 
 const saveTaskConfigField = async (
@@ -1834,9 +1874,9 @@ const saveTaskConfigField = async (
   field: TaskConfigField,
   value: any
 ) => {
-  // 数值框（@blur）：空串/纯空白/NaN 一律不发请求（后端 int(null/'' ) 报
-  // 400）；纯空白会被 Number() 转成 0，必须在转换前拦下。值未变也跳过
-  // ——否则 Tab 经过每个数值框都会发一次保存请求并弹一次「已保存」
+  // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
+  // int(null/'' ) 报 400）；值未变跳过——防抖 timer 与失焦 flush 双路径
+  // 下避免重复请求与多余「已保存」提示
   if (value === null || value === undefined || Number.isNaN(value)) return
   if (typeof value === 'string' && value.trim() === '') return
   if (Number(value) === Number(field.value)) return
@@ -2302,6 +2342,8 @@ const refreshAfterSession = () => {
 }
 
 onUnmounted(() => {
+  // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
+  flushAllTaskConfigSaves()
   // 直控页面关闭：补一份「配置完成时」的备份（指纹去重；与进入时的「改动前」备份配对）
   if (formData.Info.Mode === '直控') {
     void ensureDirectBackup()

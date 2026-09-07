@@ -32,7 +32,7 @@ $frontendPackageFile = Join-Path $frontendRoot "package.json"
 $backendConfigFile = Join-Path $repoRoot "app\core\config.py"
 $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $uvLockFile = Join-Path $repoRoot "uv.lock"
-$buildWorkflowFile = Join-Path $repoRoot ".github\workflows\build-app.yml"
+$runtimePinFile = Join-Path $repoRoot "res\runtime.json"
 
 foreach ($requiredFile in @(
         $versionFile,
@@ -40,7 +40,7 @@ foreach ($requiredFile in @(
         $backendConfigFile,
         $pyprojectFile,
         $uvLockFile,
-        $buildWorkflowFile
+        $runtimePinFile
     )) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "缺少打包所需文件：$requiredFile"
@@ -99,15 +99,17 @@ if (-not $uvVersionMatch.Success -or $uvVersionMatch.Groups['version'].Value -ne
     throw "uv.lock 中 auto-mas 的版本与 $expectedLockVersion 不一致，请先运行 uv lock。"
 }
 
-$workflowText = Get-Content -LiteralPath $buildWorkflowFile -Raw
-$runtimeVersionMatch = [regex]::Match(
-    $workflowText,
-    '(?m)^\s*RUNTIME_VERSION:\s*["'']?(?<version>v[0-9A-Za-z.-]+)["'']?\s*$'
-)
-if (-not $runtimeVersionMatch.Success) {
-    throw "无法从 .github/workflows/build-app.yml 读取 RUNTIME_VERSION。"
+# Runtime 版本与哈希的唯一来源是 res/runtime.json，发布 CI 与桌面端读的都是它
+# （见 frontend/electron/services/runtimeBinaryService.ts）。
+$runtimePin = Get-Content -LiteralPath $runtimePinFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$runtimeVersion = "$($runtimePin.version)".Trim()
+$pinnedRuntimeHash = "$($runtimePin.sha256)".Trim().ToUpperInvariant()
+if ($runtimeVersion -cnotmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+    throw "res/runtime.json 的 version 非法：$runtimeVersion"
 }
-$runtimeVersion = $runtimeVersionMatch.Groups['version'].Value
+if ($pinnedRuntimeHash -cnotmatch '^[0-9A-F]{64}$') {
+    throw "res/runtime.json 的 sha256 必须是 64 位十六进制：$($runtimePin.sha256)"
+}
 
 Write-Host "应用版本：$appVersion"
 Write-Host "Runtime 版本：$runtimeVersion"
@@ -152,6 +154,11 @@ try {
         }
 
         $expectedRuntimeHash = ($checksumLine.Line -split '\s+')[0].ToUpperInvariant()
+        # 再与钉扎值对一次：上一行只证明下到的文件与该 Release 的清单一致，钉扎值抄错版本
+        # 时照样通过，而装机后的桌面端只认 res/runtime.json 里的这一个哈希。
+        if ($expectedRuntimeHash -ne $pinnedRuntimeHash) {
+            throw "res/runtime.json 的 sha256 与 $runtimeAssetName 的发布清单不一致，请按该 Release 的 SHA256SUMS.txt 更新钉扎。"
+        }
     }
     $actualRuntimeHash = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256).Hash.ToUpperInvariant()
     if ($actualRuntimeHash -ne $expectedRuntimeHash) {

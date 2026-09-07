@@ -1,8 +1,11 @@
 # 本地打包
 
-使用 PowerShell 7。后台更新需要桌面和 Runtime 同时使用新代码；当前工作流固定的旧 Runtime
-版本尚未包含该能力，发布前须先发布新 Runtime，再更新 `.github/workflows/build-app.yml`
-的 `RUNTIME_VERSION`。CI 会拒绝缺少后台更新协议的二进制，防止生成无法正常启动的安装包。
+使用 PowerShell 7。后台更新需要桌面和 Runtime 同时使用新代码；当前钉扎的旧 Runtime
+版本尚未包含该能力，发布前须先发布新 Runtime，再更新 `res/runtime.json` 的 `version`
+与 `sha256`（哈希取自该 Release 的 `SHA256SUMS.txt`，两者必须同时改，否则构建会失败）。
+该文件是 Runtime 版本的唯一来源：发布 CI、本地打包脚本和装机后的桌面端读的都是它，
+桌面端还会在本体更新后按它把用户机器上的 Runtime 换成同一版。
+CI 会拒绝缺少后台更新协议的二进制，防止生成无法正常启动的安装包。
 
 本地验证可直接使用本次源码构建的 Runtime，不必等待 Release：
 

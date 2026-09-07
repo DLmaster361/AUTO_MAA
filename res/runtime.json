@@ -1,0 +1,5 @@
+{
+    "comment": "AUTO-MAS 使用的 AUTO-MAS-Runtime 发布版本。发布 CI 按这里的版本与哈希捆绑 auto-mas-runtime.exe；本体更新后 Electron 也按同一份钉扎把用户机器上的 Runtime 换成这一版。改 version 必须同时改 sha256，取自对应 Release 的 SHA256SUMS.txt，两者不一致会让构建直接失败。Runtime 有自己的发布节奏，本仓库依赖其新行为的改动必须等它先发布，再手动把这里提上去。",
+    "version": "v0.1.4",
+    "sha256": "728706a85aef7e56bb5d8468907c130e5e5a1feb6bd78a94f99aa1ab66eb9731"
+}

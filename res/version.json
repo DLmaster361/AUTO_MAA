@@ -3,6 +3,8 @@
     "version_info": {
         "v5.5.0-beta.3": {
             "新增功能": [
+                "MaaEnd专项 新增脚本直控模式，抢委托送货与自动采集独立为可单独配置的阶段，用户配置页改为锚点导航加分区卡片布局 by [@HarcoChen](https://github.com/HarcoChen)",
+                "MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen)",
                 "MFW 项目支持在脚本运行前或运行后自动更新，可在项目配置中选择时机；升级后已有脚本默认为「运行前更新」，不需要可在项目配置中改为「不更新」 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 新增绿票商店开关：开启后每月单独启动一次 MAA 自动购买绿票商店，用户配置页可查看本月状态并手动重置 by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -16,6 +18,7 @@
                 "首页 快速启动支持多选并记住上次选择，可一次启动多个任务"
             ],
             "程序优化": [
+                "启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)",
                 "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -39,7 +42,8 @@
                 "首页 使用快速启动成功后会自动跳转到调度中心 by [@Craun718](https://github.com/Craun718)",
                 "HSR专项 脚本页新增「SRA 配置档案」下拉，可指定 SRA 多份配置档案中的哪一份供 MAS 管控表单、脚本直控与导入快照使用；默认「自动」保持原有的优先 Default 行为，所选档案被删除时会回退并在脚本页、用户页与运行日志中提示 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 用户页仍以中文显示的一批界面文案（页面标题、用户名与剩余天数标签、历战余响与周常的本周完成状态、服务器与体力副本选项、管控任务列表的周常/日常与启用摘要等）接入多语言词表，英文与日文界面不再夹杂中文 by [@qiyinxi](https://github.com/qiyinxi)",
-                "日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)"
+                "日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)",
+                "代码清理 单源化各脚本专项重复的任务报告推送核心与 QQ/微信通知公共助手，并清理前后端死代码与直通包装组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -48,6 +52,7 @@
                 "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
             ],
             "修复BUG": [
+                "修复深色模式下初始化界面连同标题栏整体变暗的问题",
                 "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "修复同时打开两个前端窗口时互相抢占后端连接、每隔几秒断线并反复弹出提示的问题：后开的窗口接管连接，先开的窗口停止重连并只提示一次 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 修复 MaaEnd 更新后已完成任务被误判失败并重复重试的问题 by [@HarcoChen](https://github.com/HarcoChen)",

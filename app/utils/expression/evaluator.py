@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional, Pattern
 
-from .functions import FUNCTIONS, REGISTRY, apply_function
+from .functions import FUNCTIONS, apply_function
 from .parser import (
     ExpressionError,
     FunctionCall,
@@ -162,13 +162,12 @@ def compile_expression(expr_str: str) -> CompiledExpression:
     compiled_lines: list[list[_CompiledSegment]] = []
 
     # 校验函数名：未知函数名在编译期即报错，避免运行时静默失效
-    # 可用函数 = 内置 FUNCTIONS ∪ 注入的自定义算子 REGISTRY
-    available = ", ".join(sorted(set(FUNCTIONS) | set(REGISTRY)))
+    available = ", ".join(sorted(FUNCTIONS))
     for line in ast_lines:
         for seg in line:
             if isinstance(seg, RegexSegment):
                 for fn in seg.functions:
-                    if fn.name not in FUNCTIONS and fn.name not in REGISTRY:
+                    if fn.name not in FUNCTIONS:
                         raise ExpressionError(
                             f"未知函数 '{fn.name}'，可用函数: {available}"
                         )

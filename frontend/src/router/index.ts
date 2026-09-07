@@ -2,7 +2,6 @@ import {
   createRouter,
   createWebHashHistory,
   type LocationQueryRaw,
-  type RouteParamsRawGeneric,
 } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
@@ -403,23 +402,6 @@ export function navigateTo(
   const { replace = false, query } = options || {}
   if (replace) return router.replace({ path, query })
   return router.push({ path, query })
-}
-
-export function navigateToByName(
-  name: string,
-  options?: { replace?: boolean; query?: LocationQueryRaw; params?: RouteParamsRawGeneric }
-) {
-  const { replace = false, query, params } = options || {}
-  if (replace) return router.replace({ name, query, params })
-  return router.push({ name, query, params })
-}
-
-export function goBack() {
-  return router.back()
-}
-
-export function goForward() {
-  return router.forward()
 }
 
 export default router

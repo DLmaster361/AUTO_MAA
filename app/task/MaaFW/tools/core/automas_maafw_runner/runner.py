@@ -546,6 +546,8 @@ class MaaFWRunner:
         self._python_env_checked: dict[str, bool] = {}
         self._stop_requested: threading.Event = threading.Event()
         self._external_stop_seen: threading.Event = threading.Event()
+        self._self_stop_lock: threading.Lock = threading.Lock()
+        self._pending_self_stops: int = 0
         self._task_failure_summaries: list[str] = []
         self._failed_controller_actions: set[str] = set()
         self._failed_task_errors: list[tuple[str, str]] = []
@@ -673,7 +675,7 @@ class MaaFWRunner:
             try:
                 _ensure_maafw_client_library_mode()
                 if self.tasker.running:
-                    self.tasker.post_stop().wait()
+                    self._post_self_stop()
             except Exception as exc:
                 self.send_log(f"停止 MaaFW tasker 失败: {exc}")
 
@@ -683,7 +685,7 @@ class MaaFWRunner:
             try:
                 _ensure_maafw_client_library_mode()
                 if self.tasker.running:
-                    self.tasker.post_stop().wait()
+                    self._post_self_stop()
             except Exception as exc:
                 self.send_log(f"停止 MaaFW tasker 准备重试失败: {exc}")
 
@@ -2404,15 +2406,35 @@ class MaaFWRunner:
             self.send_log(f"[Python环境] pip install 异常: {exc}，将由 agent 自举尝试")
         return False
 
-    def _note_tasker_entry(self, entry: str) -> None:
-        """从 tasker 事件流里捕获「被外部强停」。
+    def _post_self_stop(self) -> None:
+        """MAS 自己发起停止，并给随之而来的 MaaTaskerPostStop 通知记账。
 
-        MAS 自己发起的停止（cleanup / reset_for_retry / shutdown）同样会产生
-        MaaTaskerPostStop，那条路径已有 `_stop_requested` 负责，不能混进来。
+        通知是异步送达的，可能晚到下一轮 `run()` 清完标志之后才到；不记账就会被
+        `_note_tasker_entry` 当成脚本侧强停，把重试的第一个任务判成失败、后面的
+        全部跳过。`post_stop()` 返回即代表停止任务已入队、通知必然会来；它抛异常
+        时没有入队，所以计数必须放在调用返回之后。
         """
+
+        if self.tasker is None:
+            return
+        job = self.tasker.post_stop()
+        with self._self_stop_lock:
+            self._pending_self_stops += 1
+        job.wait()
+
+    def _note_tasker_entry(self, noti_type: NotificationType, entry: str) -> None:
+        """从 tasker 事件流里捕获「被外部强停」。"""
 
         if entry != MAAFW_POST_STOP_ENTRY:
             return
+        # 一次 post_stop 会先后发出 Starting 和 Succeeded 两条通知。只认第一条，
+        # 记账才能和 `_post_self_stop` 的调用一一对应。
+        if noti_type != NotificationType.Starting:
+            return
+        with self._self_stop_lock:
+            if self._pending_self_stops > 0:
+                self._pending_self_stops -= 1
+                return
         if self._stop_requested.is_set():
             return
         self._external_stop_seen.set()
@@ -2716,7 +2738,7 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         self,
         send_log: Callable[[str], None],
         record_failure: Callable[[str, dict[str, Any]], None],
-        note_entry: Callable[[str], None] | None = None,
+        note_entry: Callable[[NotificationType, str], None] | None = None,
     ) -> None:
         super().__init__()
         self.send_log = send_log
@@ -2733,7 +2755,7 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
             f"[MaaFW Tasker] {_notification_label(noti_type)}: {detail.entry}"
         )
         if self.note_entry is not None:
-            self.note_entry(detail.entry)
+            self.note_entry(noti_type, detail.entry)
 
     def on_raw_notification(
         self,

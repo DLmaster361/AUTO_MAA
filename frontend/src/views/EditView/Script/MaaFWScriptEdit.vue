@@ -233,7 +233,7 @@ const stepItems = [
 // 失败时（离线、镜像不通、解释器坏）后面每一步都是白填。失败不是死路，
 // 提示条里有「重试」。
 const canLeaveCurrentStep = computed(
-  () => currentStep.value !== 0 || (previewData.value !== null && envReady.value),
+  () => currentStep.value !== 0 || (previewData.value !== null && envReady.value)
 )
 const pageLoading = ref(false)
 const isInitializing = ref(true)

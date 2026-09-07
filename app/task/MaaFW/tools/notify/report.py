@@ -39,7 +39,9 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
-        return await push_proxy_result(title=title, message=message, task_info=task_info)
+        return await push_proxy_result(
+            title=title, message=message, task_info=task_info
+        )
     if mode == "统计信息":
         return await _push_statistics(title, message, user_config)
     return DispatchResult()

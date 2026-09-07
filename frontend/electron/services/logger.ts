@@ -30,7 +30,11 @@ function fileFormat(params: { data: unknown[]; level: string; message: { date: D
  * 控制台日志格式化函数
  * 格式：<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <custom-color>{module}</custom-color> | <level>{message}</level>
  */
-function consoleFormat(params: { data: unknown[]; level: string; message: { date: Date } }): string[] {
+function consoleFormat(params: {
+  data: unknown[]
+  level: string
+  message: { date: Date }
+}): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'

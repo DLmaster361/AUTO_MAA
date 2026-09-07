@@ -1,8 +1,4 @@
-import {
-  createRouter,
-  createWebHashHistory,
-  type LocationQueryRaw,
-} from 'vue-router'
+import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'

@@ -126,7 +126,11 @@ def test_cancelled_install_leaves_no_runtime_and_no_staging(tmp_path: Path) -> N
 # 它必须和 _run 一样吃到取消令牌，并且取消不能被当成「换下一个源」。
 # ---------------------------------------------------------------------------
 
-_ROTATION_SOURCES = ("https://mirror-a.invalid", "https://mirror-b.invalid", "https://mirror-c.invalid")
+_ROTATION_SOURCES = (
+    "https://mirror-a.invalid",
+    "https://mirror-b.invalid",
+    "https://mirror-c.invalid",
+)
 
 
 def test_source_rotation_terminates_subprocess_within_two_seconds_after_cancel(

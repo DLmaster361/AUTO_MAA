@@ -234,7 +234,9 @@ def is_package_index_offline() -> bool:
     return raw is not None and not raw.strip()
 
 
-def _resolve_python_mirror_candidates(*, explicit_mirror: str | None) -> list[str] | None:
+def _resolve_python_mirror_candidates(
+    *, explicit_mirror: str | None
+) -> list[str] | None:
     """解析 Python 解释器分发源的有序候选列表，供 ``uv python install`` 按序重试。
 
     优先级：调用方已解析出的显式 ``UV_PYTHON_INSTALL_MIRROR``（若有）最高，
@@ -951,7 +953,9 @@ def _install_pool_managed_python(
     )
     base_env = _uv_environment(cache_dir, UV_LINK_MODE)
     base_env["UV_PYTHON_INSTALL_DIR"] = str(python_root)
-    explicit_mirror = str(base_env.get("UV_PYTHON_INSTALL_MIRROR") or "").strip() or None
+    explicit_mirror = (
+        str(base_env.get("UV_PYTHON_INSTALL_MIRROR") or "").strip() or None
+    )
     candidates = _resolve_python_mirror_candidates(explicit_mirror=explicit_mirror)
 
     command = [

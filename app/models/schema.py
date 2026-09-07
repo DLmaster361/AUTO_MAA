@@ -961,13 +961,15 @@ class BetterGIUserConfig_OneDragon(BaseModel):
         default=None, description="一条龙要执行的内置配置组名列表"
     )
     DailyRewardPartyName: Optional[str] = Field(
-        default=None, description="领取奖励队伍（对应一条龙 DailyRewardPartyName，留空不覆盖）"
+        default=None,
+        description="领取奖励队伍（对应一条龙 DailyRewardPartyName，留空不覆盖）",
     )
     PartyName: Optional[str] = Field(
         default=None, description="战斗队伍（对应一条龙通用 PartyName，留空不覆盖）"
     )
     AutoBossStrategyName: Optional[str] = Field(
-        default=None, description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）"
+        default=None,
+        description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）",
     )
     IfUseCustomGroups: Optional[bool] = Field(
         default=None, description="是否管理自定义配置组（总开关）"
@@ -987,12 +989,24 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
 
 
 class BetterGIUserConfig(BaseModel):
-    Info: Optional[BetterGIUserConfig_Info] = Field(default=None, description="用户信息")
-    Task: Optional[BetterGIUserConfig_Task] = Field(default=None, description="任务配置")
-    Switch: Optional[BetterGIUserConfig_Switch] = Field(default=None, description="切换账号配置")
-    OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(default=None, description="一条龙配置")
-    Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[GeneralUserConfig_Notify] = Field(default=None, description="单独通知")
+    Info: Optional[BetterGIUserConfig_Info] = Field(
+        default=None, description="用户信息"
+    )
+    Task: Optional[BetterGIUserConfig_Task] = Field(
+        default=None, description="任务配置"
+    )
+    Switch: Optional[BetterGIUserConfig_Switch] = Field(
+        default=None, description="切换账号配置"
+    )
+    OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(
+        default=None, description="一条龙配置"
+    )
+    Data: Optional[BetterGIUserConfig_Data] = Field(
+        default=None, description="用户数据"
+    )
+    Notify: Optional[GeneralUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
 
 
 class GeneralConfig_Info(BaseModel):
@@ -1096,7 +1110,8 @@ class OkwwConfig_Game(BaseModel):
         default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
     )
     AccountSwitch: Optional[bool] = Field(
-        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
+        default=None,
+        description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）",
     )
 
 
@@ -1156,7 +1171,8 @@ class OkNteConfig_Game(BaseModel):
         default=None, description="类型: PC端, URL协议"
     )
     Path: Optional[str] = Field(
-        default=None, description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）"
+        default=None,
+        description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）",
     )
     URL: Optional[str] = Field(default=None, description="自定义协议URL")
     ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
@@ -1172,7 +1188,8 @@ class OkNteConfig_Game(BaseModel):
         default=None, description="任务结束后是否关闭游戏"
     )
     AccountSwitch: Optional[bool] = Field(
-        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
+        default=None,
+        description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）",
     )
 
 
@@ -2804,7 +2821,16 @@ class HistoryData(BaseModel):
 
 class ScriptCreateIn(BaseModel):
     type: Literal[
-        "MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "MaaFW", "HSR", "BetterGI"
+        "MAA",
+        "SRC",
+        "General",
+        "Okww",
+        "OkNte",
+        "MaaEnd",
+        "M9A",
+        "MaaFW",
+        "HSR",
+        "BetterGI",
     ] = Field(
         ...,
         description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本",
@@ -2827,9 +2853,7 @@ class ScriptCreateOut(OutBase):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
-    ] = Field(
-        ..., description="脚本配置数据"
-    )
+    ] = Field(..., description="脚本配置数据")
 
 
 class ScriptGetIn(BaseModel):
@@ -2870,9 +2894,7 @@ class ScriptUpdateIn(BaseModel):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
-    ] = Field(
-        ..., description="脚本更新数据"
-    )
+    ] = Field(..., description="脚本更新数据")
 
 
 class ScriptDeleteIn(BaseModel):

@@ -399,5 +399,3 @@ def _parse_cookie_string(cookie_str: str) -> dict[str, str]:
         if key.strip() and value.strip():
             cookies[key.strip()] = value.strip()
     return cookies
-
-

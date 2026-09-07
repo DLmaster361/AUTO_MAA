@@ -22,29 +22,87 @@ export const MAAEND_AUTO_COLLECT_MODE_OPTIONS = [
   },
 ] as const
 
-export type MaaEndAutoCollectMode =
-  (typeof MAAEND_AUTO_COLLECT_MODE_OPTIONS)[number]['value']
+export type MaaEndAutoCollectMode = (typeof MAAEND_AUTO_COLLECT_MODE_OPTIONS)[number]['value']
 
 export const MAAEND_AUTO_COLLECT_ROUTE_OPTIONS = [
-  { value: 'Route1', labelKey: 'edit.maaEndAutoCollectRoute1', regionKey: 'edit.maaEndRegionWulingCity' },
-  { value: 'Route2', labelKey: 'edit.maaEndAutoCollectRoute2', regionKey: 'edit.maaEndRegionWulingCity' },
-  { value: 'Route3', labelKey: 'edit.maaEndAutoCollectRoute3', regionKey: 'edit.maaEndRegionWulingCity' },
-  { value: 'Route4', labelKey: 'edit.maaEndAutoCollectRoute4', regionKey: 'edit.maaEndRegionValleyNo4' },
-  { value: 'Route5', labelKey: 'edit.maaEndAutoCollectRoute5', regionKey: 'edit.maaEndRegionValleyNo4' },
-  { value: 'Route6', labelKey: 'edit.maaEndAutoCollectRoute6', regionKey: 'edit.maaEndRegionValleyNo4' },
-  { value: 'Route7', labelKey: 'edit.maaEndAutoCollectRoute7', regionKey: 'edit.maaEndRegionWulingCity' },
-  { value: 'Route8', labelKey: 'edit.maaEndAutoCollectRoute8', regionKey: 'edit.maaEndRegionWulingCity' },
-  { value: 'Route9', labelKey: 'edit.maaEndAutoCollectRoute9', regionKey: 'edit.maaEndRegionWulingCity' },
-  { value: 'Route10', labelKey: 'edit.maaEndAutoCollectRoute10', regionKey: 'edit.maaEndRegionWuling' },
-  { value: 'Route11', labelKey: 'edit.maaEndAutoCollectRoute11', regionKey: 'edit.maaEndRegionWuling' },
-  { value: 'Route12', labelKey: 'edit.maaEndAutoCollectRoute12', regionKey: 'edit.maaEndRegionWuling' },
-  { value: 'Route13', labelKey: 'edit.maaEndAutoCollectRoute13', regionKey: 'edit.maaEndRegionValleyNo4' },
-  { value: 'Route14', labelKey: 'edit.maaEndAutoCollectRoute14', regionKey: 'edit.maaEndRegionValleyNo4' },
-  { value: 'Route15', labelKey: 'edit.maaEndAutoCollectRoute15', regionKey: 'edit.maaEndRegionWuling' },
+  {
+    value: 'Route1',
+    labelKey: 'edit.maaEndAutoCollectRoute1',
+    regionKey: 'edit.maaEndRegionWulingCity',
+  },
+  {
+    value: 'Route2',
+    labelKey: 'edit.maaEndAutoCollectRoute2',
+    regionKey: 'edit.maaEndRegionWulingCity',
+  },
+  {
+    value: 'Route3',
+    labelKey: 'edit.maaEndAutoCollectRoute3',
+    regionKey: 'edit.maaEndRegionWulingCity',
+  },
+  {
+    value: 'Route4',
+    labelKey: 'edit.maaEndAutoCollectRoute4',
+    regionKey: 'edit.maaEndRegionValleyNo4',
+  },
+  {
+    value: 'Route5',
+    labelKey: 'edit.maaEndAutoCollectRoute5',
+    regionKey: 'edit.maaEndRegionValleyNo4',
+  },
+  {
+    value: 'Route6',
+    labelKey: 'edit.maaEndAutoCollectRoute6',
+    regionKey: 'edit.maaEndRegionValleyNo4',
+  },
+  {
+    value: 'Route7',
+    labelKey: 'edit.maaEndAutoCollectRoute7',
+    regionKey: 'edit.maaEndRegionWulingCity',
+  },
+  {
+    value: 'Route8',
+    labelKey: 'edit.maaEndAutoCollectRoute8',
+    regionKey: 'edit.maaEndRegionWulingCity',
+  },
+  {
+    value: 'Route9',
+    labelKey: 'edit.maaEndAutoCollectRoute9',
+    regionKey: 'edit.maaEndRegionWulingCity',
+  },
+  {
+    value: 'Route10',
+    labelKey: 'edit.maaEndAutoCollectRoute10',
+    regionKey: 'edit.maaEndRegionWuling',
+  },
+  {
+    value: 'Route11',
+    labelKey: 'edit.maaEndAutoCollectRoute11',
+    regionKey: 'edit.maaEndRegionWuling',
+  },
+  {
+    value: 'Route12',
+    labelKey: 'edit.maaEndAutoCollectRoute12',
+    regionKey: 'edit.maaEndRegionWuling',
+  },
+  {
+    value: 'Route13',
+    labelKey: 'edit.maaEndAutoCollectRoute13',
+    regionKey: 'edit.maaEndRegionValleyNo4',
+  },
+  {
+    value: 'Route14',
+    labelKey: 'edit.maaEndAutoCollectRoute14',
+    regionKey: 'edit.maaEndRegionValleyNo4',
+  },
+  {
+    value: 'Route15',
+    labelKey: 'edit.maaEndAutoCollectRoute15',
+    regionKey: 'edit.maaEndRegionWuling',
+  },
 ] as const
 
-export type MaaEndAutoCollectRoute =
-  (typeof MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)[number]['value']
+export type MaaEndAutoCollectRoute = (typeof MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)[number]['value']
 
 export type MaaEndAutoCollectRegionKey =
   (typeof MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)[number]['regionKey']

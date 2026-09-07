@@ -99,9 +99,7 @@ MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS = tuple(
 
 MAAEND_AUTO_COLLECT_ROUTE_OPTIONS = {
     "AutoCollectRoutes": tuple(f"Route{index}" for index in range(1, 16)),
-    "AutoCollectCommonRoutes": tuple(
-        f"CommonRoute{index}" for index in range(1, 9)
-    ),
+    "AutoCollectCommonRoutes": tuple(f"CommonRoute{index}" for index in range(1, 9)),
 }
 """MaaEnd 自动采集两类路线选项"""
 

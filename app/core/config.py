@@ -331,7 +331,9 @@ class AppConfig(GlobalConfig):
         _original_create_default_context = ssl.create_default_context
         _ssl_context_cache: dict[tuple, ssl.SSLContext] = {}
 
-        def _cached_create_default_context(*args: object, **kwargs: object) -> ssl.SSLContext:
+        def _cached_create_default_context(
+            *args: object, **kwargs: object
+        ) -> ssl.SSLContext:
             key = (args, tuple(sorted(kwargs.items())))
             context = _ssl_context_cache.get(key)
             if context is None:

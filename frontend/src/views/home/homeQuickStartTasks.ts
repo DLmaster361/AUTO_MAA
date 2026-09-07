@@ -91,7 +91,7 @@ export const launchHomeTasks = async ({
     } catch (error) {
       outcome.failed.push({
         taskLabel,
-          reason: error instanceof Error && error.message ? error.message : failureReason,
+        reason: error instanceof Error && error.message ? error.message : failureReason,
       })
     }
 

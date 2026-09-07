@@ -473,8 +473,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(message)
                     self._record_attempt(index + 1, [], message)
                     unretryable = any(
-                        marker in message
-                        for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS
+                        marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS
                     )
                     if unretryable:
                         self._append_log(
@@ -1874,9 +1873,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 user_config=self.cur_user_config,
             )
         except Exception as exc:
-            logger.opt(exception=True).warning(
-                f"推送 MaaFW 统计信息时出现异常: {exc}"
-            )
+            logger.opt(exception=True).warning(f"推送 MaaFW 统计信息时出现异常: {exc}")
             with suppress(Exception):
                 await Publisher.send(
                     id=self.task_info.task_id,

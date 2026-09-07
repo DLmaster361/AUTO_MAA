@@ -590,7 +590,7 @@ const loadMaaEndOptions = async () => {
       const defaultController =
         response.controllers.find(item => item.value === defaultMaaEndController)?.value ??
         response.controllers.find(
-          item => item.value && response.controllerTypes[item.value] === 'Win32',
+          item => item.value && response.controllerTypes[item.value] === 'Win32'
         )?.value
       if (defaultController) {
         await handleControllerTypeChange(defaultController)

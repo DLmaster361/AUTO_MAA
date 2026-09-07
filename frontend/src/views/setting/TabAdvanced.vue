@@ -193,21 +193,13 @@ const exportDataBackup = async () => {
               </template>
               {{ t('setting.advanced.exportMaaEnd') }}
             </a-button>
-            <a-button
-              type="primary"
-              :loading="exportingOkwwLogs"
-              @click="exportOkwwIssueReport"
-            >
+            <a-button type="primary" :loading="exportingOkwwLogs" @click="exportOkwwIssueReport">
               <template #icon>
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportOkww') }}
             </a-button>
-            <a-button
-              type="primary"
-              :loading="exportingOkNteLogs"
-              @click="exportOkNteIssueReport"
-            >
+            <a-button type="primary" :loading="exportingOkNteLogs" @click="exportOkNteIssueReport">
               <template #icon>
                 <DownloadOutlined />
               </template>

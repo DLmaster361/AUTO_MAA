@@ -460,9 +460,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
-        project_path = Path(
-            str(self.script_config.get("Info", "Path") or "")
-        ).resolve()
+        project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
 
         if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
             self._append_update_log("受管项目由 Store 管理版本，跳过原地更新")

@@ -349,9 +349,7 @@ async def dispatch(
         if channel in skip:
             return
         attempted += 1
-        if await _send(
-            channel, send, attempts=attempts, retry_delay=retry_delay
-        ):
+        if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
             succeeded.append(channel)
         else:
             failed.append(channel)

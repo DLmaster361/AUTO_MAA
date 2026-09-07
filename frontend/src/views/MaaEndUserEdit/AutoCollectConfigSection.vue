@@ -58,12 +58,7 @@
                 >
                   {{ t('edit.maaEndRouteSelectAll') }}
                 </a-button>
-                <a-button
-                  type="link"
-                  size="small"
-                  :disabled="loading"
-                  @click="handleClear(panel)"
-                >
+                <a-button type="link" size="small" :disabled="loading" @click="handleClear(panel)">
                   {{ t('edit.maaEndRouteClear') }}
                 </a-button>
               </span>
@@ -109,12 +104,7 @@
                 >
                   {{ t('edit.maaEndRouteSelectAll') }}
                 </a-button>
-                <a-button
-                  type="link"
-                  size="small"
-                  :disabled="loading"
-                  @click="handleCommonClear"
-                >
+                <a-button type="link" size="small" :disabled="loading" @click="handleCommonClear">
                   {{ t('edit.maaEndRouteClear') }}
                 </a-button>
               </span>
@@ -238,8 +228,7 @@ const panelValues = (panel: RegionPanel) =>
 const panelSelectedCount = (panel: RegionPanel) => panelValues(panel).length
 
 const commonSelectedCount = computed(
-  () =>
-    commonRouteOptions.value.filter(option => commonRoutes.value.includes(option.value)).length
+  () => commonRouteOptions.value.filter(option => commonRoutes.value.includes(option.value)).length
 )
 
 // 区域勾选结果与其余区域已选合并后按选项源顺序重组，保证保存的始终是完整有序数组
@@ -288,9 +277,9 @@ const handleClear = (panel: RegionPanel) => {
 
 const applyCommonRoutes = (values: MaaEndAutoCollectCommonRoute[]) => {
   const nextSet = new Set<string>(values)
-  commonRoutes.value = MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option =>
-    option.value
-  ).filter(value => nextSet.has(value))
+  commonRoutes.value = MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option => option.value).filter(
+    value => nextSet.has(value)
+  )
   emit('save', 'Task.AutoCollectCommonRoutes', commonRoutes.value)
 }
 

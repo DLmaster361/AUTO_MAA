@@ -1274,7 +1274,8 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
         )
     except Exception as e:
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1319,7 +1320,8 @@ async def get_bettergi_custom_groups_api(
         )
     except Exception as e:
         return BetterGICustomGroupsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1352,7 +1354,8 @@ async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
         )
     except Exception as e:
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",

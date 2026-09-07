@@ -155,7 +155,9 @@ def resolve_http_port(development_environment: bool) -> int:
 
     if is_supervised():
         if raw:
-            logger.info(f"受监督模式下端口由运行时注入，已忽略 AUTO_MAS_HTTP_PORT={raw}")
+            logger.info(
+                f"受监督模式下端口由运行时注入，已忽略 AUTO_MAS_HTTP_PORT={raw}"
+            )
         return _resolve_supervised_port()
 
     if raw:
@@ -187,9 +189,7 @@ def _resolve_supervised_port() -> int:
     if SUPERVISED_PORT_MIN <= port <= 65535:
         return port
 
-    logger.warning(
-        f"{SUPERVISED_PORT_ENV} 取值无效，回退 {DEFAULT_HTTP_PORT}: {raw!r}"
-    )
+    logger.warning(f"{SUPERVISED_PORT_ENV} 取值无效，回退 {DEFAULT_HTTP_PORT}: {raw!r}")
     return DEFAULT_HTTP_PORT
 
 
@@ -286,9 +286,7 @@ def main():
                 await Config.clean_debug_diagnostics()
 
                 if IS_WINDOWS:
-                    for adapter in (
-                        "app.MaaFW.ArknightWin32",
-                    ):
+                    for adapter in ("app.MaaFW.ArknightWin32",):
                         await asyncio.to_thread(importlib.import_module, adapter)
 
                     from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit

@@ -95,7 +95,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setRuntimeLaunchMode: (mode: string) => ipcRenderer.invoke('set-runtime-launch-mode', mode),
 
   // 托盘设置实时更新
-  updateTraySettings: (uiSettings: unknown) => ipcRenderer.invoke('update-tray-settings', uiSettings),
+  updateTraySettings: (uiSettings: unknown) =>
+    ipcRenderer.invoke('update-tray-settings', uiSettings),
 
   // 托盘自定义菜单项
   updateTrayConfig: (trayItems: unknown) => ipcRenderer.invoke('update-tray-config', trayItems),

@@ -20,7 +20,9 @@ const loading = ref(true)
 const logMode = ref<LogMode>('follow')
 // 主进程用 `#/logs?file=frontend` 指定落地时选中哪一份；启动路径要的是前端日志，
 // 那时后端还没起来，app.log 打开就是空的。没带参数时维持原来的默认。
-const selectedLogFile = ref<'app' | 'frontend'>(route.query.file === 'frontend' ? 'frontend' : 'app')
+const selectedLogFile = ref<'app' | 'frontend'>(
+  route.query.file === 'frontend' ? 'frontend' : 'app'
+)
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null

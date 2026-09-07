@@ -123,7 +123,7 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
         # 当前体力：仅记录最后一次，结束后据此输出「⚡ 剩余体力: N」
         if text.startswith("体力当前:"):
             try:
-                last_stamina = int(text[len("体力当前:"):])
+                last_stamina = int(text[len("体力当前:") :])
                 last_stamina_ts = ts
             except ValueError:
                 pass
@@ -137,8 +137,7 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
     status_lines = [
-        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
-        for node in order
+        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]) for node in order
     ]
     if last_stamina is not None:
         status_lines.append(

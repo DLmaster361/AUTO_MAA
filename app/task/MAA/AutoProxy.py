@@ -315,15 +315,11 @@ def _build_maa_preset_task_queue(source_queue: list[dict]) -> list[dict]:
         return task
 
     fight_source = (
-        _find_task_source(
-            source_tasks, "理智作战", "Fight", allow_type_fallback=False
-        )
+        _find_task_source(source_tasks, "理智作战", "Fight", allow_type_fallback=False)
         or {}
     )
     annihilation = _merge_fight_task(
-        _find_task_source(
-            source_tasks, "剿灭作战", "Fight", allow_type_fallback=False
-        )
+        _find_task_source(source_tasks, "剿灭作战", "Fight", allow_type_fallback=False)
         or {},
         MAA_ANNIHILATION_FIGHT_BASE,
     )
@@ -835,9 +831,8 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue = []
         # 活动关优先是独立任务，仅由自身开关控制，不受理智作战开关影响
         activity_stage = None
-        if (
-            self.mode == "Routine"
-            and self.cur_user_config.get("Task", "IfActivityFirst")
+        if self.mode == "Routine" and self.cur_user_config.get(
+            "Task", "IfActivityFirst"
         ):
             stage_info = await Config.get_stage_info(
                 "Info",

@@ -161,7 +161,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用">
+                  <a-tooltip
+                    title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用"
+                  >
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -541,10 +543,7 @@ const loadScript = async () => {
     // 旧配置 Game.Path 存的是 HTGame.exe：展示层自动升级为同安装根下的启动器
     // （运行时后端也会按同一规则反推，此处仅为回显正确）
     const gamePath = (oknteConfig.Game.Path || '').replace(/\\/g, '/')
-    if (
-      oknteConfig.Game.Enabled &&
-      gamePath.toLowerCase().endsWith(`/${NTE_CLIENT_EXE}`)
-    ) {
+    if (oknteConfig.Game.Enabled && gamePath.toLowerCase().endsWith(`/${NTE_CLIENT_EXE}`)) {
       const clientIdx = gamePath.toLowerCase().lastIndexOf('/client/')
       if (clientIdx !== -1) {
         const installRoot = gamePath.substring(0, clientIdx)
@@ -601,7 +600,7 @@ const selectGameRootPath = async () => {
   // 截断锚点之后的内容，拼接启动器候选相对路径（国服/国际/台服）
   const prefix = normalized.substring(0, idx)
   const launcherCandidates = NTE_LAUNCHER_EXES.map(
-    (exe) => `${prefix}${NTE_GAME_ANCHOR}/${NTE_LAUNCHER_DIR}/${exe}`
+    exe => `${prefix}${NTE_GAME_ANCHOR}/${NTE_LAUNCHER_DIR}/${exe}`
   )
 
   let candidateLauncher: string | null = null

@@ -640,8 +640,7 @@ export function useSchedulerLogic() {
     try {
       const response = await Service.getQueuesApiQueueGetPost({ queueId: tab.selectedTaskId })
       tab.isCycleQueue =
-        response.code === 200 &&
-        Boolean(response.data?.[tab.selectedTaskId]?.Info?.CycleEnabled)
+        response.code === 200 && Boolean(response.data?.[tab.selectedTaskId]?.Info?.CycleEnabled)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取队列类型失败，按定时队列处理: ${errorMsg}`)

@@ -6,18 +6,17 @@
  * 设备号由本配置统一编排，脚本绑定用的就是它；模拟器自己的实例号另外显示，
  * 因为两者不一定对得上（实例被删过就会错开）。
  */
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
   DeleteOutlined,
+  LoadingOutlined,
   EyeInvisibleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   PoweroffOutlined,
-  ReloadOutlined,
   SearchOutlined,
-  SafetyCertificateOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
@@ -39,6 +38,12 @@ const logger = window.electronAPI.getLogger('Emulator2')
 const loading = ref(false)
 const paths = ref<Emulator2PathItem[]>([])
 const devices = ref<Emulator2DeviceItem[]>([])
+
+/** 路径管理弹窗。入口在上层配置栏的「路径」那一行，与旧样式保持一致。 */
+const pathsOpen = ref(false)
+const openPaths = () => {
+  pathsOpen.value = true
+}
 
 const searchOpen = ref(false)
 const searching = ref(false)
@@ -77,15 +82,21 @@ const reasonColor = (reason: string) => {
   return 'default'
 }
 
-const loadDevices = async () => {
+/**
+ * 拉取设备列表。
+ *
+ * ``silent`` 供后台轮询用：不转圈、失败也不弹提示——网络抖一下就在用户脸上弹一个
+ * 红条毫无意义，下一轮自然会补上。用户主动触发的加载仍然照常提示。
+ */
+const loadDevices = async ({ silent = false }: { silent?: boolean } = {}) => {
   if (!props.emulatorId) return
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const response = await Emulator20Service.listDevicesApiEmulator2DevicesPost({
       emulatorId: props.emulatorId,
     })
     if (response.code !== 200) {
-      message.error(response.message)
+      if (!silent) message.error(response.message)
       return
     }
     paths.value = response.paths || []
@@ -93,9 +104,9 @@ const loadDevices = async () => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`加载设备列表失败: ${detail}`)
-    message.error(t('emulator2.toast.loadFailed'))
+    if (!silent) message.error(t('emulator2.toast.loadFailed'))
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -222,7 +233,30 @@ const openCreate = () => {
 
 const confirmCreate = async () => {
   if (!createPathId.value) return
-  creating.value = true
+  const path = paths.value.find(item => item.pathId === createPathId.value)
+  const pendingKey = `pending-${Date.now()}`
+
+  // 弹窗立刻关掉，表尾出现一行「新建中」——新建要跑好几秒，把用户堵在弹窗里没意义
+  createOpen.value = false
+  pendingRows.value = [
+    ...pendingRows.value,
+    {
+      pendingKey,
+      slot: '',
+      pathId: createPathId.value,
+      alias: path?.alias ?? '',
+      realType: path?.type ?? '',
+      nativeIndex: '',
+      availability: 'pending',
+      title: createName.value || '',
+      status: 5,
+      adbAddress: '',
+      settings: {},
+      stableMode: false,
+      stableUnsafe: [],
+    } as DeviceRow,
+  ]
+
   try {
     const response = await Emulator20Service.createInstanceApiEmulator2InstancesCreatePost({
       emulatorId: props.emulatorId,
@@ -234,14 +268,14 @@ const confirmCreate = async () => {
       return
     }
     message.success(t('emulator2.toast.createOk', { slot: response.slot }))
-    createOpen.value = false
     await loadDevices()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error('新建实例失败: ' + detail)
     message.error(t('emulator2.toast.createFailed'))
   } finally {
-    creating.value = false
+    // 真实那一行这时已经在 devices 里了，占位行退场
+    pendingRows.value = pendingRows.value.filter(row => row.pendingKey !== pendingKey)
   }
 }
 
@@ -269,25 +303,30 @@ const openDelete = async (device: Emulator2DeviceItem) => {
 
 const confirmDelete = async () => {
   if (!deleteTarget.value) return
-  deleting.value = true
+  const slot = deleteTarget.value.slot
+
+  // 同样不把用户堵在弹窗里：关掉弹窗，那一行原地转圈显示「删除中」
+  deleteOpen.value = false
+  setBusy(slot, 'deleting')
+
   try {
     const response = await Emulator20Service.deleteInstanceApiEmulator2InstancesDeletePost({
       emulatorId: props.emulatorId,
-      slot: deleteTarget.value.slot,
+      slot,
     })
     if (response.code !== 200 || !response.ok) {
       message.error(response.message)
       return
     }
     message.success(t('emulator2.toast.deleteOk'))
-    deleteOpen.value = false
-    await loadDevices()
+    // 确认没了才从列表里去掉；后端已经给该设备号写了墓碑，重新拉也不会再出现
+    devices.value = devices.value.filter(item => item.slot !== slot)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error('删除实例失败: ' + detail)
     message.error(t('emulator2.toast.deleteFailed'))
   } finally {
-    deleting.value = false
+    setBusy(slot, null)
   }
 }
 
@@ -322,16 +361,6 @@ const fieldText = (device: Emulator2DeviceItem, name: FieldName) => {
   const value = fieldValue(device, name)
   return value === null ? '—' : String(value)
 }
-
-/**
- * 「默认」标注。
- *
- * 这不是可有可无的装饰：实例配置里没写 CPU 的雷电实例照样跑在雷电默认的 6 核上，
- * MuMu 没切 custom 模式时跑的也是预设档位而不是存着的自定义值。
- * 不标出来就是在声称用户保存过一个他从没设过的值。
- */
-const fieldState = (device: Emulator2DeviceItem, name: FieldName) =>
-  fieldOf(device, name)?.state ?? 'unset'
 
 const resolutionText = (device: Emulator2DeviceItem) => {
   const w = fieldValue(device, 'width')
@@ -474,10 +503,38 @@ const confirmBatch = async () => {
 
 // ---- 启动 / 关闭 / 隐藏 ----
 
-const busySlots = ref<Set<string>>(new Set())
+/**
+ * 行级忙状态：设备号 → 正在进行的操作。
+ *
+ * 新建和删除都要跑好几秒（雷电删完还得复核一次自动重建），期间那一行必须锁住并
+ * 显示在干什么，否则用户会以为没反应而重复点。
+ */
+type RowBusy = 'creating' | 'deleting' | 'operating'
+const rowBusy = ref<Map<string, RowBusy>>(new Map())
+
+const setBusy = (slot: string, what: RowBusy | null) => {
+  const next = new Map(rowBusy.value)
+  if (what) next.set(slot, what)
+  else next.delete(slot)
+  rowBusy.value = next
+}
+
+const isBusy = (slot: string) => rowBusy.value.has(slot)
+
+/** 新建时还没有设备号，先在表尾占一行占位行，建好后由真实数据替换。 */
+type DeviceRow = Emulator2DeviceItem & { pendingKey?: string }
+const pendingRows = ref<DeviceRow[]>([])
+
+const tableRows = computed<DeviceRow[]>(() => [...devices.value, ...pendingRows.value])
+
+const rowLabel = (row: DeviceRow) => {
+  if (row.pendingKey) return t('emulator2.busy.creating')
+  const what = rowBusy.value.get(row.slot)
+  return what ? t(`emulator2.busy.${what}`) : ''
+}
 
 const operate = async (device: Emulator2DeviceItem, action: EmulatorOperateIn.operate) => {
-  busySlots.value = new Set(busySlots.value).add(device.slot)
+  setBusy(device.slot, 'operating')
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: props.emulatorId,
@@ -494,9 +551,7 @@ const operate = async (device: Emulator2DeviceItem, action: EmulatorOperateIn.op
     logger.error(`操作设备 #${device.slot} 失败: ${detail}`)
     message.error(t('emulator2.toast.operateFailed'))
   } finally {
-    const next = new Set(busySlots.value)
-    next.delete(device.slot)
-    busySlots.value = next
+    setBusy(device.slot, null)
   }
 }
 
@@ -505,61 +560,27 @@ const isOnline = (device: Emulator2DeviceItem) =>
 const isReachable = (device: Emulator2DeviceItem) => device.availability === 'ok'
 
 // ---- 稳定模式 ----
+//
+// 开关本身在上层的配置栏里（它是配置级设置，不该在设备表每行重复一遍）。
+// 这里只提供「按当前配置把所有设备压到安全状态」的动作，由父组件在开关打开时调用。
 
-const stableOpen = ref(false)
-const stableApplying = ref(false)
-/** 只处理这台；为 null 表示全部。 */
-const stableTarget = ref<Emulator2DeviceItem | null>(null)
-const stableResults = ref<Emulator2BatchResult[]>([])
-
-const openStable = (device: Emulator2DeviceItem | null) => {
-  stableTarget.value = device
-  stableResults.value = []
-  stableOpen.value = true
-}
-
-/** 这次会动到哪几台。已经安全的不列出来。 */
-const stablePending = computed(() =>
-  (stableTarget.value ? [stableTarget.value] : devices.value).filter(
-    item => item.availability === 'ok' && !item.stableMode
-  )
-)
-
-/** 干扰项字段名 → 用户文案。后端只给字段名，措辞在这里定。 */
-const stableItemLabel = (field: string) => {
-  const key = `emulator2.stableItem.${field}`
-  const text = t(key)
-  return text === key ? field : text
-}
-
-const confirmStable = async () => {
-  stableApplying.value = true
+const applyStableMode = async (): Promise<number | null> => {
   try {
     const response = await Emulator20Service.applyStableModeApiEmulator2StableModeApplyPost({
       emulatorId: props.emulatorId,
-      slots: stableTarget.value ? [stableTarget.value.slot] : [],
+      slots: [],
     })
     if (response.code !== 200) {
       message.error(response.message)
-      return
-    }
-    const failed = response.failCount ?? 0
-    if (failed > 0) {
-      stableResults.value = (response.results || []).filter(item => !item.ok)
-      message.warning(
-        t('emulator2.toast.batchPartial', { ok: response.okCount ?? 0, fail: failed })
-      )
-    } else {
-      message.success(t('emulator2.toast.stableOk', { count: response.okCount ?? 0 }))
-      stableOpen.value = false
+      return null
     }
     await loadDevices()
+    return response.okCount ?? 0
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`应用稳定模式失败: ${detail}`)
     message.error(t('emulator2.toast.stableFailed'))
-  } finally {
-    stableApplying.value = false
+    return null
   }
 }
 
@@ -636,64 +657,95 @@ const deviceColumns = computed(() => [
     key: 'adb',
     ellipsis: true,
   },
-  { title: t('emulator2.colResolution'), key: 'resolution', width: 130 },
+  { title: t('emulator2.colResolution'), key: 'resolution', width: 120 },
+  { title: t('emulator2.colDpi'), key: 'dpi', width: 90 },
   { title: t('emulator2.colCpu'), key: 'cpu', width: 80 },
   { title: t('emulator2.colMemory'), key: 'memory', width: 100 },
   { title: t('emulator2.colFps'), key: 'fps', width: 80 },
-  { title: t('emulator2.colStable'), key: 'stable', width: 110 },
   { title: t('emulator.colAction'), key: 'action', width: 230 },
 ])
 
-watch(() => props.emulatorId, loadDevices)
-onMounted(loadDevices)
+watch(
+  () => props.emulatorId,
+  () => loadDevices()
+)
 
-defineExpose({ reload: loadDevices })
+/**
+ * 静默轮询。
+ *
+ * 去掉了刷新按钮：我们自己发起的增删改查，结果自己知道，改完就地更新即可；
+ * 真正需要跟进的是界面之外的变化（用户自己在模拟器里开了一台）。
+ * 间隔放到 15 秒——每轮都要逐台读设置，MuMu 那边每次是一个子进程。
+ */
+const AUTO_REFRESH_MS = 15000
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  loadDevices()
+  refreshTimer = setInterval(() => {
+    // 有行正在增删时不打扰：那会儿列表正被我们自己改
+    if (!loading.value && !rowBusy.value.size && !pendingRows.value.length) {
+      loadDevices({ silent: true })
+    }
+  }, AUTO_REFRESH_MS)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+})
+
+defineExpose({ reload: loadDevices, applyStableMode, openPaths })
 </script>
 
 <template>
   <div class="emulator2-panel">
-    <div class="section-header">
-      <h3>
-        {{ t('emulator2.pathsTitle') }}
+    <!-- 模拟器路径管理：整块搬进二级弹窗，主页面只留设备表 -->
+    <a-modal
+      v-model:open="pathsOpen"
+      :title="t('emulator2.pathsTitle')"
+      width="760px"
+      :footer="null"
+    >
+      <div class="section-header" style="margin-top: 0">
         <span class="section-hint">{{ t('emulator2.pathsHint') }}</span>
-      </h3>
-      <a-button size="small" type="primary" ghost :icon="h(SearchOutlined)" @click="openSearch">
-        {{ t('emulator2.searchAndAdd') }}
-      </a-button>
-    </div>
+        <a-button size="small" type="primary" ghost :icon="h(SearchOutlined)" @click="openSearch">
+          {{ t('emulator2.searchAndAdd') }}
+        </a-button>
+      </div>
 
-    <a-empty v-if="!paths.length" :description="t('emulator2.noPath')">
-      <a-button type="primary" :icon="h(PlusOutlined)" @click="openSearch">
-        {{ t('emulator2.searchAndAdd') }}
-      </a-button>
-    </a-empty>
+      <a-empty v-if="!paths.length" :description="t('emulator2.noPath')">
+        <a-button type="primary" :icon="h(PlusOutlined)" @click="openSearch">
+          {{ t('emulator2.searchAndAdd') }}
+        </a-button>
+      </a-empty>
 
-    <div v-else class="path-grid">
-      <a-card v-for="path in paths" :key="path.pathId" size="small" class="path-card">
-        <template #title>
-          <a-space :size="6">
-            <a-tag color="purple">{{ typeLabel(path.type) }}</a-tag>
-            <span class="path-alias">{{ path.alias }}</span>
-            <span class="path-version">{{ path.version }}</span>
-          </a-space>
-        </template>
-        <template #extra>
-          <a-button type="text" size="small" danger @click="openRemove(path)">
-            {{ t('emulator2.removePath') }}
-          </a-button>
-        </template>
-        <div class="path-line">{{ path.installPath }}</div>
-        <div class="path-sub">
-          {{
-            t('emulator2.slotRange', {
-              slots: (path.slots ?? []).map(s => `#${s}`).join(' ') || '—',
-            })
-          }}
-        </div>
-      </a-card>
-    </div>
+      <div v-else class="path-grid">
+        <a-card v-for="path in paths" :key="path.pathId" size="small" class="path-card">
+          <template #title>
+            <a-space :size="6">
+              <a-tag color="purple">{{ typeLabel(path.type) }}</a-tag>
+              <span class="path-alias">{{ path.alias }}</span>
+              <span class="path-version">{{ path.version }}</span>
+            </a-space>
+          </template>
+          <template #extra>
+            <a-button type="text" size="small" danger @click="openRemove(path)">
+              {{ t('emulator2.removePath') }}
+            </a-button>
+          </template>
+          <div class="path-line">{{ path.installPath }}</div>
+          <div class="path-sub">
+            {{
+              t('emulator2.slotRange', {
+                slots: (path.slots ?? []).map(s => `#${s}`).join(' ') || '—',
+              })
+            }}
+          </div>
+        </a-card>
+      </div>
+    </a-modal>
 
-    <div class="section-header" style="margin-top: 20px">
+    <div class="section-header">
       <h3>
         {{ t('emulator.deviceList') }}
         <span class="section-hint">{{ t('emulator2.deviceHint') }}</span>
@@ -711,22 +763,11 @@ defineExpose({ reload: loadDevices })
         </a-button>
         <a-button
           size="small"
-          :icon="h(SafetyCertificateOutlined)"
-          :disabled="!devices.length"
-          @click="openStable(null)"
-        >
-          {{ t('emulator2.stableMode') }}
-        </a-button>
-        <a-button
-          size="small"
           :icon="h(SettingOutlined)"
           :disabled="!devices.length"
           @click="openBatch"
         >
           {{ t('emulator2.batchSettings') }}
-        </a-button>
-        <a-button size="small" :icon="h(ReloadOutlined)" :loading="loading" @click="loadDevices">
-          {{ t('emulator2.refresh') }}
         </a-button>
       </a-space>
     </div>
@@ -735,9 +776,9 @@ defineExpose({ reload: loadDevices })
       <a-empty v-if="!devices.length" :description="t('emulator.noDevice')" />
       <a-table
         v-else
-        :data-source="devices"
+        :data-source="tableRows"
         :columns="deviceColumns"
-        :row-key="(record: Emulator2DeviceItem) => record.slot"
+        :row-key="(record: DeviceRow) => record.pendingKey ?? record.slot"
         :pagination="false"
         size="small"
         :scroll="tableScroll"
@@ -753,44 +794,32 @@ defineExpose({ reload: loadDevices })
             </div>
           </template>
           <template v-else-if="column.key === 'slot'">
-            <strong>#{{ record.slot }}</strong>
+            <strong v-if="record.slot">#{{ record.slot }}</strong>
+            <span v-else>—</span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <a-tag :color="deviceStatus(record).color">{{ deviceStatus(record).text }}</a-tag>
+            <a-tag v-if="rowLabel(record)" color="processing">
+              <LoadingOutlined style="margin-right: 4px" />
+              {{ rowLabel(record) }}
+            </a-tag>
+            <a-tag v-else :color="deviceStatus(record).color">
+              {{ deviceStatus(record).text }}
+            </a-tag>
           </template>
           <template v-else-if="column.key === 'resolution'">
-            <div class="setting-cell">
-              <span>{{ resolutionText(record) }}</span>
-              <span class="setting-sub">
-                {{ fieldText(record, 'dpi') }} dpi
-                <a-tag v-if="fieldState(record, 'dpi') === 'default'" size="small">
-                  {{ t('emulator2.stateDefault') }}
-                </a-tag>
-              </span>
-            </div>
+            <span>{{ resolutionText(record) }}</span>
+          </template>
+          <template v-else-if="column.key === 'dpi'">
+            <span>{{ fieldText(record, 'dpi') }}</span>
           </template>
           <template v-else-if="column.key === 'cpu'">
             <span>{{ fieldText(record, 'cpu') }}</span>
-            <a-tag v-if="fieldState(record, 'cpu') === 'default'" size="small">
-              {{ t('emulator2.stateDefault') }}
-            </a-tag>
           </template>
           <template v-else-if="column.key === 'memory'">
             <span>{{ fieldText(record, 'memoryMb') }}</span>
-            <a-tag v-if="fieldState(record, 'memoryMb') === 'default'" size="small">
-              {{ t('emulator2.stateDefault') }}
-            </a-tag>
           </template>
           <template v-else-if="column.key === 'fps'">
             <span>{{ fieldText(record, 'fps') }}</span>
-          </template>
-          <template v-else-if="column.key === 'stable'">
-            <a-tag v-if="record.stableMode" color="success">
-              {{ t('emulator2.stableOn') }}
-            </a-tag>
-            <a-tooltip v-else :title="(record.stableUnsafe || []).map(stableItemLabel).join(' / ')">
-              <a-tag color="warning">{{ t('emulator2.stableOff') }}</a-tag>
-            </a-tooltip>
           </template>
           <template v-else-if="column.key === 'action'">
             <a-space :size="4">
@@ -799,8 +828,8 @@ defineExpose({ reload: loadDevices })
                   size="small"
                   type="text"
                   :icon="h(PlayCircleOutlined)"
-                  :loading="busySlots.has(record.slot)"
-                  :disabled="!isReachable(record) || isOnline(record)"
+                  :loading="rowBusy.get(record.slot) === 'operating'"
+                  :disabled="isBusy(record.slot) || !isReachable(record) || isOnline(record)"
                   @click="operate(record, EmulatorOperateIn.operate.OPEN)"
                 />
               </a-tooltip>
@@ -809,8 +838,8 @@ defineExpose({ reload: loadDevices })
                   size="small"
                   type="text"
                   :icon="h(PoweroffOutlined)"
-                  :loading="busySlots.has(record.slot)"
-                  :disabled="!isOnline(record)"
+                  :loading="rowBusy.get(record.slot) === 'operating'"
+                  :disabled="isBusy(record.slot) || !isOnline(record)"
                   @click="operate(record, EmulatorOperateIn.operate.CLOSE)"
                 />
               </a-tooltip>
@@ -819,26 +848,9 @@ defineExpose({ reload: loadDevices })
                   size="small"
                   type="text"
                   :icon="h(EyeInvisibleOutlined)"
-                  :loading="busySlots.has(record.slot)"
-                  :disabled="!isOnline(record)"
+                  :loading="rowBusy.get(record.slot) === 'operating'"
+                  :disabled="isBusy(record.slot) || !isOnline(record)"
                   @click="operate(record, EmulatorOperateIn.operate.SHOW)"
-                />
-              </a-tooltip>
-              <a-tooltip
-                :title="
-                  !isReachable(record)
-                    ? blockedReason(record)
-                    : record.stableMode
-                      ? t('emulator2.stableAlready')
-                      : t('emulator2.stableApply')
-                "
-              >
-                <a-button
-                  size="small"
-                  type="text"
-                  :icon="h(SafetyCertificateOutlined)"
-                  :disabled="!isReachable(record) || record.stableMode"
-                  @click="openStable(record)"
                 />
               </a-tooltip>
               <a-tooltip
@@ -848,7 +860,7 @@ defineExpose({ reload: loadDevices })
                   size="small"
                   type="text"
                   :icon="h(SettingOutlined)"
-                  :disabled="!isReachable(record)"
+                  :disabled="isBusy(record.slot) || !isReachable(record)"
                   @click="openSettings(record)"
                 />
               </a-tooltip>
@@ -860,7 +872,8 @@ defineExpose({ reload: loadDevices })
                   type="text"
                   danger
                   :icon="h(DeleteOutlined)"
-                  :disabled="!canDelete(record)"
+                  :loading="rowBusy.get(record.slot) === 'deleting'"
+                  :disabled="isBusy(record.slot) || !canDelete(record)"
                   @click="openDelete(record)"
                 />
               </a-tooltip>
@@ -1053,69 +1066,6 @@ defineExpose({ reload: loadDevices })
         size="small"
         bordered
         :data-source="batchFailures"
-        :header="t('emulator2.batchFailures')"
-        style="margin-top: 12px"
-      >
-        <template #renderItem="{ item }">
-          <a-list-item>
-            <span>#{{ item.slot }}</span>
-            <template #actions>
-              <span class="batch-fail-reason">{{ item.message }}</span>
-            </template>
-          </a-list-item>
-        </template>
-      </a-list>
-    </a-modal>
-
-    <!-- 稳定模式 -->
-    <a-modal
-      v-model:open="stableOpen"
-      :title="t('emulator2.stableTitle')"
-      width="620px"
-      :confirm-loading="stableApplying"
-      :ok-text="t('emulator2.stableApply')"
-      :ok-button-props="{ disabled: !stablePending.length }"
-      @ok="confirmStable"
-    >
-      <a-alert
-        type="info"
-        show-icon
-        :message="t('emulator2.stableIntro')"
-        style="margin-bottom: 12px"
-      />
-      <a-empty v-if="!stablePending.length" :description="t('emulator2.stableNothing')" />
-      <a-list
-        v-else
-        size="small"
-        bordered
-        :data-source="stablePending"
-        :header="t('emulator2.stableWillChange', { count: stablePending.length })"
-      >
-        <template #renderItem="{ item }">
-          <a-list-item>
-            <span>
-              <strong>#{{ item.slot }}</strong>
-              {{ item.title || item.alias }}
-            </span>
-            <template #actions>
-              <span class="stable-items">
-                {{ (item.stableUnsafe || []).map(stableItemLabel).join(' / ') }}
-              </span>
-            </template>
-          </a-list-item>
-        </template>
-      </a-list>
-      <a-alert
-        type="warning"
-        show-icon
-        :message="t('emulator2.stableOneWay')"
-        style="margin-top: 12px"
-      />
-      <a-list
-        v-if="stableResults.length"
-        size="small"
-        bordered
-        :data-source="stableResults"
         :header="t('emulator2.batchFailures')"
         style="margin-top: 12px"
       >

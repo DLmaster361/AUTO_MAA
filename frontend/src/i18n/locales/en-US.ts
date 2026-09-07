@@ -1778,6 +1778,16 @@ export default {
       '{count} of them are running. Their next run will fail and ask you to pick a device again.',
     affectedScripts: 'Affected scripts',
     running: 'Running',
+    colDpi: 'DPI',
+    managePaths: 'Manage emulators',
+    pathsEntryHint: 'Add or remove the emulator installs this config manages',
+    stableSwitchTip:
+      'Turns off emulator features that interfere with screenshot recognition (high frame rate, background keep-alive, vertical sync, the FPS overlay, auto-rotate, and MuMu VRAM policy). While on, it is reapplied every time an instance starts, so new instances are covered too. Turning it off just stops reapplying; it does not put these back.',
+    busy: {
+      creating: 'Creating',
+      deleting: 'Deleting',
+      operating: 'Working',
+    },
     blocked: {
       unavailable: 'This emulator is unreachable right now',
       missing: 'This instance cannot be found',

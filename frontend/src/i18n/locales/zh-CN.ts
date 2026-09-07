@@ -1688,6 +1688,16 @@ export default {
       '其中 {count} 个脚本正在运行。移除后它们的下一次执行会失败并提示重新选择设备。',
     affectedScripts: '受影响的脚本',
     running: '运行中',
+    colDpi: 'DPI',
+    managePaths: '管理模拟器',
+    pathsEntryHint: '在这里添加、移除本配置纳管的模拟器安装',
+    stableSwitchTip:
+      '关掉会干扰截图识别的模拟器功能（高帧率 / 动态调帧、后台保活、垂直同步、帧率浮层、自动旋转，以及 MuMu 的显存使用策略）。开着时每次启动实例都会确保一次，新建的实例也会跟上。关掉只是不再确保，不会把这些项改回去。',
+    busy: {
+      creating: '新建中',
+      deleting: '删除中',
+      operating: '处理中',
+    },
     blocked: {
       unavailable: '该模拟器暂时不可用，无法操作',
       missing: '找不到这台实例',

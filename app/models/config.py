@@ -347,6 +347,10 @@ class EmulatorConfig(ConfigBase):
         ## [{"slot", "pathId", "nativeIndex", "state": "active"|"tombstone"}]
         ## 槽位号在本配置内单调递增分配, 移除路径写墓碑, 号码永不复用
         self.Info_Slots = ConfigItem("Info", "Slots", "[]", JSONValidator(list))
+        ## Emulator 2.0 的稳定模式：开着就把会干扰截图识别的模拟器功能压住,
+        ## 启动实例前顺带确保一次, 这样新建的实例也会跟着进入安全状态。
+        ## 关掉只是不再确保, **不会把那些项改回去**——不知道用户原本想要什么值。
+        self.Info_StableMode = ConfigItem("Info", "StableMode", False, BoolValidator())
         ## 老板键快捷键配置
         self.Info_BossKey = ConfigItem(
             "Info", "BossKey", "[ ]", JSONValidator(list), legacy_group="Data"
@@ -594,9 +598,7 @@ def _tag_remained_days(config: ConfigBase) -> dict:
         tag_color = "green"
     return {
         "text": (
-            f"剩余天数：{remained_day}天"
-            if remained_day >= 0
-            else "剩余天数：无期限"
+            f"剩余天数：{remained_day}天" if remained_day >= 0 else "剩余天数：无期限"
         ),
         "color": tag_color,
     }
@@ -606,9 +608,7 @@ def _tag_notes(config: ConfigBase) -> dict:
     """备注标签。"""
     notes = config.get("Info", "Notes")
     return {
-        "text": (
-            f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-        ),
+        "text": (f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."),
         "color": "pink",
     }
 
@@ -628,9 +628,7 @@ class MaaUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", ScriptUserModeValidator())
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
             "Info",
@@ -1418,9 +1416,7 @@ class SrcUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", ScriptUserModeValidator())
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -3102,9 +3098,7 @@ class OkNteUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", ScriptUserModeValidator())
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
@@ -3248,9 +3242,7 @@ class BetterGIUserConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         ## BetterGI「一条龙」配置名，对应脚本一条龙页面中已保存的配置名称
-        self.Task_OneDragonConfigName = ConfigItem(
-            "Task", "OneDragonConfigName", ""
-        )
+        self.Task_OneDragonConfigName = ConfigItem("Task", "OneDragonConfigName", "")
 
         ## OneDragon -------------------------------------------------------
         ## 一条龙要执行的内置配置组（按组名，默认全部 8 组开启）

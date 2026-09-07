@@ -194,6 +194,18 @@ class Emulator2Manager(DeviceBase):
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         manager, native_index = await self._dispatch(idx)
+
+        # 稳定模式是配置级开关，启动前顺带确保一次：这样在模拟器自己那边新建的实例，
+        # 或者用户后来改回去的项，都会在真正跑任务之前被压住，而不是只在点开关的
+        # 那一刻生效。已经安全时 apply 不写任何键，代价只是一次读。
+        if self.config.get("Info", "StableMode"):
+            try:
+                changed = await manager.apply_stable_mode(native_index)
+                if changed:
+                    logger.info(f"设备 #{idx} 启动前已进入稳定模式，改动: {changed}")
+            except Exception as e:  # noqa: BLE001 - 压不住不该拦住启动
+                logger.warning(f"设备 #{idx} 应用稳定模式失败，继续启动: {e}")
+
         return await manager.open(native_index, package_name)
 
     async def close(self, idx: str) -> DeviceStatus:

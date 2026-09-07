@@ -89,7 +89,8 @@
                 "MaaEnd专项 修复更新包缺少指纹校验的问题，更新完成后进行指纹校验 by [@HarcoChen](https://github.com/HarcoChen)",
                 "MAA专项 修复代理接管时未强制开启开始唤醒账号切换的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "MaaFW专项 修复脚本侧强制停止被记成任务完成的问题 by [@qiyinxi](https://github.com/qiyinxi)",
-                "OK-WW专项 修复启动器自启动未被强制开启的问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "OK-WW专项 修复启动器自启动未被强制开启的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ]
         },
         "v5.5.0-beta.1": {

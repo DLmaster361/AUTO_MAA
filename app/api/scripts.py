@@ -1136,14 +1136,9 @@ async def prepare_maafw_agent_env(
                     "项目文件自上次准备以来没有变化，沿用已就绪的运行环境"
                     + (f"（上次准备于 {prepared_at}）" if prepared_at else "")
                 )
-                publish_progress(
-                    {
-                        "stage": "ready",
-                        "status": "success",
-                        "message": "MFW 运行环境已就绪",
-                        "percent": 100.0,
-                    }
-                )
+                # 命中时不推 ready 进度：没有进度可言，而那条 WS 与本次响应
+                # 抢着写同一行提示，谁后到谁说了算——推了反而会把响应里带
+                # MaaFramework 版本号的那句盖成一句干巴巴的「已就绪」。
                 return MaaFWAgentEnvPrepareOut(
                     message="MFW 运行环境已就绪",
                     data=_maafw_agent_env_prepare_data(

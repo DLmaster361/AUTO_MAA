@@ -88,6 +88,46 @@ class MonitorInfo:
         )
 
 
+# 用私有的 WinDLL 实例，不是 `_user32`：后者是进程级共享缓存，在它上面
+# 声明 restype 会波及仓库里其它同样用它的模块（如 OkNte 的 launcher_start）。
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_shcore = ctypes.WinDLL("shcore", use_last_error=True)
+
+
+def _declare_prototypes() -> None:
+    """显式声明返回类型。
+
+    ctypes 默认 restype=c_int，会把返回句柄的函数截成 32 位。截断后的失败往往不像
+    失败——比如设备枚举会表现成「一个都没有」，和「真的没有」无法区分。
+    老系统上缺失的函数用 AttributeError 跳过即可。
+    """
+
+    for dll, name, restype, argtypes in (
+        (_user32, "SetThreadDpiAwarenessContext", ctypes.c_void_p, [ctypes.c_void_p]),
+        (_user32, "GetWindowDpiAwarenessContext", ctypes.c_void_p, [wintypes.HWND]),
+        (_user32, "GetDpiForWindow", wintypes.UINT, [wintypes.HWND]),
+        (
+            _user32,
+            "MonitorFromWindow",
+            wintypes.HMONITOR,
+            [wintypes.HWND, wintypes.DWORD],
+        ),
+        (_user32, "GetMonitorInfoW", wintypes.BOOL, None),
+        (_user32, "EnumDisplayMonitors", wintypes.BOOL, None),
+        (_user32, "AdjustWindowRectExForDpi", wintypes.BOOL, None),
+        (_user32, "AdjustWindowRectEx", wintypes.BOOL, None),
+        (_shcore, "GetDpiForMonitor", ctypes.c_long, None),
+    ):
+        with suppress(AttributeError, OSError):
+            func = getattr(dll, name)
+            func.restype = restype
+            if argtypes is not None:
+                func.argtypes = argtypes
+
+
+_declare_prototypes()
+
+
 @contextmanager
 def per_monitor_dpi():
     """临时切到 per-monitor DPI 感知，保证拿到的是物理像素。
@@ -96,7 +136,7 @@ def per_monitor_dpi():
     会影响同进程里其它按逻辑像素工作的代码。
     """
 
-    user32 = ctypes.windll.user32
+    user32 = _user32
     previous = None
     with suppress(AttributeError, OSError):
         # Windows 10 1703 以下没有这个函数，拿不到就按当前感知级别继续。
@@ -123,7 +163,7 @@ def window_dpi_context(hwnd: int):
     按窗口自己的坐标系去设，游戏拿到的就是它认知里的 1280x720，比例精确是 16:9。
     """
 
-    user32 = ctypes.windll.user32
+    user32 = _user32
     previous = None
     with suppress(AttributeError, OSError):
         # Windows 10 1607+ 才有这两个函数；取不到就按当前感知级别继续。
@@ -142,7 +182,7 @@ def dpi_for_window(hwnd: int) -> int:
     """窗口自身坐标系下的 DPI。DPI-unaware 的窗口固定是 96。"""
 
     with suppress(AttributeError, OSError):
-        dpi = ctypes.windll.user32.GetDpiForWindow(wintypes.HWND(hwnd))
+        dpi = _user32.GetDpiForWindow(wintypes.HWND(hwnd))
         if dpi:
             return int(dpi)
     return DEFAULT_DPI
@@ -152,7 +192,7 @@ def _monitor_dpi(handle: int) -> int:
     dpi_x = wintypes.UINT()
     dpi_y = wintypes.UINT()
     try:
-        result = ctypes.windll.shcore.GetDpiForMonitor(
+        result = _shcore.GetDpiForMonitor(
             wintypes.HMONITOR(handle),
             MDT_EFFECTIVE_DPI,
             ctypes.byref(dpi_x),
@@ -168,9 +208,7 @@ def _monitor_dpi(handle: int) -> int:
 def _read_monitor(handle: int) -> MonitorInfo | None:
     info = _MONITORINFOEXW()
     info.cbSize = ctypes.sizeof(_MONITORINFOEXW)
-    if not ctypes.windll.user32.GetMonitorInfoW(
-        wintypes.HMONITOR(handle), ctypes.byref(info)
-    ):
+    if not _user32.GetMonitorInfoW(wintypes.HMONITOR(handle), ctypes.byref(info)):
         return None
     return MonitorInfo(
         device=info.szDevice,
@@ -205,9 +243,7 @@ def list_monitors() -> list[MonitorInfo]:
 
     with per_monitor_dpi():
         try:
-            ctypes.windll.user32.EnumDisplayMonitors(
-                None, None, _MONITORENUMPROC(callback), 0
-            )
+            _user32.EnumDisplayMonitors(None, None, _MONITORENUMPROC(callback), 0)
         except OSError:
             return []
     return monitors
@@ -220,7 +256,7 @@ def monitor_from_window(hwnd: int) -> MonitorInfo | None:
         return None
     with per_monitor_dpi():
         try:
-            handle = ctypes.windll.user32.MonitorFromWindow(
+            handle = _user32.MonitorFromWindow(
                 wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST
             )
         except OSError:
@@ -246,7 +282,7 @@ def monitor_work_in_current_context(
     target = handle
     if not target:
         with suppress(OSError):
-            target = ctypes.windll.user32.MonitorFromWindow(
+            target = _user32.MonitorFromWindow(
                 wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST
             )
     if not target:
@@ -254,9 +290,7 @@ def monitor_work_in_current_context(
 
     info = _MONITORINFOEXW()
     info.cbSize = ctypes.sizeof(_MONITORINFOEXW)
-    if not ctypes.windll.user32.GetMonitorInfoW(
-        wintypes.HMONITOR(target), ctypes.byref(info)
-    ):
+    if not _user32.GetMonitorInfoW(wintypes.HMONITOR(target), ctypes.byref(info)):
         return None
     return (info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom)
 
@@ -275,7 +309,7 @@ def frame_size_for_client(
     """
 
     rect = _RECT(0, 0, int(client_width), int(client_height))
-    user32 = ctypes.windll.user32
+    user32 = _user32
     adjusted = False
     with suppress(AttributeError, OSError):
         # Windows 10 1607+ 才有带 DPI 的版本。
@@ -334,3 +368,20 @@ def describe_monitors() -> str:
     if not monitors:
         return "未能枚举到显示器"
     return "; ".join(monitor.describe() for monitor in monitors)
+
+
+# 显式声明公开面：`platform/display.py` 用星号导入本模块，不声明的话 ctypes、wintypes
+# 这些实现细节会一起泄漏进 `app.utils.platform.display` 命名空间。
+__all__ = [
+    "MonitorInfo",
+    "per_monitor_dpi",
+    "window_dpi_context",
+    "dpi_for_window",
+    "list_monitors",
+    "monitor_from_window",
+    "monitor_work_in_current_context",
+    "frame_size_for_client",
+    "can_host_client",
+    "find_host_monitor",
+    "describe_monitors",
+]

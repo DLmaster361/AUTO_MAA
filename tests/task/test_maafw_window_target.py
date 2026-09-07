@@ -145,3 +145,49 @@ def test_fit_accounts_for_dpi_scaling(monkeypatch: pytest.MonkeyPatch) -> None:
     )._win32_window_plan()
     assert plan_96[0] == (1920, 1080)
     assert plan_192 is None or plan_192[0] != (1920, 1080)
+
+
+def test_capacity_gate_is_silent_when_reshaping_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """没开整形就不该拦——用户自己管窗口时 MAS 无从判断多大算够。"""
+
+    task = _task("Off", [_monitor(1024, 768)], monkeypatch)
+    assert task._check_desktop_capacity() is None
+
+
+def test_capacity_gate_passes_when_some_monitor_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _task("1280x720", [_monitor(1920, 1080)], monkeypatch)
+    assert task._check_desktop_capacity() is None
+
+
+def test_capacity_gate_reports_target_and_actual_monitors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """拦下来时必须说清楚要多大、现在有什么，否则用户无从下手。"""
+
+    from app.task.MaaFW.tools.embedded import runner_task
+
+    monkeypatch.setattr(
+        runner_task, "describe_monitors", lambda: "DISPLAY1 1024x768(可用 1024x728)"
+    )
+    task = _task("1920x1080", [_monitor(1024, 768)], monkeypatch)
+    message = task._check_desktop_capacity()
+
+    assert message is not None
+    assert "1920x1080" in message, "要说清楚需要多大"
+    assert "1024x768" in message, "要说清楚现在有什么"
+
+
+def test_capacity_gate_uses_min_client_for_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fit 模式按最低档 1280x720 判定，不按最大档——否则小屏会被误拦。"""
+
+    task = _task("Fit", [_monitor(1600, 900)], monkeypatch)
+    assert task._check_desktop_capacity() is None
+
+    task = _task("Fit", [_monitor(1024, 768)], monkeypatch)
+    assert task._check_desktop_capacity() is not None

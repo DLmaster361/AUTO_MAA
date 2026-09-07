@@ -101,6 +101,33 @@ def _current_month_marker(now: datetime) -> str:
     return now.strftime("%Y-%m")
 
 
+def _is_marked_today(completed_date: str, now: datetime) -> bool:
+    """判断「每天一次」类完成标记是否已落在本游戏日（UTC+4）内。
+
+    MAS 托管会还原 MAA 目录，MAA 自带的每日去重（如借战、访问好友）
+    不跨运行生效，因此由 MAS 在日志中检测完成后自行记录。
+    """
+
+    return completed_date == now.strftime("%Y-%m-%d")
+
+
+# 信用收支的每日子任务：任务参数键 → 完成日志标记 → 用户存档中的日期字段
+_DAILY_MALL_ITEMS = (
+    (
+        "CreditFight",
+        ("完成任务: 借助战打 OF-1 赚信用", "完成任务: 信用作战"),
+        "LastCreditFightDate",
+        "借战赚信用",
+    ),
+    (
+        "VisitFriends",
+        ("完成任务: 访问好友",),
+        "LastVisitFriendsDate",
+        "访问好友",
+    ),
+)
+
+
 def _should_run_annihilation(
     start_weekday: str,
     completed_week: str,
@@ -405,6 +432,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
+        self._daily_mall_recorded: set[str] = set()
 
     async def check(self) -> str:
 
@@ -780,6 +808,24 @@ class AutoProxyTask(TaskExecuteBase):
                 source_task=task_set["DepotMaintain"],
             )
 
+        # 信用收支的每日子任务（借战/访问好友）当日已执行过时关闭：
+        # MAS 托管会还原 MAA 目录，MAA 自带的每日去重不跨运行生效，
+        # 避免同一天重复打 OF-1、重复访问好友
+        for item_key, completion_markers, data_key, item_name in _DAILY_MALL_ITEMS:
+            if (
+                self.mode == "Routine"
+                and task_set["Mall"].get(item_key)
+                and _is_marked_today(
+                    self.cur_user_config.get("Data", data_key),
+                    datetime.now(tz=UTC4),
+                )
+            ):
+                task_set["Mall"][item_key] = False
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 本次跳过{item_name}："
+                    f"最近执行={self.cur_user_config.get('Data', data_key)}"
+                )
+
         # 关闭所有定时
         for i in range(1, 9):
             global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
@@ -1153,6 +1199,20 @@ class AutoProxyTask(TaskExecuteBase):
                 _current_month_marker(datetime.now(tz=UTC4)),
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
+
+        # MAA 完成每日子任务时输出完成日志，据此记录执行日期（幂等）
+        if self.mode == "Routine":
+            for _item_key, completion_markers, data_key, item_name in _DAILY_MALL_ITEMS:
+                if data_key not in self._daily_mall_recorded and any(
+                    marker in log for marker in completion_markers
+                ):
+                    self._daily_mall_recorded.add(data_key)
+                    await self.cur_user_config.set(
+                        "Data",
+                        data_key,
+                        datetime.now(tz=UTC4).strftime("%Y-%m-%d"),
+                    )
+                    logger.info(f"用户 {self.cur_user_item.name} 已完成{item_name}")
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"

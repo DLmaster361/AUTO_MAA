@@ -747,6 +747,14 @@ class MaaUserConfig(ConfigBase):
         self.Data_AnnihilationCompletedWeek = ConfigItem(
             "Data", "AnnihilationCompletedWeek", "2000-W01"
         )
+        ## 上次完成借战赚信用（OF-1）的日期（形如 "2026-09-07"）
+        self.Data_LastCreditFightDate = ConfigItem(
+            "Data", "LastCreditFightDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 上次完成访问好友的日期（形如 "2026-09-07"）
+        self.Data_LastVisitFriendsDate = ConfigItem(
+            "Data", "LastVisitFriendsDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
         ## 上次完成绿票商店购买的月份
         self.Data_GreenTicketStoreMonth = ConfigItem(
             "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")

@@ -665,6 +665,12 @@ class MaaUserConfig_Data(BaseModel):
     AnnihilationCompletedWeek: Optional[str] = Field(
         default=None, description="剿灭达到周上限时的 ISO 周"
     )
+    LastCreditFightDate: Optional[str] = Field(
+        default=None, description="上次完成借战赚信用（OF-1）的日期"
+    )
+    LastVisitFriendsDate: Optional[str] = Field(
+        default=None, description="上次完成访问好友的日期"
+    )
     GreenTicketStoreMonth: Optional[str] = Field(
         default=None, description="上次完成绿票商店购买的月份"
     )

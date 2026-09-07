@@ -8,6 +8,14 @@ export type MaaUserConfig_Data = {
      */
     AnnihilationCompletedWeek?: (string | null);
     /**
+     * 上次完成借战赚信用（OF-1）的日期
+     */
+    LastCreditFightDate?: (string | null);
+    /**
+     * 上次完成访问好友的日期
+     */
+    LastVisitFriendsDate?: (string | null);
+    /**
      * 上次完成绿票商店购买的月份
      */
     GreenTicketStoreMonth?: (string | null);

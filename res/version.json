@@ -50,6 +50,7 @@
                 "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
             ],
             "修复BUG": [
+                "MAA专项 修复信用收支的借战赚信用与访问好友在 MAS 托管下每日去重失效、同一天重复执行的问题：现在每个子任务每天最多执行一次，不影响领取信用与信用购物 by [@jinghero](https://github.com/jinghero)",
                 "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "修复同时打开两个前端窗口时互相抢占后端连接、每隔几秒断线并反复弹出提示的问题：后开的窗口接管连接，先开的窗口停止重连并只提示一次 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 修复 MaaEnd 更新后已完成任务被误判失败并重复重试的问题 by [@HarcoChen](https://github.com/HarcoChen)",

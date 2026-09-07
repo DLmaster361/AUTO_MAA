@@ -127,9 +127,11 @@ AUTO-MAS respects and protects user privacy. This information is redacted on the
 
 ## 特别鸣谢 / Special Thanks
 
-- 下载服务器：由[AoXuan (@ClozyA)](https://github.com/ClozyA) 个人为项目赞助。
+- [AoXuan (@ClozyA)](https://github.com/ClozyA)：捐赠 AUTO-MAS 下载站服务器数月。
+- <a href="https://www.packyapi.ai/register?aff=zKkA"><img alt="PackyCode" src="https://www.packyapi.ai/logo-full.svg" height="28" align="absmiddle"></a>：赞助开发者 AI API 额度。PackyCode 是一家稳定、高效的 API 中转服务商，提供 Claude Code、Codex、Gemini 等多种中转服务，具备自动故障转移、智能路由和无限并发等功能。[免费注册 PackyCode](https://www.packyapi.ai/register?aff=zKkA)
 
-- Download server generously sponsored by [AoXuan (@ClozyA)](https://github.com/ClozyA).
+- [AoXuan (@ClozyA)](https://github.com/ClozyA): onated the AUTO-MAS download server for several months.
+- <a href="https://www.packyapi.ai/register?aff=zKkA"><img alt="PackyCode" src="https://www.packyapi.ai/logo-full.svg" height="28" align="absmiddle"></a>: Sponsored the developer with AI API credits. PackyCode is a stable, high-performance API relay provider offering relay services for Claude Code, Codex, Gemini, and more, with automatic failover, smart routing, and unlimited concurrency. [Register for free on PackyCode](https://www.packyapi.ai/register?aff=zKkA).
 
 ## 贡献者 / Contributors
 

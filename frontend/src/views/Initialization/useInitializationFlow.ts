@@ -5,7 +5,6 @@ import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { getBackendVersion } from '@/composables/useVersionService'
 import { decideFailureActions, filterRuntimeMirrors } from '@/utils/initializationDecision'
 import {
-  formatElapsedSeconds,
   getInitializationStageKey,
   getInitializationStageStatus,
   initializationStages,
@@ -17,6 +16,7 @@ import type {
   RuntimeFailureFields,
   RuntimeInitMode,
 } from '@/types/electron'
+import type { LaunchStep } from '@/types/launch'
 import type { MirrorConfig } from '@/types/mirror'
 import type {
   FailureAction,
@@ -42,7 +42,6 @@ export function useInitializationFlow() {
     showMirrorSelection: boolean
     mirrors: MirrorConfig[]
     selectedMirror: string
-    countdown: number
     failureActions: FailureAction[]
     failureNotice: FailureNoticeKind | null
     failureLogs: string
@@ -77,7 +76,6 @@ export function useInitializationFlow() {
       showMirrorSelection: false,
       mirrors: [],
       selectedMirror: '',
-      countdown: 0,
       failureActions: [],
       failureNotice: null,
       failureLogs: '',
@@ -100,7 +98,6 @@ export function useInitializationFlow() {
   const runtimeMode = ref<RuntimeInitMode>('off')
   const runtimeMirrorKeys = ref<Record<string, string[]>>({})
   const runtimeFallbackLogPath = ref('')
-  const elapsedSeconds = ref(0)
   const flowKind = ref<'first-run' | 'update' | 'startup'>('first-run')
 
   const isDev = import.meta.env.DEV
@@ -108,19 +105,14 @@ export function useInitializationFlow() {
   const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
 
   const RUNTIME_TAKEOVER_STEPS = new Set<InitializationStepKey>(['pip', 'git'])
-  const RETRY_ACTION_KINDS = new Set<FailureActionKind>([
-    'retry',
-    'retry-other-mirror',
-    'rebuild-environment',
-  ])
 
-  let countdownTimer: ReturnType<typeof setInterval> | null = null
-  let elapsedTimer: ReturnType<typeof setInterval> | null = null
   let initializationTimer: ReturnType<typeof setTimeout> | null = null
 
   const currentStep = computed(() => steps[currentStepIndex.value])
+  const currentState = computed(() => stepStates.value[currentStep.value.key])
   const activeStageKey = computed(() => getInitializationStageKey(currentStep.value.key))
-  const elapsedText = computed(() => formatElapsedSeconds(elapsedSeconds.value))
+  const isBackendStep = computed(() => currentStep.value.key === 'backend')
+  const hasFailed = computed(() => currentState.value.status === 'failed')
 
   const presentationStages = computed(() => {
     const statuses = Object.fromEntries(
@@ -133,25 +125,55 @@ export function useInitializationFlow() {
     }))
   })
 
-  const pageTitle = computed(() => {
-    if (activeStageKey.value === 'backend') return t('init.page.startingTitle')
-    if (flowKind.value === 'update') return t('init.page.updatingTitle')
-    return t('init.page.preparingTitle')
+  /**
+   * 步骤条只在真的会跑安装的路径上出现。
+   *
+   * `startup` 是静默启动失败后回落到本页的路径，前五步在挂载时就被标成完成，
+   * 这一趟一件都没做，画出来只是演一个没发生的过程。
+   */
+  const launchSteps = computed<LaunchStep[]>(() => {
+    if (flowKind.value === 'startup') return []
+
+    return presentationStages.value.map(stage => ({
+      key: stage.key,
+      label: t(`init.steps.${stage.key}`),
+      state:
+        stage.status === 'success'
+          ? 'done'
+          : stage.key === activeStageKey.value
+            ? 'current'
+            : 'todo',
+    }))
   })
 
-  const currentStepProps = computed(() => {
+  const statusTitle = computed(() => {
+    // 安装器和 Runtime 报上来的进度描述本身就是给人看的，有就直接用。
+    if (currentState.value.status === 'processing' && currentState.value.message) {
+      return currentState.value.message
+    }
+    if (flowKind.value === 'update') return t('launch.updating')
+    return t('launch.preparing')
+  })
+
+  const statusHint = computed(() =>
+    flowKind.value === 'startup' ? '' : t('launch.firstRunEstimate')
+  )
+
+  const statusProgress = computed(() =>
+    currentState.value.progressIndeterminate ? undefined : currentState.value.progress
+  )
+
+  const failureProps = computed(() => {
     const step = currentStep.value
-    const state = stepStates.value[step.key]
+    const state = currentState.value
 
     return {
-      title: t(`init.steps.${getInitializationStageKey(step.key)}`),
-      status: state.status,
+      title: t(`init.steps.${activeStageKey.value}`),
       message: state.message,
-      progress: state.progress,
-      progressIndeterminate: state.progressIndeterminate,
-      elapsedText: elapsedText.value,
+      failureActions: state.failureActions,
+      failureNotice: state.failureNotice,
+      failureLogs: state.failureLogs,
       showMirrorSelection: state.showMirrorSelection,
-      showSkipButton: step.canSkip && state.status === 'failed',
       mirrors: filterRuntimeMirrors(
         state.mirrors,
         step.key,
@@ -159,20 +181,13 @@ export function useInitializationFlow() {
         runtimeMirrorKeys.value
       ),
       selectedMirror: state.selectedMirror,
-      countdown: state.countdown,
-      failureActions: state.failureActions,
-      failureNotice: state.failureNotice,
-      failureLogs: state.failureLogs,
       doctorChecks: state.doctorChecks,
       doctorRunning: state.doctorRunning,
+      showSkipButton: step.canSkip,
     }
   })
 
   logger.info(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
-
-  function stageStatusKey(status: InitializationStepStatus): string {
-    return `init.state.${status}`
-  }
 
   function readProgressPayload(value: unknown): ProgressPayload {
     if (!value || typeof value !== 'object') return {}
@@ -200,7 +215,7 @@ export function useInitializationFlow() {
 
     if (progress.status === 'completed' || (progress.progress ?? 0) >= 100) {
       state.status = 'success'
-      state.message = progress.message || t('init.msg.stageDone')
+      state.message = progress.message || ''
       state.progress = 100
       state.progressIndeterminate = false
     } else if (progress.status === 'failed') {
@@ -209,7 +224,7 @@ export function useInitializationFlow() {
       state.progressIndeterminate = false
     } else {
       state.status = 'processing'
-      state.message = progress.message || t('init.msg.running')
+      state.message = progress.message || ''
       // 旧安装器切换阶段时会发送 0，保留已经展示的进度。
       if (progress.progress !== undefined && (progress.progress > 0 || state.progress === 0)) {
         state.progress = Math.min(100, Math.max(0, Math.round(progress.progress)))
@@ -218,7 +233,7 @@ export function useInitializationFlow() {
     }
 
     if (previousStatus !== state.status || previousMessage !== state.message) {
-      logger.info(`[${stepKey}] ${state.message}`)
+      logger.info(`[${stepKey}] ${state.message || state.status}`)
     }
   }
 
@@ -252,11 +267,10 @@ export function useInitializationFlow() {
 
   function markStepTakenOver(state: StepState) {
     state.status = 'success'
-    state.message = t('init.runtime.takenOver')
+    state.message = ''
     state.progress = 100
     state.progressIndeterminate = false
     state.showMirrorSelection = false
-    state.countdown = 0
     state.failureActions = []
     state.failureNotice = null
   }
@@ -287,9 +301,7 @@ export function useInitializationFlow() {
     state.message = errorMessage
     logger.error(`步骤 ${stepKey} 失败: ${errorMessage}`)
 
-    const plan = applyFailure(state, stepKey, failure)
-    const autoAction = plan.actions.find(action => RETRY_ACTION_KINDS.has(action.kind))
-    if (autoAction) startCountdown(stepKey, autoAction.kind === 'rebuild-environment')
+    applyFailure(state, stepKey, failure)
   }
 
   async function executeRuntimeInitialization(): Promise<boolean> {
@@ -309,7 +321,6 @@ export function useInitializationFlow() {
       for (const step of steps.slice(0, -1)) {
         const state = stepStates.value[step.key]
         state.status = 'success'
-        state.message ||= t('init.msg.stageDone')
         state.progress = 100
         state.progressIndeterminate = false
       }
@@ -338,7 +349,7 @@ export function useInitializationFlow() {
     }
 
     state.status = 'processing'
-    state.message = t('init.msg.running')
+    state.message = ''
     state.progress = 0
     state.progressIndeterminate = true
     let failure: RuntimeFailureFields = {}
@@ -373,7 +384,7 @@ export function useInitializationFlow() {
       }
 
       state.status = 'success'
-      state.message = t('init.msg.stageDone')
+      state.message = ''
       logger.info(`步骤 ${stepKey} 完成`)
       return true
     } catch (error) {
@@ -408,12 +419,11 @@ export function useInitializationFlow() {
   }
 
   function handleMirrorSelect(mirrorKey: string) {
-    stepStates.value[currentStep.value.key].selectedMirror = mirrorKey
+    currentState.value.selectedMirror = mirrorKey
   }
 
   function resetFailureState(state: StepState) {
     state.showMirrorSelection = false
-    state.countdown = 0
     state.failureActions = []
     state.failureNotice = null
     state.failureLogs = ''
@@ -431,10 +441,9 @@ export function useInitializationFlow() {
   async function handleSkip() {
     const step = currentStep.value
     const state = stepStates.value[step.key]
-    clearCountdown()
 
     state.status = 'success'
-    state.message = t('init.msg.skipped')
+    state.message = ''
     resetFailureState(state)
     message.warning(t('init.msg.skippedStep', { step: t(`init.steps.${activeStageKey.value}`) }))
 
@@ -449,7 +458,6 @@ export function useInitializationFlow() {
   async function handleRetry(rebuild = false) {
     const step = currentStep.value
     const state = stepStates.value[step.key]
-    clearCountdown()
     resetFailureState(state)
 
     logger.info(`重试 ${step.key}${rebuild ? '（重建环境）' : ''}`)
@@ -466,8 +474,7 @@ export function useInitializationFlow() {
   async function handleBackendComplete() {
     const state = stepStates.value.backend
     state.status = 'success'
-    state.message = t('init.msg.backendStarted')
-    clearElapsedClock()
+    state.message = ''
 
     message.success(t('init.msg.initDone'))
     await window.electronAPI.setInitializedVersion?.(version)
@@ -492,27 +499,8 @@ export function useInitializationFlow() {
     }
   }
 
-  function clearCountdown() {
-    if (!countdownTimer) return
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
-
-  function startCountdown(stepKey: InitializationStepKey, rebuild = false) {
-    clearCountdown()
-    const state = stepStates.value[stepKey]
-    state.countdown = 60
-
-    countdownTimer = setInterval(() => {
-      state.countdown -= 1
-      if (state.countdown > 0) return
-      clearCountdown()
-      void handleRetry(rebuild)
-    }, 1000)
-  }
-
   async function handleFailureAction(kind: FailureActionKind) {
-    const state = stepStates.value[currentStep.value.key]
+    const state = currentState.value
 
     switch (kind) {
       case 'open-log':
@@ -539,7 +527,12 @@ export function useInitializationFlow() {
     }
 
     try {
-      await window.electronAPI.openFile(target)
+      const result = await window.electronAPI.openFile(target)
+      if (!result.success) {
+        message.error(
+          t('init.failure.openLogFailed', { error: result.error ?? t('init.msg.execFailed') })
+        )
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       message.error(t('init.failure.openLogFailed', { error: errorMessage }))
@@ -611,19 +604,6 @@ export function useInitializationFlow() {
     }
   }
 
-  function startElapsedClock() {
-    const startedAt = Date.now()
-    elapsedTimer = setInterval(() => {
-      elapsedSeconds.value = Math.floor((Date.now() - startedAt) / 1000)
-    }, 1000)
-  }
-
-  function clearElapsedClock() {
-    if (!elapsedTimer) return
-    clearInterval(elapsedTimer)
-    elapsedTimer = null
-  }
-
   async function resolveStartIndex(): Promise<number> {
     const api = window.electronAPI
     const forceBackendUpdate = sessionStorage.getItem('forceBackendUpdate') === 'true'
@@ -659,7 +639,7 @@ export function useInitializationFlow() {
   }
 
   onMounted(async () => {
-    logger.info('新版初始化界面已加载')
+    logger.info('初始化界面已加载')
 
     if (isDev) {
       await handleLocalEnterApp()
@@ -699,7 +679,6 @@ export function useInitializationFlow() {
       if (backendStatus.isRunning) stepStates.value.backend.status = 'processing'
     })
 
-    startElapsedClock()
     if (startIndex < steps.length - 1) {
       initializationTimer = setTimeout(() => {
         void startInitialization(startIndex)
@@ -708,8 +687,6 @@ export function useInitializationFlow() {
   })
 
   onUnmounted(() => {
-    clearCountdown()
-    clearElapsedClock()
     if (initializationTimer) clearTimeout(initializationTimer)
 
     const api = window.electronAPI
@@ -723,18 +700,20 @@ export function useInitializationFlow() {
   })
 
   return {
-    activeStageKey,
     currentStep,
-    currentStepProps,
-    elapsedText,
+    failureProps,
+    flowKind,
     handleBackendComplete,
     handleBackendError,
     handleBackendStatusChange,
     handleFailureAction,
     handleMirrorSelect,
     handleSkip,
-    pageTitle,
-    presentationStages,
-    stageStatusKey,
+    hasFailed,
+    isBackendStep,
+    launchSteps,
+    statusHint,
+    statusProgress,
+    statusTitle,
   }
 }

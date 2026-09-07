@@ -151,24 +151,6 @@ export function parseStatusTagList(
 }
 
 /**
- * 序列化状态标签为JSON字符串
- * @param tag - StatusTag对象
- * @returns JSON字符串
- */
-export function serializeStatusTag(tag: StatusTag): string {
-  return JSON.stringify(tag)
-}
-
-/**
- * 序列化状态标签数组为JSON字符串
- * @param tags - StatusTag对象数组
- * @returns JSON字符串
- */
-export function serializeStatusTagList(tags: StatusTag[]): string {
-  return JSON.stringify(tags)
-}
-
-/**
  * 使用状态标签的Composable
  * @param statusGetter - 获取状态字符串的函数
  * @param defaultTag - 默认标签
@@ -179,19 +161,6 @@ export function useStatusTag(
   defaultTag: StatusTag | null = null
 ): ComputedRef<StatusTag | null> {
   return computed(() => parseStatusTag(statusGetter(), defaultTag))
-}
-
-/**
- * 使用状态标签列表的Composable
- * @param statusListGetter - 获取状态字符串数组的函数
- * @param defaultTags - 默认标签数组
- * @returns 计算属性，返回解析后的StatusTag数组
- */
-export function useStatusTagList(
-  statusListGetter: () => string | string[] | null | undefined,
-  defaultTags: StatusTag[] = []
-): ComputedRef<StatusTag[]> {
-  return computed(() => parseStatusTagList(statusListGetter(), defaultTags))
 }
 
 /**

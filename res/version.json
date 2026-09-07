@@ -4,6 +4,8 @@
         "v5.5.0-beta.3": {
             "新增功能": [
                 "模拟器管理 新增「Emulator 2.0」配置类型：一条配置可纳管多个雷电 14 / MuMu 6 安装路径，两家的实例合并成一张设备表统一编号；支持新建与删除实例，分辨率（含 DPI）、CPU、内存、帧率的单台与批量设置，以及一键「稳定模式」关掉高帧率、后台保活等会干扰截图识别的功能",
+                "MaaEnd专项 新增脚本直控模式，抢委托送货与自动采集独立为可单独配置的阶段，用户配置页改为锚点导航加分区卡片布局 by [@HarcoChen](https://github.com/HarcoChen)",
+                "MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen)",
                 "MFW 项目支持在脚本运行前或运行后自动更新，可在项目配置中选择时机；升级后已有脚本默认为「运行前更新」，不需要可在项目配置中改为「不更新」 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 新增绿票商店开关：开启后每月单独启动一次 MAA 自动购买绿票商店，用户配置页可查看本月状态并手动重置 by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -13,11 +15,13 @@
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)",
                 "通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen)",
-                "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)"
+                "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)",
+                "首页 快速启动支持多选并记住上次选择，可一次启动多个任务 by [@Craun718](https://github.com/Craun718)"
             ],
             "程序优化": [
                 "模拟器管理 Emulator 2.0 的界面文案修正：不再声称 MuMu 6 «后续接入»（它已经支持），设置保存冲突的提示改为按词表翻译并列出具体字段，不再把后端的中文原句直接显示在英文 / 日文界面上",
                 "模拟器管理 Emulator 2.0 的雷电设备改为按 adb devices 的实际连接核对 ADB 地址，核不上时记录日志而不是默默沿用按索引推出来的值；原先那条按 vbox 进程查端口的实现在雷电 14 上从来查不到，等于一直没核过",
+                "启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)",
                 "配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -38,9 +42,12 @@
                 "HSR专项 MAS 管控任务的「一键从源配置导入」改名为「重置为源配置」并增加二次确认，明确该操作会清除用户在 MAS 里改过的全部覆盖配置、重新读取 SRA / 三月七助手当前配置 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 MAS 管控任务的配置项补齐中文名称、取值范围与填写说明（如货币战争刷开局的四个重开条件格式），三月七助手缺少配置说明文件时给出明确提示；切换执行引擎时明确提示配置项与副本按引擎分别保存、需要重新选择 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 体力副本在所指派引擎下未选择、执行引擎因缺少路径被自动改派时，改为在任务开始前提示并写入运行日志，不再跑完才在日志里体现 by [@qiyinxi](https://github.com/qiyinxi)",
+                "首页 使用快速启动成功后会自动跳转到调度中心 by [@Craun718](https://github.com/Craun718)",
                 "HSR专项 脚本页新增「SRA 配置档案」下拉，可指定 SRA 多份配置档案中的哪一份供 MAS 管控表单、脚本直控与导入快照使用；默认「自动」保持原有的优先 Default 行为，所选档案被删除时会回退并在脚本页、用户页与运行日志中提示 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR专项 用户页仍以中文显示的一批界面文案（页面标题、用户名与剩余天数标签、历战余响与周常的本周完成状态、服务器与体力副本选项、管控任务列表的周常/日常与启用摘要等）接入多语言词表，英文与日文界面不再夹杂中文 by [@qiyinxi](https://github.com/qiyinxi)",
-                "日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)"
+                "日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)",
+                "代码清理 单源化各脚本专项重复的任务报告推送核心与 QQ/微信通知公共助手，并清理前后端死代码与直通包装组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "MAA专项 代理接管 MAA 配置时强制开启开始唤醒的账号切换开关，确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -49,6 +56,8 @@
                 "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
             ],
             "修复BUG": [
+                "修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "修复深色模式下初始化界面连同标题栏整体变暗的问题",
                 "OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "修复同时打开两个前端窗口时互相抢占后端连接、每隔几秒断线并反复弹出提示的问题：后开的窗口接管连接，先开的窗口停止重连并只提示一次 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 修复 MaaEnd 更新后已完成任务被误判失败并重复重试的问题 by [@HarcoChen](https://github.com/HarcoChen)",
@@ -99,7 +108,8 @@
                 "HSR专项与SRC专项 修复英文与日文界面的术语错误：「历战余响」在英文下被显示为「差分宇宙」（两者在同一页面上是不同玩法），「体力配置」沿用了明日方舟的「理智」译法，「侵蚀隧洞」英文名复数有误 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 修复项目 interface 的同一个预设里重复写了同一个任务（例如 MXU 的随机启动标记）时整份项目读不出来、建项向导卡在第一步的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 从新链路回退到旧链路后准备项目运行环境时，改为直接复用 Runtime 已经装好的 uv，不再要求用户自己再准备一份 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)",
+                "MFW专项 修复脚本侧强制停止任务（如 MaaEnd 分辨率不达标时的强停）被记成「任务完成」的问题：现在被强停的任务按失败记录，本轮剩余任务不再投递，不会再出现整轮一件事没做却报成全部成功 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.2": {

@@ -34,6 +34,7 @@ from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
+
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
@@ -312,9 +313,7 @@ async def _run_taygedo_provider(
     has_community = bool(
         credential.get("refreshToken") or credential.get("accessToken")
     )
-    has_cloud = bool(
-        credential.get("cloudToken") and credential.get("cloudUserId")
-    )
+    has_cloud = bool(credential.get("cloudToken") and credential.get("cloudUserId"))
     if not has_community and not has_cloud:
         raise ValueError(
             "塔吉多凭据缺少 refreshToken/accessToken 或 cloudToken/cloudUserId"
@@ -392,8 +391,7 @@ def has_game_sign_credentials(account: object) -> bool:
     """判断账号是否至少配置一个已注册社区凭据。"""
 
     return any(
-        _read_game_sign_token(account, field)
-        for field in GAME_SIGN_TOKEN_FIELDS
+        _read_game_sign_token(account, field) for field in GAME_SIGN_TOKEN_FIELDS
     )
 
 
@@ -562,15 +560,11 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 continue
 
         tokens = {
-            provider.token_field: _read_game_sign_token(
-                account, provider.token_field
-            )
+            provider.token_field: _read_game_sign_token(account, provider.token_field)
             for provider in providers
         }
         configured = [
-            provider
-            for provider in providers
-            if tokens.get(provider.token_field)
+            provider for provider in providers if tokens.get(provider.token_field)
         ]
         if not configured:
             continue
@@ -593,13 +587,13 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 if platform not in enabled_platforms:
                     enabled_platforms.append(platform)
             results.extend(run.results)
-            for field, updated_token in run.credential_updates.items():
-                if not updated_token or updated_token == tokens.get(field, ""):
+            for token_field, updated_token in run.credential_updates.items():
+                if not updated_token or updated_token == tokens.get(token_field, ""):
                     continue
                 try:
-                    await account.set("GameSignAccount", field, updated_token)
+                    await account.set("GameSignAccount", token_field, updated_token)
                 except Exception as e:
-                    logger.warning(f"[{account_name}] 保存{field}失败: {e}")
+                    logger.warning(f"[{account_name}] 保存{token_field}失败: {e}")
 
         # 自动签到每天只尝试一次。失败也要记住当天的尝试，避免后续 MAS 任务反复请求；
         # 手动签到使用 force=True，仍只在所有已配置平台完成后更新日期。
@@ -619,21 +613,6 @@ async def _run_all_sign_in(force: bool = False) -> list[dict]:
                 await account.set("GameSignAccount", "LastSignDate", sign_date)
             except Exception as e:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {e}")
-
-        skland_token = tokens.get("SklandToken", "")
-        if "森空岛" in enabled_platforms and _all_enabled_platforms_signed(
-            results,
-            account_uid=account_uid,
-            enabled_platforms=["森空岛"],
-        ):
-            sync_legacy_date = getattr(
-                Config, "_sync_legacy_skland_sign_date", None
-            )
-            if callable(sync_legacy_date):
-                try:
-                    await sync_legacy_date(token=skland_token, sign_date=today)
-                except Exception as e:
-                    logger.warning(f"[{account_name}] 回写旧用户森空岛日期失败: {e}")
 
     if not results:
         logger.info("没有配置任何签到平台")
@@ -663,7 +642,8 @@ def merge_sign_results(existing: dict, formatted: dict, replace: bool = False) -
             new_uids = {g.get("account_uid") for g in accounts if g.get("account_uid")}
             if new_uids:
                 existing[platform] = [
-                    g for g in existing[platform]
+                    g
+                    for g in existing[platform]
                     if g.get("account_uid") not in new_uids
                 ]
             existing[platform].extend(accounts)
@@ -701,13 +681,15 @@ def format_sign_results(results: list[dict]) -> dict:
                 "games": [],
             }
 
-        platforms[platform][group_key]["games"].append({
-            "account": account,
-            "game": item.get("game", "未知"),
-            "status": item.get("status", "失败"),
-            "reward": item.get("reward", ""),
-            "reason": item.get("reason", ""),
-        })
+        platforms[platform][group_key]["games"].append(
+            {
+                "account": account,
+                "game": item.get("game", "未知"),
+                "status": item.get("status", "失败"),
+                "reward": item.get("reward", ""),
+                "reason": item.get("reason", ""),
+            }
+        )
 
     # 转为列表格式
     result = {}

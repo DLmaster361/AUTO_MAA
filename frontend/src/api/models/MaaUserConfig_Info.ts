@@ -12,9 +12,9 @@ export type MaaUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 用户配置模式
+     * 配置来源（脚本/用户）
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('脚本' | '用户' | null);
     /**
      * 关卡配置模式
      */
@@ -103,14 +103,6 @@ export type MaaUserConfig_Info = {
      * 剩余理智关卡
      */
     Stage_Remain?: (string | null);
-    /**
-     * 是否启用森空岛签到
-     */
-    IfSkland?: (boolean | null);
-    /**
-     * SklandToken
-     */
-    SklandToken?: (string | null);
     /**
      * 状态标签列表
      */

@@ -44,6 +44,7 @@ description: >-
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md)
+   需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
 
@@ -55,6 +56,15 @@ description: >-
 
 **不要机械要求所有类型拥有相同文件**——先确认架构契约，再补真实调用链。
 
+- 配置与 schema：`app/models/config.py`、`app/models/schema.py`
+- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
+- 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
+- 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogEnabled`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合与追加统一复用通用工具 `app/tools/push_log.py`（`build_user_result_text` 按用户交错组装「用户结果行+节点」并入 result / `append_push_log`），专项不要自行拼接实现。具体注入端点（管理器汇总 / 通知正文追加）现场反查参考实现。
+- 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
+- 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
+- Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
+- 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
+
 ## 审查方法
 
 1. 从 `ScriptType`、任务注册、UI 入口**反查全部调用者**。
@@ -62,8 +72,9 @@ description: >-
 3. 自动发现、手动选择、后端 `check()` 三条路径判定：同一资源必须用**同一组哨兵文件**。
 4. 配置会话的启动、WebSocket 状态、停止、超时、卸载、异常六条路径：确保任务结束、进程退出、锁释放、配置写回。
 5. `final_task` / `on_crash` 的原子配置恢复、用户状态落盘、独立进程清理。
-6. 按 `tests/AGENTS.md` 跑最小专项测试；非必要不新增测试，**测试缺口写进结果，不编造验证结果**。
+6. 按 `tests/AGENTS.md` 本地编写并运行最小专项测试验证改动；提交时功能/bug 边界测试不提交，**测试缺口写进结果，不编造验证结果**。
 7. 反查产品边界：没重复实现脚本已有能力，没把 MAS 补位伪装成脚本原生字段，没为"字段齐全"加无价值入口。
+8. 含 `log_box` 采集的专项，反查「采集→报告」闭环：确认采集结果已进入最终报告正文且保留各用户节点归属（多账号时按用户交错），并核对用户级开关关闭的用户确实无节点；只采集不注入 → 报告无节点（ok-nte 曾漏）。注入端点现场反查，不照抄固定路径。
 
 ## 配置来源模式：按专项确认，不存在统一三态
 
@@ -74,7 +85,7 @@ description: >-
 | Okww | 脚本 / 用户 / 直控 三态 |
 | General | 用户 / 直控 两态 |
 | MaaEnd | 脚本 / 用户 两态 |
-| OkNte | 两态（`Info.Mode` 简洁 / 详细） |
+| OkNte | 两态（`Info.Mode` 脚本 / 用户） |
 | M9A | 不使用这套模式 |
 
 采用三态时：**脚本**=脚本级共享配置；**用户**=当前用户独立配置；**直控**=直接使用脚本原有配置、由原生 GUI 维护、不回写 MAS 独立配置。三态只决定 owner。

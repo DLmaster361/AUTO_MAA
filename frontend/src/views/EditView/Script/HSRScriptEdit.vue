@@ -1,33 +1,10 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
-            编辑 HSR 脚本
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        返回
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="HSR" :title="t('edit.editHsrScript')" @cancel="handleCancel" />
 
   <div class="script-edit-content">
-    <a-card title="HSR 脚本配置" :loading="pageLoading" class="config-card">
+    <a-card :title="t('edit.hsrScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="purple" class="type-tag"> HSR (三月七 / SRA) </a-tag>
+        <a-tag color="purple" class="type-tag">{{ t('edit.hsrMarch7thSra') }}</a-tag>
       </template>
 
       <a-alert
@@ -50,24 +27,23 @@
         <!-- 脚本名称 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>基本信息</h3>
+            <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="为 HSR 脚本设置一个易于识别的名称">
+                  <a-tooltip :title="t('edit.giveHsrScriptName')">
                     <span class="form-label">
-                      脚本名称
+                      {{ t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.infoName"
-                  placeholder="请输入脚本名称"
+                  :placeholder="t('edit.enterScriptName')"
                   size="large"
-                  class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.infoName)"
                 />
               </a-form-item>
@@ -79,27 +55,27 @@
           type="info"
           show-icon
           class="user-control-notice"
-          message="运行模式与任务配置已移至用户配置"
-          description="请在用户页选择“MAS 管控”或“脚本直控”。是否由 MAS 启动、关闭、重启和监测游戏由下方开关决定；脚本页继续维护安装路径与公共执行参数。"
+          :message="t('edit.runModeTaskConfiguration')"
+          :description="t('edit.userPageChooseMas')"
         />
 
         <!-- M7A / SRA / 游戏路径 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>脚本与游戏配置</h3>
+            <h3>{{ t('edit.scriptGameConfiguration') }}</h3>
           </div>
           <div class="engine-path-hint">
             <a-typography-text type="secondary">
-              填写对应脚本路径即启用该引擎；清空路径后，该引擎不再校验或参与调度。
+              {{ t('edit.fillingPathEnablesThat') }}
             </a-typography-text>
           </div>
           <a-row :gutter="24">
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="建议在脚本直控且使用云游戏的情况下关闭此开关">
+                  <a-tooltip :title="t('edit.turnThisOffWhen')">
                     <span class="form-label">
-                      MAS 管理游戏
+                      {{ t('edit.masManagesGame') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -107,11 +83,10 @@
                 <a-select
                   :value="hsrConfig.Game.Enabled"
                   size="large"
-                  class="modern-input"
                   @change="handleGameEnabledChange"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -120,9 +95,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="March7th Assistant 安装目录（含 March7th Assistant.exe）">
+                  <a-tooltip :title="t('edit.march7thAssistantInstallDirectory')">
                     <span class="form-label">
-                      三月七路径
+                      {{ t('edit.march7thPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -130,7 +105,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Info.M7APath"
-                    placeholder="请选择三月七所在文件夹（含 March7th Assistant.exe）"
+                    :placeholder="t('edit.pickMarch7thFolderContains')"
                     size="large"
                     class="path-input"
                     readonly
@@ -139,11 +114,11 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                   <a-button
                     v-if="hsrConfig.Info.M7APath"
-                    title="清空三月七路径"
+                    :title="t('edit.clearMarch7thPath')"
                     size="large"
                     class="path-clear-button"
                     @click="clearPath('M7APath')"
@@ -157,9 +132,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="StarRailAssistant 安装目录（含 SRA-cli.exe）">
+                  <a-tooltip :title="t('edit.starrailassistantInstallDirectoryContain')">
                     <span class="form-label">
-                      SRA 路径
+                      {{ t('edit.sraPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -167,7 +142,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Info.SRAPath"
-                    placeholder="请选择 SRA 所在文件夹（含 SRA-cli.exe）"
+                    :placeholder="t('edit.pickSraFolderContains')"
                     size="large"
                     class="path-input"
                     readonly
@@ -176,11 +151,11 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                   <a-button
                     v-if="hsrConfig.Info.SRAPath"
-                    title="清空 SRA 路径"
+                    :title="t('edit.clearSraPath')"
                     size="large"
                     class="path-clear-button"
                     @click="clearPath('SRAPath')"
@@ -192,13 +167,51 @@
             </a-col>
           </a-row>
 
+          <a-row :gutter="24">
+            <a-col :span="12" :offset="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.sraProfileTooltip')">
+                    <span class="form-label">
+                      {{ t('edit.sraProfile') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  :value="hsrConfig.Info.SRAProfile || ''"
+                  :options="sraProfileOptions"
+                  :disabled="Boolean(sraProfileDisabledReason)"
+                  :loading="sraProfilesLoading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleSraProfileChange"
+                />
+                <a-typography-text
+                  v-if="sraProfileDisabledReason"
+                  type="secondary"
+                  class="field-hint"
+                >
+                  {{ sraProfileDisabledReason }}
+                </a-typography-text>
+                <a-typography-text
+                  v-else-if="sraProfiles?.fallback && sraProfiles.fallback_reason"
+                  type="warning"
+                  class="field-hint"
+                >
+                  {{ sraProfiles.fallback_reason }}
+                </a-typography-text>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :xs="24" :lg="16">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="星穹铁道游戏根目录（含 StarRail.exe）">
+                  <a-tooltip :title="t('edit.starRailGameRoot')">
                     <span class="form-label">
-                      游戏路径
+                      {{ t('edit.gamePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -206,7 +219,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Game.Path"
-                    placeholder="请选择星穹铁道安装目录（含 StarRail.exe）"
+                    :placeholder="t('edit.pickStarRailInstall')"
                     size="large"
                     class="path-input"
                     readonly
@@ -215,7 +228,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    选择文件夹
+                    {{ t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -223,9 +236,9 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="MAS 启动游戏后等待进入可操作状态的最长时间">
+                  <a-tooltip :title="t('edit.howLongMasWaits')">
                     <span class="form-label">
-                      游戏最大启动等待时间
+                      {{ t('edit.maximumGameLaunchWait') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -234,7 +247,7 @@
                   v-model:value="hsrConfig.Game.WaitTime"
                   :min="0"
                   :max="9999"
-                  addon-after="秒"
+                  :addon-after="t('edit.seconds')"
                   size="large"
                   style="width: 100%"
                   @change="handleGameConfigChange('WaitTime', $event)"
@@ -247,30 +260,9 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="启动星穹铁道时附加的命令行参数">
+                  <a-tooltip :title="t('edit.writtenCurrentUserS')">
                     <span class="form-label">
-                      游戏启动参数
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="hsrConfig.Game.Arguments"
-                  placeholder="请输入启动参数"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Game', 'Arguments', hsrConfig.Game.Arguments)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :xs="24" :lg="6">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    title="仅在 MAS 启动本地游戏前临时写入当前用户注册表并切为窗口模式；任务完成、失败或手动停止并关闭游戏后恢复原值"
-                  >
-                    <span class="form-label">
-                      运行时设为 1920×1080 窗口模式
+                      {{ t('edit.run1920x1080WindowedMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -280,18 +272,18 @@
                     :checked="hsrConfig.Game.ForceResolution1920x1080"
                     @change="handleGameResolutionChange"
                   />
-                  <a-typography-text type="secondary">结束后恢复原注册表值</a-typography-text>
+                  <a-typography-text type="secondary">{{
+                    t('edit.restoreOriginalRegistryValue')
+                  }}</a-typography-text>
                 </div>
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :lg="6">
+            <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="每个用户在每个引擎上首次执行一次；以后仅当原生配置中的兑换码变化时再次兑换，其他奖励不受影响"
-                  >
+                  <a-tooltip :title="t('edit.runsOncePerUser')">
                     <span class="form-label">
-                      兑换码仅在变化时执行
+                      {{ t('edit.redeemCodesRunOnly') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -301,7 +293,9 @@
                     :checked="hsrConfig.Game.RedeemCodesOnlyWhenChanged"
                     @change="handleRedeemCodePolicyChange"
                   />
-                  <a-typography-text type="secondary">新用户先执行一次</a-typography-text>
+                  <a-typography-text type="secondary">{{
+                    t('edit.runOnceNewUser')
+                  }}</a-typography-text>
                 </div>
               </a-form-item>
             </a-col>
@@ -311,11 +305,11 @@
         <!-- 执行限制 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>执行限制</h3>
+            <h3>{{ t('edit.runLimits') }}</h3>
           </div>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="失败任务最大尝试次数">
+              <a-form-item :label="t('edit.maximumAttemptsFailedTask')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.RunTimesLimit"
                   :min="1"
@@ -327,7 +321,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="日常任务超时限制（分钟）">
+              <a-form-item :label="t('edit.dailyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.DailyTimeLimit"
                   :min="1"
@@ -341,7 +335,7 @@
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="周常任务超时限制（分钟）">
+              <a-form-item :label="t('edit.weeklyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.WeeklyTimeLimit"
                   :min="1"
@@ -355,14 +349,14 @@
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item label="启用低性能兼容模式">
+              <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
                 <a-switch
                   v-model:checked="hsrConfig.Run.LowPerformanceMode"
                   :disabled="!hsrConfig.Info.M7APath"
                   @change="handleRunConfigChange('LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
-                  仅对三月七差分宇宙生效，映射到 weekly_divergent_stable_mode
+                  {{ t('edit.appliesMarch7thDivergentUniverse') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -374,23 +368,24 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
   type HSRCapabilitySnapshot,
   type HSREngine,
+  type HSRSRAProfilesSnapshot,
 } from '@/composables/useHSRPluginApi'
 import type { HSRConfig_Info, HSRConfig_Game, HSRConfig_Run } from '@/api'
 import type { HSRScriptConfig } from '@/types/script'
+
+const { t } = useI18n()
 
 // HSR 内部非空 reactive 形态（OpenAPI 生成类型字段全部为 optional | null，
 // 前端实际为非空；通过该形态消除 strict null 警告）。
@@ -420,16 +415,20 @@ const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
 )
 
+// SRA 配置档案：%APPDATA%/SRA/configs 下的多份 json，脚本选一份供托管表单、直控与导入快照共用。
+const sraProfiles = ref<HSRSRAProfilesSnapshot | null>(null)
+const sraProfilesLoading = ref(false)
+const sraProfilesError = ref('')
+
 const formData = reactive({
   infoName: '',
 })
 
 const hsrConfig = reactive<HSRConfigData>({
-  Info: { Name: '', M7APath: '', SRAPath: '' },
+  Info: { Name: '', M7APath: '', SRAPath: '', SRAProfile: '' },
   Game: {
     Enabled: true,
     Path: '',
-    Arguments: '',
     WaitTime: 60,
     ForceResolution1920x1080: false,
     RedeemCodesOnlyWhenChanged: true,
@@ -448,6 +447,7 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
   'Info.Name',
   'Info.M7APath',
   'Info.SRAPath',
+  'Info.SRAProfile',
   'Game.Path',
 ])
 
@@ -462,6 +462,7 @@ const handleChange = async (category: string, key: string, value: any): Promise<
     if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
       await refreshScript()
       await loadCapabilities()
+      await loadSraProfiles()
     }
     return true
   } catch (error) {
@@ -482,9 +483,6 @@ const refreshScript = async () => {
     if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
     if (cfg.Game) {
       Object.assign(hsrConfig.Game, cfg.Game)
-      if (hsrConfig.Game.Arguments === undefined || hsrConfig.Game.Arguments === null) {
-        hsrConfig.Game.Arguments = ''
-      }
       if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
         hsrConfig.Game.Enabled = true
       }
@@ -581,7 +579,7 @@ const joinPath = (folder: string, fileName: string) =>
 const selectPath = async (key: string) => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error(t('edit.filePickingUnavailableRun'))
       return
     }
     const path = await window.electronAPI.selectFolder()
@@ -594,7 +592,7 @@ const selectPath = async (key: string) => {
       const exists = await window.electronAPI.fileExists(exePath)
       if (!exists) {
         Modal.warning({
-          title: '路径无效',
+          title: t('edit.invalidPath'),
           content: `所选目录下未找到 ${expectedExe}，请重新选择正确的安装目录。`,
         })
         return
@@ -610,11 +608,11 @@ const selectPath = async (key: string) => {
       logger.warn(`未知的路径 key: ${key}`)
       return
     }
-    message.success('路径已选择')
+    message.success(t('edit.pathSelected'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择路径失败: ${errorMsg}`)
-    message.error('选择文件夹失败')
+    message.error(t('edit.couldNotPickFolder'))
   }
 }
 
@@ -628,6 +626,57 @@ const clearPath = async (key: string) => {
     await handleChange('Info', key, '')
     hsrConfig.Info![key] = ''
   }
+}
+
+const loadSraProfiles = async () => {
+  if (!hsrConfig.Info.SRAPath) {
+    sraProfiles.value = null
+    sraProfilesError.value = ''
+    return
+  }
+  sraProfilesLoading.value = true
+  try {
+    sraProfiles.value = await hsrPluginApi.getSraProfiles(scriptId)
+    sraProfilesError.value = ''
+  } catch (error) {
+    sraProfiles.value = null
+    sraProfilesError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    sraProfilesLoading.value = false
+  }
+}
+
+// 「自动」始终可选，其余选项来自档案目录；已配置但文件已不存在的档案也列出来，
+// 否则下拉会显示成一个空值，用户看不出自己配过什么。
+const sraProfileOptions = computed(() => {
+  const snapshot = sraProfiles.value
+  const options = [
+    { value: '', label: t('edit.sraProfileAuto', { name: snapshot?.auto_id || 'Default' }) },
+    ...(snapshot?.profiles ?? []).map(profile => ({ value: profile.id, label: profile.id })),
+  ]
+  const configured = hsrConfig.Info.SRAProfile || ''
+  if (configured && !options.some(option => option.value === configured)) {
+    options.push({ value: configured, label: configured })
+  }
+  return options
+})
+
+const sraProfileDisabledReason = computed(() => {
+  if (!hsrConfig.Info.SRAPath) return t('edit.sraProfileNeedPath')
+  if (sraProfilesError.value) {
+    return t('edit.sraProfileLoadFailed', { reason: sraProfilesError.value })
+  }
+  const snapshot = sraProfiles.value
+  if (snapshot && !snapshot.available) return snapshot.unavailable_reason || ''
+  return ''
+})
+
+const handleSraProfileChange = async (value: unknown) => {
+  const next = typeof value === 'string' ? value : ''
+  const previous = hsrConfig.Info.SRAProfile || ''
+  hsrConfig.Info.SRAProfile = next
+  const saved = await handleChange('Info', 'SRAProfile', next)
+  if (!saved) hsrConfig.Info.SRAProfile = previous
 }
 
 const loadCapabilities = async () => {
@@ -661,16 +710,17 @@ onMounted(async () => {
   try {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error('脚本不存在或加载失败')
+      message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
     await refreshScript()
     await loadCapabilities()
+    await loadSraProfiles()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error('加载脚本失败')
+    message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -680,44 +730,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
 .script-edit-content {
   flex: 1;
 }
@@ -753,38 +765,24 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
   background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .section-hint {
   color: var(--ant-color-text-secondary);
   font-size: 14px;
   margin: 4px 0 12px 0;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
 }
 
 .game-toggle-option {
@@ -812,23 +810,6 @@ onMounted(async () => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
 }
 
 .path-input-group {
@@ -892,9 +873,5 @@ onMounted(async () => {
 .path-clear-button:hover {
   background: var(--ant-color-error);
   color: white;
-}
-
-.cancel-button {
-  height: 40px;
 }
 </style>

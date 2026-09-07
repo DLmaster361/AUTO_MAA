@@ -22,26 +22,28 @@
 
 
 import asyncio
-from fastapi import APIRouter, Body
 from datetime import datetime
 from inspect import isawaitable
 from uuid import UUID
 
+from fastapi import APIRouter, Body
+
 from app.core import Config
+from app.core.notify import DispatchResult
 from app.models.schema import (
-    ToolsGetOut,
-    ToolsConfig,
-    OutBase,
-    ToolsUpdateIn,
     GameSignAccountCreateOut,
-    GameSignAccountGroupConfig,
-    GameSignAccountGetIn,
-    GameSignAccountUpdateIn,
     GameSignAccountDeleteIn,
+    GameSignAccountGetIn,
+    GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
+    GameSignAccountUpdateIn,
+    OutBase,
     SklandLoginIn,
     TaygedoLoginIn,
+    ToolsConfig,
+    ToolsGetOut,
+    ToolsUpdateIn,
 )
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
@@ -58,17 +60,17 @@ def _track_game_sign_notification(task: asyncio.Task) -> None:
     if task.cancelled():
         return
     try:
-        failed_channels = task.result()
+        result = task.result()
     except Exception as exc:
         logger.warning(f"后台游戏签到通知发送失败: {exc}")
         return
-    if failed_channels:
-        logger.warning(
-            f"后台游戏签到通知部分失败: {'、'.join(failed_channels)}"
-        )
+    if result.failed:
+        logger.warning(f"后台游戏签到通知部分失败: {'、'.join(result.failed)}")
 
 
-async def _dispatch_game_sign_notification(results: list[dict]) -> list[str] | None:
+async def _dispatch_game_sign_notification(
+    results: list[dict],
+) -> DispatchResult | None:
     """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
 
     from app.tools.game_sign_notify import push_game_sign_notification
@@ -83,7 +85,7 @@ async def _dispatch_game_sign_notification(results: list[dict]) -> list[str] | N
         return None
     except Exception as exc:
         logger.warning(f"签到完成，但通知服务异常: {exc}")
-        return ["通知服务"]
+        return DispatchResult(failed=("通知服务",))
 
 
 def _get_game_sign_field(account: object, field: str, default=None):
@@ -187,10 +189,10 @@ async def manual_game_sign() -> OutBase:
         ):
             warning_messages.append("签到未全部完成，请查看签到结果")
         if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-            failed_channels = await _dispatch_game_sign_notification(results)
-            if failed_channels:
+            notify_result = await _dispatch_game_sign_notification(results)
+            if notify_result and notify_result.failed:
                 warning_messages.append(
-                    f"部分通知发送失败：{'、'.join(failed_channels)}"
+                    f"部分通知发送失败：{'、'.join(notify_result.failed)}"
                 )
         if warning_messages:
             return OutBase(status="warning", message="；".join(warning_messages))
@@ -438,7 +440,6 @@ async def login_skland(
             validate_skland_credential,
         )
 
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
         serialized = await login_skland_with_password(
             credential.phone.strip(),
             credential.password.get_secret_value(),

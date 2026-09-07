@@ -20,19 +20,20 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import shlex
 import shutil
-import asyncio
 import uuid
 from pathlib import Path
 
-from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.schema import WSTaskNoticeData
+from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import ProcessManager, get_logger
 
 logger = get_logger("通用脚本设置")
 
@@ -207,8 +208,8 @@ class ScriptConfigTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"脚本设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"脚本设置任务出现异常: {e}"),
         )

@@ -28,54 +28,67 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
-from app.models.ConfigBase import MultipleConfig
+from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
 from app.tools.game_sign_notify import (
     append_task_game_sign_summary,
-    mark_task_game_sign_summary_consumed,
+    finalize_task_game_sign_notification,
 )
-from .AutoProxy import HSRAutoProxyTask
-from .ManualReview import HSRManualReviewTask
-from .tools.run_model import CompletionWriteback, HSRRuntimeState
-from .task_mapping import HSR_TASK_MODULES, get_assigned_script, script_supports
+from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH, UTC4
+
+from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
+from .task_mapping import (
+    ENGINE_DISPLAY_NAMES,
+    HSR_TASK_MODULES,
+    describe_script_fallback,
+    get_assigned_script,
+    resolve_script_assignment,
+    script_supports,
+)
 from .tools import push_notification
 from .tools.account_switch import (
     HSRAccountSwitcher,
     check_user_credentials,
     close_game_if_needed,
     is_game_management_enabled,
-    restore_game_resolution_if_needed,
     resolve_game_executable_path,
+    restore_game_resolution_if_needed,
     stop_external_processes,
-)
-from .tools.sra_runtime import (
-    disable_sra_windows_notifications,
-    get_sra_app_data_dir,
-    load_sra_native_config,
-)
-from .tools.m7a_config import load_m7a_native_config
-from .tools.native_control import (
-    get_user_direct_config,
-    native_provider,
-    resolve_script_path,
-    resolve_user_control,
+    user_needs_account_switch,
 )
 from .tools.external_locks import (
     HSRExternalPathLockLease,
     acquire_external_path_locks,
     resolve_external_lock_paths,
 )
-
+from .tools.extra_script import run_script_after_task, run_script_before_task
+from .tools.m7a_config import load_m7a_native_config
+from .tools.managed_config import list_managed_modules
+from .tools.native_control import (
+    get_user_direct_config,
+    has_user_direct_snapshot,
+    native_provider,
+    resolve_configured_engines,
+    resolve_script_path,
+    resolve_user_control,
+)
+from .tools.run_model import CompletionWriteback, HSRRuntimeState
+from .tools.sra_runtime import (
+    disable_sra_windows_notifications,
+    get_sra_app_data_dir,
+    load_sra_native_config,
+    resolve_sra_profile_selection,
+)
+from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 调度器")
 
-METHOD_BOOK: dict[str, type[HSRAutoProxyTask | HSRManualReviewTask]] = {
+METHOD_BOOK: dict[str, type[HSRAutoProxyTask]] = {
     "AutoProxy": HSRAutoProxyTask,
-    "ManualReview": HSRManualReviewTask,
 }
 
 
@@ -199,9 +212,7 @@ class HSRManager(TaskExecuteBase):
                 backup_root / "SRA" / "configs",
             )
 
-        logger.info(
-            f"HSR 外部配置备份完成，共 {len(self._external_config_targets)} 项"
-        )
+        logger.info(f"HSR 外部配置备份完成，共 {len(self._external_config_targets)} 项")
 
     def _restore_external_config_targets(self) -> None:
         """运行后恢复 M7A/SRA 配置，并清理备份目录。"""
@@ -224,7 +235,9 @@ class HSRManager(TaskExecuteBase):
                 _restore_path_from_backup(label, source, backup)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{label}: {e}")
-                logger.opt(exception=True).warning(f"恢复 HSR 外部配置失败：{label}: {e}")
+                logger.opt(exception=True).warning(
+                    f"恢复 HSR 外部配置失败：{label}: {e}"
+                )
 
         shutil.rmtree(self.temp_path / "ExternalConfig", ignore_errors=True)
         try:
@@ -245,7 +258,11 @@ class HSRManager(TaskExecuteBase):
         text = str(message).strip()
         if not text:
             return
-        now_text = datetime.now(tz=UTC8).strftime("%H:%M:%S")
+        # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
+        # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
+        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
+        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         for line in text.splitlines():
             line = line.strip()
             if line:
@@ -299,17 +316,17 @@ class HSRManager(TaskExecuteBase):
 
         game_management_enabled = is_game_management_enabled(script_config)
 
-        if self.task_info.mode == "ManualReview":
-            return self._check_manual_review(script_config)
-
         m7a_path = resolve_script_path(script_config, "M7A")
         sra_path = resolve_script_path(script_config, "SRA")
+        effective_engines = resolve_configured_engines(script_config)
 
         if not m7a_path and not sra_path:
             return "未配置任何脚本路径，请至少填写 M7A 或 SRA 路径"
 
         for module in HSR_TASK_MODULES:
-            raw_assigned = script_config._config_item_index["TaskMapping"][module.key].value
+            raw_assigned = script_config._config_item_index["TaskMapping"][
+                module.key
+            ].value
             if not script_supports(module.key, raw_assigned):
                 return (
                     f"模块「{module.name}」的分配脚本 '{raw_assigned}' "
@@ -335,12 +352,21 @@ class HSRManager(TaskExecuteBase):
         has_direct_user = False
         m7a_needed = False
         sra_needed = False
+        managed_user_count = 0
+        managed_users_with_credentials = 0
         enabled_module_keys: set[str] = set()
+        # (用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置可用性
+        # 确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
+        daily_stage_checks: list[tuple[HSRUserConfig, str, str]] = []
 
         for uid, user_config in script_config.UserData.items():
             if not user_config.get("Info", "Status"):
                 continue
             if user_config.get("Info", "RemainedDay") == 0:
+                continue
+            # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
+            # 用户的直控快照、引擎需求与托管账号数把这一个用户拦下来。
+            if not self.task_info.is_target_user(str(uid)):
                 continue
             has_executable_user = True
 
@@ -353,33 +379,54 @@ class HSRManager(TaskExecuteBase):
                 if not control.engines:
                     return f"用户「{user_name}」尚未启用任何直控脚本"
                 for engine in control.engines:
-                    # 已导入快照可脱离当前原生配置文件运行；这里只要求
-                    # 当前 CLI/Assistant 可执行，避免配置器改名后误阻断直控。
+                    # 直控默认直接跑脚本当前的原生配置，不要求先导入快照。
+                    # CLI/Assistant 可执行是硬条件；原生配置文件只在没有快照
+                    # 时才要求存在——已导入快照的用户可脱离原生配置文件运行。
                     script_root = resolve_script_path(script_config, engine)
                     if not script_root:
                         return f"用户「{user_name}」{engine} 直控不可用：未配置原生脚本路径"
-                    executable = (
-                        Path(script_root)
-                        / ("SRA-cli.exe" if engine == "SRA" else "March7th Assistant.exe")
+                    executable = Path(script_root) / (
+                        "SRA-cli.exe" if engine == "SRA" else "March7th Assistant.exe"
                     )
                     if not executable.is_file():
                         return (
                             f"用户「{user_name}」{engine} 直控不可用："
                             f"原生执行文件不存在：{executable}"
                         )
-                    if not get_user_direct_config(user_config, engine).strip():
-                        return f"用户「{user_name}」尚未导入 {engine} 原生配置快照"
-                # 直控快照包含完整原生计划，跳过 MAS 模块队列和凭证检查。
+                    if not has_user_direct_snapshot(user_config, engine):
+                        engine_label = "SRA" if engine == "SRA" else "三月七助手"
+                        native_config = native_provider(engine).native_config_path(
+                            script_config
+                        )
+                        if not native_config.is_file():
+                            return (
+                                f"用户「{user_name}」{engine} 直控不可用："
+                                f"{engine_label} 原生配置不存在：{native_config}，"
+                                f"请先在 {engine_label} 中保存一次设置，"
+                                "或为该用户导入配置快照"
+                            )
+                # 直控由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
                 continue
+
+            managed_user_count += 1
+            if user_needs_account_switch(user_config):
+                managed_users_with_credentials += 1
 
             for module in HSR_TASK_MODULES:
                 if user_config.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
-                    assigned = get_assigned_script(
+                    assignment = resolve_script_assignment(
                         module,
                         script_config,
                         user_config=user_config,
+                        effective_engines=effective_engines,
                     )
+                    assigned = assignment.script
+                    fallback_note = describe_script_fallback(module, assignment)
+                    if fallback_note:
+                        self._append_log(f"用户「{user_name}」{fallback_note}")
+                    if module.key == "Daily":
+                        daily_stage_checks.append((user_config, user_name, assigned))
                     if assigned == "SRA":
                         sra_needed = True
                     if assigned == "M7A":
@@ -399,18 +446,39 @@ class HSRManager(TaskExecuteBase):
             if not game_exe_path.exists():
                 return f"游戏启动文件不存在：{game_exe_path}"
 
-        if sra_needed and not sra_available:
-            if game_management_enabled:
-                return "HSR 自动代理需要配置 SRA 路径，用于启动游戏并切换账号"
-            return "HSR 自动代理需要配置 SRA 路径"
+        # 切号只能通过 SRA StartGame 完成（M7A 原生配置里不写账号密码）。
+        # 缺少 SRA 路径时 _build_login_plan 会直接回落到 m7a_fallback，队列里
+        # 不再插入 StartGame，而游戏已在运行时启动环节又会跳过——于是切号被
+        # 静默跳过，多个用户全跑在同一个已登录账号上，还各自写回完成态。
+        # 只在确实配了账密时才管：没配账密的用户本来就依赖当前登录态，
+        # 有没有 SRA 都是同一个账号，不该被这条拦住。
+        if not sra_available and managed_users_with_credentials:
+            if managed_user_count > 1:
+                return (
+                    f"有 {managed_users_with_credentials} 个启用的托管用户配置了账号密码，"
+                    "但未配置 SRA 路径。切换账号只能通过 SRA 完成，"
+                    "否则所有用户都会跑在同一个已登录账号上。"
+                    "请填写 SRA 路径，或只保留一个启用的托管用户"
+                )
+            self._append_log(
+                "未配置 SRA 路径，本轮不会登录到所填账号，"
+                "将直接使用游戏当前已登录的账号"
+            )
 
         try:
             if m7a_needed:
                 load_m7a_native_config(script_config)
             if sra_needed:
+                # 脚本配置的档案不存在时 resolve 会静默回退；运行日志里要说清。
+                profile = resolve_sra_profile_selection(script_config)
+                if profile.fallback and profile.fallback_reason:
+                    self._append_log(profile.fallback_reason)
                 load_sra_native_config(script_config)
         except (FileNotFoundError, OSError, ValueError) as exc:
             return f"HSR 原生配置不可用：{exc}"
+
+        for user_config, user_name, assigned in daily_stage_checks:
+            self._precheck_daily_stages(script_config, user_config, user_name, assigned)
 
         if sra_available:
             return self._validate_sra_user_credentials(
@@ -419,6 +487,63 @@ class HSRManager(TaskExecuteBase):
             )
 
         return "Pass"
+
+    def _precheck_daily_stages(
+        self,
+        script_config: HSRConfig,
+        user_config: HSRUserConfig,
+        user_name: str,
+        assigned: str,
+    ) -> None:
+        """把体力模块「引擎名下没配关卡」的跳过判定提前到预检，只提示不阻断。
+
+        口径与 ``HSRAutoProxyTask._resolve_daily_runnable_parts`` 完全一致：
+        SRA 开了「使用培养目标」或活动双倍、M7A 开了培养目标或任一活动时，副本由
+        脚本自己决定，缺主关卡是正常的，不提示。
+
+        这里刻意只写日志、不返回错误：``TaskSwitch.Daily`` 默认开启，新建用户在配
+        好副本之前天然处于「该引擎下一个关卡都没选」的状态，若据此中止整个任务，
+        一个还没配完的用户会连带让同脚本下其他用户全部跑不了。用户在编辑页已经
+        能看到「当前引擎下未选择副本」的提示，这里再在开跑前复述一次即可。
+        """
+
+        engine_name = ENGINE_DISPLAY_NAMES.get(assigned, assigned)
+        try:
+            values: dict[str, object] = {}
+            for module in list_managed_modules(assigned, script_config, user_config):
+                if module.key == "Daily":
+                    values = {field.key: field.value for field in module.fields}
+                    break
+        except (OSError, ValueError, TypeError):
+            values = {}
+        cultivation_enabled, activity_enabled = resolve_daily_native_modes(
+            assigned, values
+        )
+        main_configured, eow_configured = resolve_configured_daily_stages(
+            user_config, assigned
+        )
+        if cultivation_enabled or activity_enabled:
+            main_configured = True
+        daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(user_config)
+
+        if not main_configured and not eow_configured:
+            self._append_log(
+                f"用户「{user_name}」的体力模块由 {engine_name} 执行，"
+                f"但 {engine_name} 下未选择体力副本和历战余响关卡，体力模块本轮不会执行。"
+                "副本按执行引擎分别保存，切换引擎后需要重新选择；"
+                "或在该引擎中开启「培养目标」由脚本自行决定副本"
+            )
+            return
+        if not main_configured and not daily_eow_enabled:
+            self._append_log(
+                f"用户「{user_name}」{engine_name} 下未选择体力副本，"
+                "今日不需要历战余响，体力模块将跳过"
+            )
+        if daily_eow_enabled and not eow_configured:
+            self._append_log(
+                f"用户「{user_name}」本周需要历战余响，但 {engine_name} 下未选择"
+                "历战余响关卡，历战余响将跳过"
+            )
 
     @staticmethod
     def _is_executable_user(user_config) -> bool:
@@ -433,14 +558,19 @@ class HSRManager(TaskExecuteBase):
     def _user_needs_sra(user_config, script_config: HSRConfig) -> bool:
         """判断用户是否需要 SRA StartGame 登录/切号。"""
 
+        effective_engines = resolve_configured_engines(script_config)
         for module in HSR_TASK_MODULES:
             if not user_config.get("TaskSwitch", module.key):
                 continue
-            if get_assigned_script(
-                module,
-                script_config,
-                user_config=user_config,
-            ) == "SRA":
+            if (
+                get_assigned_script(
+                    module,
+                    script_config,
+                    user_config=user_config,
+                    effective_engines=effective_engines,
+                )
+                == "SRA"
+            ):
                 return True
         return False
 
@@ -452,13 +582,18 @@ class HSRManager(TaskExecuteBase):
     ) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
 
-        for _uid, user_config in script_config.UserData.items():
+        for uid, user_config in script_config.UserData.items():
             if not self._is_executable_user(user_config):
                 continue
-            if resolve_user_control(
-                user_config,
-                script_config=script_config,
-            ).mode == "direct":
+            if not self.task_info.is_target_user(str(uid)):
+                continue
+            if (
+                resolve_user_control(
+                    user_config,
+                    script_config=script_config,
+                ).mode
+                == "direct"
+            ):
                 continue
             if only_sra_needed and not self._user_needs_sra(user_config, script_config):
                 continue
@@ -469,37 +604,6 @@ class HSRManager(TaskExecuteBase):
                 return result
 
         return "Pass"
-
-    def _check_manual_review(self, script_config: HSRConfig) -> str:
-        """校验 HSR 人工检查需要的 SRA 切号配置。"""
-
-        sra_path = resolve_script_path(script_config, "SRA")
-        if not sra_path:
-            return "人工排查需要先设置 SRA 路径"
-
-        sra_exe = Path(sra_path) / "SRA-cli.exe"
-        if not sra_exe.exists():
-            return f"SRA 路径中未找到 SRA-cli.exe：{sra_exe}"
-
-        if is_game_management_enabled(script_config):
-            game_exe_path = resolve_game_executable_path(script_config)
-            if not game_exe_path.exists():
-                return f"游戏启动文件不存在：{game_exe_path}"
-
-        has_executable_user = False
-        for _uid, user_config in script_config.UserData.items():
-            if not self._is_executable_user(user_config):
-                continue
-
-            has_executable_user = True
-
-        if not has_executable_user:
-            return "未找到任何可检查用户，请确保至少有一个启用且剩余天数不为 0 的用户"
-
-        return self._validate_sra_user_credentials(
-            script_config,
-            only_sra_needed=False,
-        )
 
     async def _apply_completion_writebacks(self) -> None:
         """在配置解锁后，把真实成功的完成态写回用户 Data。"""
@@ -515,9 +619,7 @@ class HSRManager(TaskExecuteBase):
             user_config = script_config.UserData[user_uuid]
             for group, key, value in item.fields:
                 await user_config.set(group, key, value)
-            logger.success(
-                f"用户「{item.user_name}」HSR 完成态已写回：{item.reason}"
-            )
+            logger.success(f"用户「{item.user_name}」HSR 完成态已写回：{item.reason}")
 
         self._completion_writebacks.clear()
 
@@ -570,6 +672,7 @@ class HSRManager(TaskExecuteBase):
             for uid, config in self.user_config.items()
             if config.get("Info", "Status")
             and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
         ]
         logger.info(
             f"HSR 用户列表加载完成，已筛选用户数：{len(self.script_info.user_list)}"
@@ -586,10 +689,10 @@ class HSRManager(TaskExecuteBase):
         if self.check_result != "Pass":
             logger.warning(f"HSR 配置检查未通过：{self.check_result}")
             self._append_log(f"HSR 配置检查未通过：{self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -646,7 +749,9 @@ class HSRManager(TaskExecuteBase):
                     user_log.status = f"HSR 执行异常: {e}"
                     user_log.content.append(str(e))
                     user_errors.append(f"用户「{user_item.name}」执行异常：{e}")
-                    logger.opt(exception=True).warning(f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}")
+                    logger.opt(exception=True).warning(
+                        f"HSR 用户「{user_item.name}」执行异常，继续后续用户：{e}"
+                    )
                     self._append_log(
                         f"用户「{user_item.name}」执行异常，继续处理后续用户：{e}"
                     )
@@ -654,7 +759,9 @@ class HSRManager(TaskExecuteBase):
 
                 if proxy is not None and proxy.crashed:
                     error_message = proxy.error_message or "HSR 用户任务异常"
-                    user_errors.append(f"用户「{user_item.name}」执行异常：{error_message}")
+                    user_errors.append(
+                        f"用户「{user_item.name}」执行异常：{error_message}"
+                    )
                     logger.warning(
                         f"HSR 用户「{user_item.name}」执行异常，继续后续用户："
                         f"{error_message}"
@@ -671,8 +778,7 @@ class HSRManager(TaskExecuteBase):
 
         if user_errors:
             self._append_log(
-                "HSR 部分用户执行异常，已继续处理后续用户："
-                + "；".join(user_errors)
+                "HSR 部分用户执行异常，已继续处理后续用户：" + "；".join(user_errors)
             )
 
         if self.task_info.mode == "AutoProxy" and steps_count == 0 and not user_errors:
@@ -692,11 +798,12 @@ class HSRManager(TaskExecuteBase):
         )
 
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
-        """运行一个用户导入的原生 SRA/M7A 快照。
+        """按脚本直控运行一个用户。
 
-        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
-        日志、取消和会话收尾始终由 MAS 负责。没有新 ``Control``/``Direct``
-        字段时不会进入此路径。
+        默认直接执行 SRA/M7A 当前的原生配置；用户导入过快照时才改用隔离的
+        快照（见 ``native_control`` 模块说明）。直控只把外部配置交给对应 CLI；
+        MAS 是否管理游戏启停由脚本开关决定，日志、取消和会话收尾始终由 MAS
+        负责。没有新 ``Control``/``Direct`` 字段时不会进入此路径。
         """
 
         if self.script_config is None:
@@ -708,6 +815,9 @@ class HSRManager(TaskExecuteBase):
         user_item.log_record[started_at] = log_item
         user_item.status = "运行"
         log_start = len(self._log_lines)
+
+        # 执行任务前脚本（每用户仅一次）
+        await run_script_before_task(user_config)
 
         switcher = HSRAccountSwitcher(
             script_config=self.script_config,
@@ -743,8 +853,8 @@ class HSRManager(TaskExecuteBase):
                 try:
                     result = await session.run(control.timeout_seconds)
                     if not result.success:
-                        raise RuntimeError(result.error or f"{engine} 用户配置快照执行失败")
-                    summary = result.summary or f"{engine} 用户配置快照执行完成"
+                        raise RuntimeError(result.error or f"{engine} 直控执行失败")
+                    summary = result.summary or f"{engine} 直控执行完成"
                     summaries.append(summary)
                     self._append_log(f"用户「{user_name}」{summary}")
                 except asyncio.CancelledError:
@@ -760,11 +870,15 @@ class HSRManager(TaskExecuteBase):
             user_item.status = "异常"
             log_item.status = "HSR 脚本直控异常"
             log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
+            # 执行任务后脚本（每用户仅一次）
+            await run_script_after_task(user_config)
             raise
 
         user_item.status = "完成"
         log_item.status = "HSR 脚本直控完成"
         log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
+        # 执行任务后脚本（每用户仅一次）
+        await run_script_after_task(user_config)
         return len(control.engines)
 
     async def _persist_user_logs(self) -> None:
@@ -774,26 +888,20 @@ class HSRManager(TaskExecuteBase):
             for start_time, log_item in user_item.log_record.items():
                 if log_item.status == "HSR 正常运行中":
                     log_item.status = (
-                        "任务被用户手动中止"
-                        if self.crashed
-                        else "HSR 任务结束"
+                        "任务被用户手动中止" if self.crashed else "HSR 任务结束"
                     )
                 if not log_item.content:
                     log_item.content = ["未捕获到任何 HSR 日志内容\n"]
                     if log_item.status in ("未开始监看日志", "HSR 正常运行中"):
                         log_item.status = "未捕获到日志"
 
-                dt = start_time.replace(
-                    tzinfo=datetime.now().astimezone().tzinfo
-                ).astimezone(UTC4)
+                dt = start_time.astimezone(UTC4)
                 log_path = Config.build_history_log_path(
                     script_name=self.script_info.name,
                     user_name=user_item.name,
                     log_time=dt,
                 )
-                await Config.save_hsr_log(
-                    log_path, log_item.content, log_item.status
-                )
+                await Config.save_hsr_log(log_path, log_item.content, log_item.status)
 
     async def _restore_external_configs(self) -> str:
         """恢复 SRA / M7A 外部配置，返回错误文本或空串。"""
@@ -810,27 +918,14 @@ class HSRManager(TaskExecuteBase):
             self._append_log(f"HSR 外部脚本配置恢复失败：{e}")
             return f"HSR 外部脚本配置恢复失败：{e}"
 
-    async def _sync_manual_review_user_data(self) -> None:
-        """人工检查模式下，把本轮检查结果写回真实 UserData。"""
-
-        if self.task_info.mode != "ManualReview" or self.user_config is None:
-            return
-
-        script_id = uuid.UUID(self.script_info.script_id)
-        if script_id not in Config.ScriptConfig:
-            return
-
-        script_config = Config.ScriptConfig[script_id]
-        await script_config.UserData.load(await self.user_config.toDict())
-        await Config.ScriptConfig.save()
-        logger.success("HSR 人工检查结果已写回用户配置")
-
     async def _unlock_script_config(self) -> bool:
         """解锁当前 HSR 脚本配置；配置已不存在时跳过。"""
 
         script_id = uuid.UUID(self.script_info.script_id)
         if script_id not in Config.ScriptConfig:
-            logger.warning(f"HSR 脚本配置不存在，跳过解锁：{self.script_info.script_id}")
+            logger.warning(
+                f"HSR 脚本配置不存在，跳过解锁：{self.script_info.script_id}"
+            )
             return False
 
         await Config.ScriptConfig[script_id].unlock()
@@ -842,13 +937,10 @@ class HSRManager(TaskExecuteBase):
         if not self.script_info.user_list:
             return
 
-        over_user = [
-            u.name for u in self.script_info.user_list if u.status == "完成"
-        ]
-        unfinished_user = [
-            u.name for u in self.script_info.user_list if u.status != "完成"
-        ]
-        uncompleted_count = len(unfinished_user)
+        over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
+        uncompleted_count = sum(
+            1 for u in self.script_info.user_list if u.status != "完成"
+        )
         task_mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
@@ -863,43 +955,35 @@ class HSRManager(TaskExecuteBase):
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_count": len(over_user),
+            "completed_count": over_count,
             "uncompleted_count": uncompleted_count,
             "result": task_result,
             "game_sign_summary": has_game_sign_summary,
         }
 
         try:
-            await Notify.push_plyer(
-                title.replace("报告", "已完成！"),
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {uncompleted_count}",
-                f"已完成用户数: {len(over_user)}, 未完成用户数: {uncompleted_count}",
-                10,
+            push_result = await push_notification(
+                mode="代理结果",
+                title=title,
+                message=result,
+                user_config=None,
+                task_info=self.task_info,
             )
-        except Exception as e:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"推送 HSR 系统通知时出现异常: {e}")
-            await self._send_notification_error(
-                f"推送 HSR 系统通知时出现异常: {e}"
+            finalize_task_game_sign_notification(
+                self.task_info, has_game_sign_summary, push_result
             )
-
-        try:
-            await push_notification("代理结果", title, result, None)
-            if has_game_sign_summary:
-                mark_task_game_sign_summary_consumed(self.task_info)
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")
-            await self._send_notification_error(
-                f"推送 HSR 代理结果时出现异常: {e}"
-            )
+            await self._send_notification_error(f"推送 HSR 代理结果时出现异常: {e}")
 
     async def _send_notification_error(self, message: str) -> None:
         """通知失败时尽量提示前端；提示失败不影响任务收尾。"""
 
         try:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=message),
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"发送 HSR 通知错误提示失败：{e}")
@@ -959,8 +1043,6 @@ class HSRManager(TaskExecuteBase):
             try:
                 if self.task_info.mode == "AutoProxy":
                     await self._apply_completion_writebacks()
-                else:
-                    await self._sync_manual_review_user_data()
             except Exception as e:  # noqa: BLE001
                 msg = f"HSR 已完成模块状态写回失败：{e}"
                 logger.opt(exception=True).warning(msg)
@@ -979,8 +1061,6 @@ class HSRManager(TaskExecuteBase):
         try:
             if self.task_info.mode == "AutoProxy":
                 await self._apply_completion_writebacks()
-            else:
-                await self._sync_manual_review_user_data()
         except Exception as e:
             self.script_info.status = "异常"
             logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
@@ -1002,8 +1082,8 @@ class HSRManager(TaskExecuteBase):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"HSR 任务出现异常：{e}")
         self._append_log(f"HSR 任务出现异常：{e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"HSR 任务出现异常：{e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"HSR 任务出现异常：{e}"),
         )

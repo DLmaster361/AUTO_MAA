@@ -29,7 +29,6 @@ import json5
 from app.utils import get_logger
 from app.utils.io import atomic_write
 
-
 logger = get_logger("MaaEnd 资源加载器")
 
 SUPPORTED_CONTROLLER_PROTOCOLS = frozenset({"Adb", "Win32"})
@@ -64,6 +63,7 @@ class MaaEndResourceLoader:
         self._options: dict[str, Any] = {}
         self._tasks_loaded = False
         self._load_all_resources()
+        self._resource_signature = self._current_signature()
 
     @classmethod
     def get_cached(
@@ -77,7 +77,17 @@ class MaaEndResourceLoader:
         with cls._cache_lock:
             cached = cls._loader_cache.get(root_path)
             if cached is not None and not force_reload:
-                return cached
+                if cached._current_signature() == cached._resource_signature:
+                    return cached
+
+                logger.info(f"MaaEnd 源文件资源缓存已失效，重新解析：{root_path}")
+                try:
+                    loader = cls(root_path, file_cache=cached._file_cache)
+                except Exception as error:
+                    raise ValueError(f"MaaEnd 文件不完整: {error}") from error
+                cls._loader_cache[root_path] = loader
+                loader._save_disk_cache()
+                return loader
 
             if force_reload:
                 cls._loader_cache.pop(root_path, None)
@@ -98,18 +108,15 @@ class MaaEndResourceLoader:
 
     @classmethod
     def get_loaded(cls, root_path: Path) -> "MaaEndResourceLoader":
-        """直接读取已经载入进程内存的资源。"""
+        """读取并校验已经载入进程内存的资源。"""
 
-        root_path = root_path.resolve()
-        with cls._cache_lock:
-            loader = cls._loader_cache.get(root_path)
-        if loader is None:
-            return cls.get_cached(root_path)
-        return loader
+        return cls.get_cached(root_path)
 
     @classmethod
     def _disk_cache_path(cls, root_path: Path) -> Path:
-        cache_key = hashlib.sha256(str(root_path).casefold().encode("utf-8")).hexdigest()
+        cache_key = hashlib.sha256(
+            str(root_path).casefold().encode("utf-8")
+        ).hexdigest()
         return Path.cwd() / "data/cache/maaend_resource_loader" / f"{cache_key}.json"
 
     @staticmethod
@@ -131,7 +138,10 @@ class MaaEndResourceLoader:
 
         try:
             payload = json.loads(cache_path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("version") != cls._disk_cache_version:
+            if (
+                not isinstance(payload, dict)
+                or payload.get("version") != cls._disk_cache_version
+            ):
                 return None
 
             file_cache: dict[Path, tuple[tuple, Any]] = {}
@@ -241,7 +251,9 @@ class MaaEndResourceLoader:
                 try:
                     task_data = self._read_json5(interface_path.parent / relative_path)
                 except (OSError, ValueError) as error:
-                    logger.warning(f"MaaEnd 任务资源读取失败，已跳过 {relative_path}: {error}")
+                    logger.warning(
+                        f"MaaEnd 任务资源读取失败，已跳过 {relative_path}: {error}"
+                    )
                     continue
                 if not isinstance(task_data, dict):
                     logger.warning(f"MaaEnd 任务资源格式错误，已跳过: {relative_path}")
@@ -253,14 +265,34 @@ class MaaEndResourceLoader:
                 self._tasks.extend(task for task in tasks if isinstance(task, dict))
 
             self._tasks_loaded = True
+            self._resource_signature = self._current_signature()
             self._save_disk_cache()
+
+    def _current_signature(self) -> tuple:
+        interface_path = (self.root_path / "interface.json").resolve()
+        paths = set(self._file_cache)
+        paths.add(interface_path)
+        paths.update(
+            (interface_path.parent / relative_path).resolve()
+            for relative_path in self._interface["languages"].values()
+        )
+        paths.update(
+            (interface_path.parent / relative_path).resolve()
+            for relative_path in self._interface["import"]
+        )
+        return tuple(
+            self._file_signature(path)
+            for path in sorted(paths, key=lambda item: str(item))
+        )
 
     def _get_locale(self, language: str) -> dict[str, str]:
         language = _normalize_language(language)
         try:
             return self._locales[language]
         except KeyError as error:
-            raise ValueError(f"MaaEnd 不支持语言 {language}: {self.root_path / 'interface.json'}") from error
+            raise ValueError(
+                f"MaaEnd 不支持语言 {language}: {self.root_path / 'interface.json'}"
+            ) from error
 
     @staticmethod
     def _localize_options(
@@ -274,7 +306,9 @@ class MaaEndResourceLoader:
                 try:
                     label = locale[label[1:]]
                 except KeyError as error:
-                    raise ValueError(f"MaaEnd 选项缺少本地化文本: {case['name']}") from error
+                    raise ValueError(
+                        f"MaaEnd 选项缺少本地化文本: {case['name']}"
+                    ) from error
             result.append({"label": label or case["name"], "value": case["name"]})
         return result
 
@@ -295,7 +329,8 @@ class MaaEndResourceLoader:
         return {
             "controllers": self._localize_options(controller_cases, locale),
             "controllerTypes": {
-                controller["name"]: controller["type"] for controller in controller_cases
+                controller["name"]: controller["type"]
+                for controller in controller_cases
             },
             "essenceLocations": self._localize_options(essence_location_cases, locale),
         }
@@ -329,7 +364,9 @@ class MaaEndResourceLoader:
                 try:
                     label = locale[label[1:]]
                 except KeyError as error:
-                    raise ValueError(f"MaaEnd 任务缺少本地化文本: {task['name']}") from error
+                    raise ValueError(
+                        f"MaaEnd 任务缺少本地化文本: {task['name']}"
+                    ) from error
             result[task["name"]] = label
         return result
 
@@ -343,7 +380,9 @@ def load_maaend_interface_i18n(root_path: Path, language: str) -> dict[str, str]
 def load_maaend_controller_protocol(root_path: Path, controller_name: str) -> str:
     """从内存资源读取 MaaEnd 控制器协议。"""
 
-    return MaaEndResourceLoader.get_loaded(root_path).get_controller_protocol(controller_name)
+    return MaaEndResourceLoader.get_loaded(root_path).get_controller_protocol(
+        controller_name
+    )
 
 
 def load_maaend_options(root_path: Path, force_reload: bool = False) -> dict[str, Any]:

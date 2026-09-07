@@ -20,65 +20,78 @@
 
 #   Contact: DLmaster_361@163.com
 
+import asyncio
+import json
 import os
 import re
-import sys
-import httpx
 import shutil
-import asyncio
-import uvicorn
 import sqlite3
-import truststore
-from pathlib import Path
-from fastapi import WebSocket, WebSocketDisconnect
-from collections import defaultdict
-from jinja2 import Environment, FileSystemLoader
-from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Union, Dict, Any, List
+import sys
+import time
 import uuid
-import json
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
+
+import httpx
+import truststore
+
+# 仅用于类型标注的顶层依赖移到 TYPE_CHECKING，避免启动导入开销
+if TYPE_CHECKING:
+    import uvicorn
+from jinja2 import Environment, FileSystemLoader
 
 from app.models.config import (
-    GeneralConfig,
-    MaaConfig,
-    SrcConfig,
-    M9AConfig,
-    MaaEndConfig,
-    OkwwConfig,
-    OkNteConfig,
-    HSRConfig,
-    HSRUserConfig,
-    MaaPlanConfig,
-    MaaEndPlanConfig,
-    QueueConfig,
-    QueueItem,
-    MaaUserConfig,
-    SrcUserConfig,
-    M9AUserConfig,
-    MaaEndUserConfig,
-    GeneralUserConfig,
-    OkwwUserConfig,
-    OkNteUserConfig,
-    GlobalConfig,
     CLASS_BOOK,
     PLAN_BOOK,
-    Webhook,
-    TimeSet,
+    BetterGIConfig,
+    BetterGIUserConfig,
     EmulatorConfig,
     GameSignAccountGroup,
+    GeneralConfig,
+    GeneralUserConfig,
+    GlobalConfig,
+    HSRConfig,
+    HSRUserConfig,
+    M9AConfig,
+    M9AUserConfig,
+    MaaConfig,
+    MaaEndConfig,
+    MaaEndPlanConfig,
+    MaaEndUserConfig,
+    MaaFWConfig,
+    MaaFWUserConfig,
+    MaaPlanConfig,
+    MaaUserConfig,
+    OkNteConfig,
+    OkNteUserConfig,
+    OkwwConfig,
+    OkwwUserConfig,
+    QueueConfig,
+    QueueItem,
+    SrcConfig,
+    SrcUserConfig,
+    TimeSet,
+    Webhook,
 )
-from app.models.schema import PlanComboxConsumer, WebSocketMessage
+from app.models.schema import PlanComboxConsumer
+from app.utils import get_logger, is_supervised, resource_path
 from app.utils.constants import (
+    MAA_DEPOT_EXCLUDED_ITEM_IDS,
+    RESOURCE_STAGE_DATE_TEXT,
+    RESOURCE_STAGE_DROP_INFO,
+    RESOURCE_STAGE_INFO,
+    TYPE_BOOK,
     UTC4,
     UTC8,
-    RESOURCE_STAGE_INFO,
-    RESOURCE_STAGE_DROP_INFO,
-    TYPE_BOOK,
-    RESOURCE_STAGE_DATE_TEXT,
-    MAA_DEPOT_EXCLUDED_ITEM_IDS,
 )
-from app.utils import get_logger
 from app.utils.io import write_file
+from app.utils.paths import SOURCE_ROOT
+from app.utils.platform import IS_WINDOWS
+
+# 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
+MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 
 logger = get_logger("配置管理")
 
@@ -195,9 +208,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         last_drop_stats: dict[str, int] = {}
 
         for line in logs[start_index : end_index + 1]:
-            drop_match = re.search(
-                r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line
-            )
+            drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
             if drop_match:
                 current_stage = drop_match.group(1)
                 last_drop_stats = {}
@@ -236,7 +247,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.4.0"
+    VERSION = "v5.5.0-beta.3"
 
     def __init__(self) -> None:
         super().__init__()
@@ -262,12 +273,7 @@ class AppConfig(GlobalConfig):
         self._repo: Any = None
         self._repo_initialized = False
 
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
-        )
-
-        self.server: Optional[uvicorn.Server] = None
-        self.websocket: Optional[WebSocket] = None
+        self.server: Optional["uvicorn.Server"] = None
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -278,11 +284,19 @@ class AppConfig(GlobalConfig):
             "KillSelf",
             "Logoff",
         ] = "NoAction"
+        # 电源操作前的静默延时秒数, 与 power_sign 一同由队列配置写入
+        self.power_delay: int = 0
         self.temp_task: List[asyncio.Task] = []
+        # 正在循环运行的队列，供配置改动前的安全检查使用
+        self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
 
         self._inject_truststore()
+
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(resource_path("html")))
+        )
 
     @staticmethod
     def _inject_truststore() -> None:
@@ -310,6 +324,23 @@ class AppConfig(GlobalConfig):
                 truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
             )
 
+        # 缓存 SSL 上下文：httpx 为每个 AsyncClient 都调用 create_default_context()，
+        # truststore 场景下会全量加载 Windows 证书库（实测一次 5~15s，且发生在
+        # 事件循环上时冻结全部请求）。按参数缓存后全程只加载一次，
+        # 首次加载由启动预热线程完成，见 main.py。
+        _original_create_default_context = ssl.create_default_context
+        _ssl_context_cache: dict[tuple, ssl.SSLContext] = {}
+
+        def _cached_create_default_context(*args: object, **kwargs: object) -> ssl.SSLContext:
+            key = (args, tuple(sorted(kwargs.items())))
+            context = _ssl_context_cache.get(key)
+            if context is None:
+                context = _original_create_default_context(*args, **kwargs)
+                _ssl_context_cache[key] = context
+            return context
+
+        ssl.create_default_context = _cached_create_default_context
+
     def _get_repo(self) -> Any:
         """惰性初始化 Git 仓库，避免启动时导入 GitPython。"""
         if not self._repo_initialized:
@@ -321,7 +352,9 @@ class AppConfig(GlobalConfig):
             try:
                 from git import Repo
 
-                self._repo = Repo(Path.cwd())
+                # .git 随源码走：受 AUTO-MAS-Runtime 监督时源码在 <app-root>/repo/，
+                # 工作目录（app-root）下没有仓库，不能再按 Path.cwd() 打开
+                self._repo = Repo(SOURCE_ROOT)
             except Exception as e:
                 logger.warning(f"Git仓库初始化失败: {e}")
                 self._repo = None
@@ -352,17 +385,25 @@ class AppConfig(GlobalConfig):
         )
         self._game_sign_result_date = today
 
-        # 将旧 MAA/MaaEnd 用户侧的森空岛凭据迁移到统一签到工具账号。
-        # 先恢复快照，迁移时清理凭据变更账号才不会误清其它账号结果。
-        await self._sync_legacy_skland_accounts()
-
         from app.services import System
         from app.services.telemetry import set_telemetry_enabled
 
         self.bind("Start", "IfSelfStart", System.set_SelfStart)
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         self.bind("Function", "IfEnableTelemetry", set_telemetry_enabled)
-        asyncio.create_task(System.set_SelfStart(self.get("Start", "IfSelfStart")))
+        # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
+        self_start_task = asyncio.create_task(
+            System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        )
+        self.temp_task.append(self_start_task)
+
+        def _self_start_done(t: asyncio.Task) -> None:
+            if t in self.temp_task:
+                self.temp_task.remove(t)
+            if not t.cancelled() and t.exception() is not None:
+                logger.warning(f"设置开机自启动失败: {t.exception()}")
+
+        self_start_task.add_done_callback(_self_start_done)
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
         set_telemetry_enabled(self.get("Function", "IfEnableTelemetry"))
 
@@ -658,20 +699,6 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
-                if (Path.cwd() / "config/ScriptConfig.json").exists():
-                    data = (Path.cwd() / "config/ScriptConfig.json").read_text(
-                        encoding="utf-8"
-                    )
-                    data.replace("IfWakeUp", "IfStartUp")
-                    data.replace("IfAutoRoguelike", "IfRoguelike")
-                    data.replace("IfBase", "IfInfrast")
-                    data.replace("IfCombat", "IfFight")
-                    data.replace("IfMission", "IfAward")
-                    data.replace("IfRecruiting", "IfRecruit")
-                    (Path.cwd() / "config/ScriptConfig.json").write_text(
-                        data, encoding="utf-8"
-                    )
-
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
                 db.commit()
@@ -680,37 +707,20 @@ class AppConfig(GlobalConfig):
             db.close()
             logger.success("数据文件版本更新完成")
 
-    async def send_json(self, data: dict) -> None:
-        """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(data)
-
-    async def send_websocket_message(
-        self,
-        id: str,
-        type: Literal["Update", "Message", "Info", "Signal"],
-        data: Dict[str, Any],
-    ) -> None:
-        """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            websocket = Config.websocket
-            try:
-                await websocket.send_json(
-                    WebSocketMessage(id=id, type=type, data=data).model_dump()
-                )
-            except (RuntimeError, WebSocketDisconnect) as e:
-                if Config.websocket is websocket:
-                    Config.websocket = None
-                logger.warning(
-                    f"WebSocket 已断开，消息未发送: {e.__class__.__name__}: {e}"
-                )
-
     async def get_git_version(self) -> tuple[bool, str, str]:
-        """获取Git版本信息，如果Git不可用则返回默认值"""
+        """获取Git版本信息，如果Git不可用则返回默认值。
+
+        受 AUTO-MAS-Runtime 监督时后端不是更新主体：更新由 Runtime 整体替换
+        repo/ 完成、不在旧仓库上 fetch，比对远端分支判定“需要更新”没有意义，
+        一律视为最新。managed 模式直接回显 Runtime 从校验过的仓库注入的 HEAD，
+        不依赖 Runtime 布局里并不存在的 git 命令行；development 模式无注入
+        身份，仍从源码目录读取 Git 信息用于展示。
+        """
+
+        supervised = is_supervised()
+        expected_commit = os.getenv("AUTO_MAS_EXPECTED_COMMIT", "")
+        if supervised and expected_commit:
+            return True, expected_commit, "unknown"
 
         def _get_git_info():
 
@@ -728,12 +738,11 @@ class AppConfig(GlobalConfig):
 
             # 检查是否为最新 commit
             try:
-                # 获取远程分支的最新 commit
-                origin = repo.remotes.origin
-                origin.fetch()  # 拉取最新信息
-                remote_commit = repo.commit(
-                    f"origin/{repo.active_branch.name}"
-                )
+                # 仅比对本地已缓存的远程引用，不在请求路径上调用 origin.fetch()。
+                # fetch 是联网操作（弱网/VPN 下耗时 5~15s），以同步 GitPython 子进程
+                # 形式执行会阻塞事件循环，期间所有请求排队无响应；远程引用由
+                # 版本更新等流程自行维护，此处只读本地。
+                remote_commit = repo.commit(f"origin/{repo.active_branch.name}")
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
             except Exception as e:
                 logger.warning(f"无法获取远程分支信息: {e}")
@@ -745,12 +754,21 @@ class AppConfig(GlobalConfig):
         is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
             None, _get_git_info
         )
-        return is_latest, commit_hash, commit_time
+        return is_latest or supervised, commit_hash, commit_time
 
     async def add_script(
         self,
         script: Literal[
-            "MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"
+            "MAA",
+            "SRC",
+            "General",
+            "MaaEnd",
+            "M9A",
+            "MaaFW",
+            "Okww",
+            "OkNte",
+            "HSR",
+            "BetterGI",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -760,9 +778,11 @@ class AppConfig(GlobalConfig):
         | GeneralConfig
         | MaaEndConfig
         | M9AConfig
+        | MaaFWConfig
         | OkwwConfig
         | OkNteConfig
-        | HSRConfig,
+        | HSRConfig
+        | BetterGIConfig,
     ]:
         """添加脚本配置"""
 
@@ -850,6 +870,15 @@ class AppConfig(GlobalConfig):
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+
+        # 删脚本会顺带删掉引用它的队列项；正在循环运行的队列靠下标回写状态，
+        # 结构一变就会跑错脚本，两轮之间脚本没锁也要拦住。
+        for queue_uid, queue in self.QueueConfig.items():
+            if any(
+                item.get("Info", "ScriptId") == str(uid)
+                for item in queue.QueueItem.values()
+            ):
+                self._ensure_cycle_safe(queue_uid, "删除它引用的脚本")
 
         # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
@@ -1021,7 +1050,7 @@ class AppConfig(GlobalConfig):
                         Path(config["Info"]["RootPath"])
                     )
                 )
-            if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
+            if IS_WINDOWS and Path(config["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
                 config["Script"][path] = (
@@ -1059,9 +1088,11 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
+        | MaaFWUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
-        | HSRUserConfig,
+        | HSRUserConfig
+        | BetterGIUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1094,8 +1125,12 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, MaaFWConfig):
+            uid, config = await script_config.UserData.add(MaaFWUserConfig)
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
+        elif isinstance(script_config, BetterGIConfig):
+            uid, config = await script_config.UserData.add(BetterGIUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -1166,234 +1201,6 @@ class AppConfig(GlobalConfig):
         logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
         return target_config_dir
 
-    @staticmethod
-    def _safe_config_get(
-        config: Any, group: str, name: str, default: Any = None
-    ) -> Any:
-        """读取旧用户字段，兼容历史配置和测试替身缺少字段的情况。"""
-
-        try:
-            return config.get(group, name)
-        except (KeyError, TypeError, AttributeError):
-            return default
-
-    def _find_game_sign_account_by_skland_token(
-        self, token: str
-    ) -> tuple[Any | None, Any | None]:
-        """查找持有指定森空岛 Token 的工具账号。"""
-
-        def token_identity(value: Any) -> str:
-            raw_value = str(value or "").strip()
-            if not raw_value:
-                return ""
-            try:
-                payload = json.loads(raw_value)
-            except (TypeError, json.JSONDecodeError):
-                return raw_value
-            if not isinstance(payload, dict):
-                return raw_value
-            data = payload.get("data")
-            if isinstance(data, dict) and data.get("content"):
-                return str(data["content"]).strip()
-            return str(
-                payload.get("oauthToken")
-                or payload.get("oauth_token")
-                or payload.get("accessToken")
-                or payload.get("access_token")
-                or payload.get("token")
-                or raw_value
-            ).strip()
-
-        token_value = token_identity(token)
-        accounts = getattr(getattr(self, "ToolsConfig", None), "GameSign_Accounts", None)
-        if not token_value or accounts is None:
-            return None, None
-
-        try:
-            account_items = accounts.items()
-        except AttributeError:
-            return None, None
-
-        for account_uid, account in account_items:
-            candidate_token = token_identity(
-                self._safe_config_get(account, "GameSignAccount", "SklandToken", "")
-            )
-            if candidate_token and candidate_token == token_value:
-                return account_uid, account
-        return None, None
-
-    def _legacy_skland_token_state(self, token: str) -> tuple[bool, bool | None]:
-        """返回旧用户是否仍引用 Token，以及共享账号的有效启用状态。"""
-
-        token_value = str(token or "").strip()
-        if not token_value:
-            return False, None
-
-        script_configs = getattr(self, "ScriptConfig", None)
-        if script_configs is None:
-            return False, None
-
-        references: list[bool] = []
-        try:
-            script_values = script_configs.values()
-        except AttributeError:
-            return False, None
-
-        for script_config in script_values:
-            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
-                continue
-            for user_config in script_config.UserData.values():
-                user_token = str(
-                    self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
-                ).strip()
-                if user_token == token_value:
-                    references.append(
-                        bool(
-                            self._safe_config_get(
-                                user_config, "Info", "IfSkland", False
-                            )
-                        )
-                    )
-
-        return bool(references), any(references)
-
-    async def _sync_legacy_skland_user(
-        self,
-        *,
-        user_config: Any,
-        user_id: str,
-        old_token: str | None = None,
-        token: str | None = None,
-        enabled: bool | None = None,
-        name: str | None = None,
-    ) -> None:
-        """同步单个 MAA/MaaEnd 用户到游戏签到工具账号。"""
-
-        tools_config = getattr(self, "ToolsConfig", None)
-        accounts = getattr(tools_config, "GameSign_Accounts", None)
-        if accounts is None:
-            return
-
-        old_token_value = str(old_token or "").strip()
-        new_token = (
-            str(token).strip()
-            if token is not None
-            else str(
-                self._safe_config_get(user_config, "Info", "SklandToken", "") or ""
-            ).strip()
-        )
-        if not old_token and not new_token:
-            return
-
-        old_token_shared, _ = self._legacy_skland_token_state(old_token_value)
-        old_account_uid, old_account = self._find_game_sign_account_by_skland_token(
-            old_token_value
-        )
-        new_account_uid, new_account = self._find_game_sign_account_by_skland_token(
-            new_token
-        )
-
-        # 清空旧用户 Token 时只清空对应工具账号凭据，不删除可能包含其它社区凭据的账号。
-        if not new_token:
-            account_uid, account = old_account_uid, old_account
-            token_still_used, _ = self._legacy_skland_token_state(old_token_value)
-            if account is not None and not token_still_used:
-                await account.set("GameSignAccount", "SklandToken", "")
-                await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-                if account_uid is not None:
-                    self._clear_game_sign_account_results(str(account_uid))
-            return
-
-        # 新 Token 已有账号时直接复用，避免生成重复凭据并重复签到。
-        account_uid, account = new_account_uid, new_account
-        if account is not None:
-            if (
-                old_account is not None
-                and old_account_uid != account_uid
-                and not old_token_shared
-            ):
-                await old_account.set("GameSignAccount", "SklandToken", "")
-                await old_account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-                if old_account_uid is not None:
-                    self._clear_game_sign_account_results(str(old_account_uid))
-        elif old_account is not None and not old_token_shared:
-            account_uid, account = old_account_uid, old_account
-        else:
-            account_uid, account = await accounts.add(GameSignAccountGroup)
-
-        current_name = str(
-            name
-            if name is not None
-            else self._safe_config_get(user_config, "Info", "Name", "") or ""
-        ).strip()
-        account_name = current_name or f"用户 {str(user_id)[-8:]}"
-
-        _, shared_enabled = self._legacy_skland_token_state(new_token)
-        if shared_enabled is not None:
-            enabled_value = shared_enabled
-        elif enabled is None:
-            existing_enabled = self._safe_config_get(
-                account, "GameSignAccount", "Enabled", True
-            )
-            enabled_value = bool(existing_enabled)
-        else:
-            enabled_value = bool(enabled)
-
-        account_token = str(
-            self._safe_config_get(account, "GameSignAccount", "SklandToken", "") or ""
-        ).strip()
-        # 旧用户只保存 OAuth Token；匹配到工具账号时保留其已刷新的完整凭据。
-        target_token = account_token if new_account is account else new_token
-        credential_changed = account_token != target_token
-        await account.set("GameSignAccount", "Name", account_name)
-        await account.set("GameSignAccount", "Enabled", enabled_value)
-        await account.set("GameSignAccount", "SklandToken", target_token)
-        if credential_changed:
-            await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-            if account_uid is not None:
-                self._clear_game_sign_account_results(str(account_uid))
-
-    async def _sync_legacy_skland_sign_date(
-        self, *, token: str, sign_date: str
-    ) -> None:
-        """回写旧 MAA/MaaEnd 用户的森空岛签到日期，保持旧用户列表状态一致。"""
-
-        token_value = str(token or "").strip()
-        if not token_value:
-            return
-
-        for script_config in self.ScriptConfig.values():
-            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
-                continue
-            for user_config in script_config.UserData.values():
-                if (
-                    str(
-                        self._safe_config_get(user_config, "Info", "SklandToken", "")
-                        or ""
-                    ).strip()
-                    == token_value
-                    and self._safe_config_get(user_config, "Info", "IfSkland", False)
-                    and self._safe_config_get(user_config, "Data", "LastSklandDate", "")
-                    != sign_date
-                ):
-                    await user_config.set("Data", "LastSklandDate", sign_date)
-
-    async def _sync_legacy_skland_accounts(self) -> None:
-        """启动时迁移已有 MAA/MaaEnd 森空岛用户，避免旧配置失去签到能力。"""
-
-        for script_config in self.ScriptConfig.values():
-            if not isinstance(script_config, (MaaConfig, MaaEndConfig)):
-                continue
-            for user_uid, user_config in script_config.UserData.items():
-                await self._sync_legacy_skland_user(
-                    user_config=user_config,
-                    user_id=str(user_uid),
-                    enabled=bool(
-                        self._safe_config_get(user_config, "Info", "IfSkland", False)
-                    ),
-                    name=self._safe_config_get(user_config, "Info", "Name", ""),
-                )
-
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
@@ -1406,47 +1213,7 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # A replaced Skland credential must be allowed to sign again today.
-        reset_skland_date = isinstance(script_config, (MaaConfig, MaaEndConfig))
-        skland_token_changed = False
-        legacy_skland_info = data.get("Info", {}) if reset_skland_date else {}
-        legacy_old_token = ""
-        if reset_skland_date:
-            legacy_old_token = str(
-                AppConfig._safe_config_get(user_config, "Info", "SklandToken", "") or ""
-            )
-        if reset_skland_date:
-            info_data = data.get("Info", {})
-            if isinstance(info_data, dict) and "SklandToken" in info_data:
-                skland_token_changed = (
-                    user_config.get("Info", "SklandToken") != info_data["SklandToken"]
-                )
-
         await user_config.update(data)
-
-        if skland_token_changed:
-            await user_config.set("Data", "LastSklandDate", "2000-01-01")
-
-        if reset_skland_date and isinstance(legacy_skland_info, dict):
-            if any(
-                key in legacy_skland_info for key in ("SklandToken", "IfSkland", "Name")
-            ):
-                await self._sync_legacy_skland_user(
-                    user_config=user_config,
-                    user_id=user_id,
-                    old_token=legacy_old_token,
-                    token=(
-                        str(legacy_skland_info.get("SklandToken") or "")
-                        if "SklandToken" in legacy_skland_info
-                        else None
-                    ),
-                    enabled=(
-                        bool(legacy_skland_info["IfSkland"])
-                        if "IfSkland" in legacy_skland_info
-                        else None
-                    ),
-                    name=legacy_skland_info.get("Name"),
-                )
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
@@ -1479,27 +1246,8 @@ class AppConfig(GlobalConfig):
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
-        legacy_token = ""
-        if isinstance(script_config, (MaaConfig, MaaEndConfig)):
-            legacy_token = str(
-                self._safe_config_get(
-                    script_config.UserData[user_uid], "Info", "SklandToken", ""
-                )
-                or ""
-            ).strip()
 
         await script_config.UserData.remove(user_uid)
-        if legacy_token:
-            token_still_used, _ = self._legacy_skland_token_state(legacy_token)
-            if not token_still_used:
-                account_uid, account = self._find_game_sign_account_by_skland_token(
-                    legacy_token
-                )
-                if account is not None:
-                    await account.set("GameSignAccount", "SklandToken", "")
-                    await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
-                    if account_uid is not None:
-                        self._clear_game_sign_account_results(str(account_uid))
         if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
             shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
@@ -1610,7 +1358,9 @@ class AppConfig(GlobalConfig):
         logger.info(f"添加计划表: {script}")
 
         plan_class = next(
-            item["config_class"] for item in PLAN_BOOK.values() if item["create_type"] == script
+            item["config_class"]
+            for item in PLAN_BOOK.values()
+            if item["create_type"] == script
         )
         return await self.PlanConfig.add(plan_class)
 
@@ -1775,6 +1525,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        # 队列名、完成后操作这类字段改了不影响正在跑的循环，放行；
+        # 只有循环开关本身不能在运行中动。
+        if "CycleEnabled" in data.get("Info", {}):
+            self._ensure_cycle_safe(queue_uid, "切换循环开关")
 
         await self.QueueConfig[queue_uid].update(data)
 
@@ -1783,7 +1537,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "删除")
+
+        await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -1877,6 +1634,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
 
@@ -1891,6 +1649,10 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        # 循环调度参数每轮都会重读，运行中改没问题；换脚本会让任务的脚本列表
+        # 与队列对不上号，必须拦住。
+        if "Info" in data:
+            self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
 
@@ -1901,6 +1663,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_cycle_safe(queue_uid, "增删队列项")
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
@@ -1910,10 +1673,29 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_cycle_safe(queue_uid, "调整队列项顺序")
 
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    def _ensure_cycle_safe(self, queue_uid: uuid.UUID, action: str) -> None:
+        """拦住会打乱正在运行的循环的改动。
+
+        任务的脚本列表在创建时就冻结了，循环靠下标回写状态；队列项的增删、
+        排序、换脚本都会让下标对不上号。只拦这些，改名、改完成后操作、改循环
+        周期都不受影响。
+        """
+
+        if queue_uid not in self.running_cycle_queue_ids:
+            return
+
+        queue_name = (
+            self.QueueConfig[queue_uid].get("Info", "Name")
+            if queue_uid in self.QueueConfig
+            else str(queue_uid)
+        )
+        raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法{action}")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
@@ -1955,10 +1737,15 @@ class AppConfig(GlobalConfig):
         )
 
         try:
-            await self.send_websocket_message(
-                id="GameSign",
-                type="Update",
-                data={"Result": json.dumps(result, ensure_ascii=False)},
+            from app.core.ws import Publisher, protocol
+            from app.models.schema import WSGameSignResultData
+
+            await Publisher.send(
+                id=protocol.ID_GAME_SIGN,
+                type=protocol.GAMESIGN_RESULT_UPDATED,
+                data=WSGameSignResultData(
+                    result=json.dumps(result, ensure_ascii=False)
+                ),
             )
         except Exception as e:
             logger.warning(f"广播游戏签到结果失败: {e}")
@@ -2866,7 +2653,7 @@ class AppConfig(GlobalConfig):
         return statistics if len(statistics) == len(field_patterns) else None
 
     async def save_maaend_log(
-        self, log_path: Path, logs: list[str], maaend_result: str
+        self, log_path: Path, logs: list[str], maaend_result: str, phase_label: str = ""
     ) -> None:
         """
         Save MaaEnd logs and generate basic statistics data.
@@ -2875,6 +2662,7 @@ class AppConfig(GlobalConfig):
             log_path (Path): Target log file path.
             logs (list[str]): Log lines.
             maaend_result (str): Result label for this run.
+            phase_label (str): 运行阶段标签（送货/日常/自动采集），作为历史结果前缀。
         """
 
         logger.info(
@@ -2887,6 +2675,9 @@ class AppConfig(GlobalConfig):
 
         if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
             maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        if phase_label:
+            maaend_result = f"[{phase_label}] {maaend_result}"
 
         data: Dict[str, Any] = {"maaend_result": maaend_result}
         if has_matrix_flow and matrix_statistics is not None:
@@ -2999,7 +2790,11 @@ class AppConfig(GlobalConfig):
         }
 
         def is_success_result(result_key: str, result_value: Any) -> bool:
-            if result_value == "Success!":
+            # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
+            if not isinstance(result_value, str):
+                return False
+            value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
+            if value == "Success!":
                 return True
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
@@ -3080,6 +2875,7 @@ class AppConfig(GlobalConfig):
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
                         "status": "DONE" if success else "ERROR",
                         "jsonFile": str(json_file),
+                        "result": single_data[key],
                     }
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
@@ -3160,6 +2956,98 @@ class AppConfig(GlobalConfig):
             k: v
             for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
+
+    async def clean_maafw_agent_venvs(self) -> None:
+        """清掉已无脚本引用的 MFW agent 隔离 venv。
+
+        这些 venv 每个几十到上百 MB，此前没有任何回收——只有「同一项目依赖变了
+        就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，旧 venv 都会
+        永远留着。
+
+        放在启动清理里而不是运行前：判定依赖「当前全部脚本配置」这个全局状态，
+        只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
+        把开发者磁盘上的真 venv 删掉了。
+
+        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
+        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
+        """
+
+        from app.models.config import MaaFWConfig
+        from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+            collect_orphan_agent_venvs,
+        )
+
+        root = Path.cwd() / "config" / "maafw_agent_venvs"
+        if not root.is_dir():
+            return
+
+        live_paths = [
+            path
+            for config in self.ScriptConfig.values()
+            if isinstance(config, MaaFWConfig)
+            and (path := str(config.get("Info", "Path") or "").strip())
+        ]
+
+        # 目录名是 Path.resolve() 之后的路径哈希，而 resolve() 只在路径**当下
+        # 存在**时才展开映射盘 / junction / 符号链接；不存在时原样返回。建 venv
+        # 时项目必然在，算的是展开后的真实路径；开机自启动早于网络盘挂载时，
+        # 这里却只能算出字面路径——名字对不上，存活 venv 就会被当成孤儿删掉。
+        # 分不清的时候不删：只要有一个存活项目此刻不可达，整轮弃权。
+        unreachable = [path for path in live_paths if not Path(path).exists()]
+        if unreachable:
+            logger.info(
+                "MFW 隔离 venv 清理已跳过：以下项目路径当前不可达，"
+                f"无法可靠判定归属: {unreachable[:3]}"
+            )
+            return
+
+        try:
+            orphans = collect_orphan_agent_venvs(root, live_paths)
+        except Exception as exc:
+            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
+            return
+
+        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
+        for venv_path in orphans:
+            try:
+                if venv_path.stat().st_mtime > cutoff:
+                    continue  # 刚动过，可能有运行正在用它
+                shutil.rmtree(venv_path)
+            except OSError as exc:
+                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
+                continue
+            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+    async def clean_debug_diagnostics(self) -> None:
+        """清理 debug 目录下过期的失败诊断文件。
+
+        终末地登录失败截图与 OK-WW / OK-NTE 切号诊断只会随失败新增，
+        此前没有任何回收；保留时长沿用历史记录的保留天数设置。
+        """
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("诊断文件永久保留, 跳过诊断文件清理")
+            return
+
+        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        deleted_count = 0
+        for name in ("maaend-login", "okww-account-switch", "oknte-account-switch"):
+            folder = Path.cwd() / "debug" / name
+            if not folder.is_dir():
+                continue
+            for file in folder.iterdir():
+                if not file.is_file():
+                    continue
+                try:
+                    if file.stat().st_mtime >= cutoff:
+                        continue
+                    file.unlink()
+                except OSError as exc:
+                    logger.warning(f"诊断文件清理失败: {file} - {exc}")
+                    continue
+                deleted_count += 1
+        if deleted_count:
+            logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
 
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""

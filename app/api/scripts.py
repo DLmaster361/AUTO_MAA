@@ -34,7 +34,6 @@ from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
-from app.models.config import ZzzOdConfig as RuntimeZzzOdConfig
 from app.models.schema import *
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
@@ -76,15 +75,6 @@ def _bettergi_script_config(script_id: str):
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     if not isinstance(script_config, RuntimeBetterGIConfig):
         raise TypeError("脚本配置类型错误, 不是 BetterGI 类型")
-    return script_config
-
-
-def _zzzod_script_config(script_id: str):
-    """Resolve a ZZZ-OD script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeZzzOdConfig):
-        raise TypeError("脚本配置类型错误, 不是 ZZZ-OD 类型")
     return script_config
 
 
@@ -1677,10 +1667,8 @@ async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
     """静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。"""
 
     try:
-        script_config = _zzzod_script_config(scriptId)
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
-        if not root.is_dir():
-            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
+        # 统一走 _zzzod_root 哨兵校验（空串在此解析成 cwd 的边界被封住）
+        root = Config.get_zzzod_root(scriptId)
         from app.task.ZzzOd.tools import (
             get_task_app_fields,
             get_task_app_jump,
@@ -2072,6 +2060,11 @@ async def get_zzzod_backup_preview_api(
 ) -> ZzzOdBackupPreviewOut:
     """mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。"""
 
+    # target 是 Literal 响应字段：非法值进 try 后成功/异常两条分支都会因
+    # 响应模型校验失败抛 ValidationError → 裸 500；在入口用 400 拦截
+    if target not in ("onedragon", "mas"):
+        raise HTTPException(status_code=400, detail=f"不支持的备份类别: {target}")
+
     try:
         data = Config.get_zzzod_backup_preview(
             scriptId, userId, time, target=target
@@ -2091,12 +2084,8 @@ async def get_zzzod_backup_preview_api(
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             time=time,
-            target=target,
-            info=[
-                ZzzOdPreviewField(
-                    key="error", title="错误", value=str(e)
-                )
-            ],
+            target=target,  # type: ignore[arg-type]
+            info=[ZzzOdPreviewField(key="error", value=str(e))],
             account=[],
             tasks=[],
             instances=[],

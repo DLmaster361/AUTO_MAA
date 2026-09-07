@@ -1219,12 +1219,14 @@ class AppConfig(GlobalConfig):
         return script_config
 
     def _zzzod_root(self, script_config: ZzzOdConfig) -> Path:
-        """返回 zzz-od 安装根目录并校验有效。
+        """返回 zzz-od 安装根目录并按哨兵文件校验有效。
 
-        拒绝空字符串（``FolderValidator`` 对空串放行会让 ``Path("").is_dir()``
-        在 cwd 下返真、用户态保存时把 ``SlotIdx`` 写 1 并把 ``one_dragon.yml``
-        落到 MAS 工作目录）与 ``Path.cwd()``（防用户填了工作目录当安装目录），
-        显式统一到与 ``FolderValidator`` 非空分支一致的语义。
+        三层防线（与 FolderValidator 非空分支、自动发现/check() 同一组哨兵）：
+        1. 拒绝空串——``FolderValidator`` 对空串放行，``Path("").is_dir()``
+           在 cwd 下为真，用户态保存会把 ``config/01/`` 建进 MAS 工作目录；
+        2. 拒绝非绝对路径 / 不存在的目录 / ``Path.cwd()``；
+        3. ``validate_root`` 哨兵校验（src 目录 + config/one_dragon.yml）——
+           任意随机目录（如 D:\\）只要 is_dir 就放行会在其下建出 config/01。
         """
 
         raw = str(script_config.get("Info", "RootPath") or "").strip()
@@ -1233,13 +1235,19 @@ class AppConfig(GlobalConfig):
         root = Path(raw).expanduser()
         if not root.is_absolute() or not root.is_dir():
             raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
-        try:
-            resolved = root.resolve()
-        except (OSError, ValueError):
-            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
+        resolved = root.resolve()
         if resolved == Path.cwd().resolve():
             raise ValueError("绝区零一条龙安装目录不能为 MAS 工作目录")
+
+        from app.task.ZzzOd.tools import validate_root
+
+        validate_root(resolved)
         return resolved
+
+    def get_zzzod_root(self, script_id: str) -> Path:
+        """zzz-od 安装根目录（哨兵校验后返回；供 API 层统一复用）。"""
+
+        return self._zzzod_root(self._zzzod_script_config(script_id))
 
     def get_zzzod_instances(self, script_id: str) -> list[dict]:
         """列出 zzz-od 实例（供用户配置「快速导入」选择来源实例）。"""
@@ -1555,7 +1563,22 @@ class AppConfig(GlobalConfig):
                 except (TypeError, ValueError):
                     patch[str(key)] = -1
             else:
-                patch[str(key)] = str(raw)
+                # select：按声明选项的原始类型还原——GET 侧选项 value 已被
+                # str() 抹平，前端回传字符串；选项声明为 int 的字段（周挑战
+                # 起始日）落盘必须是 int，否则上游 `>=` 比较抛 TypeError
+                raw_str = str(raw)
+                matched = next(
+                    (
+                        o.get("value")
+                        for o in meta.get("options") or []
+                        if str(o.get("value")) == raw_str
+                    ),
+                    None,
+                )
+                if isinstance(matched, int) and not isinstance(matched, bool):
+                    patch[str(key)] = matched
+                else:
+                    patch[str(key)] = raw_str
 
         config = write_app_config(root, slot, app_id, patch)
         if instance_idx is not None:

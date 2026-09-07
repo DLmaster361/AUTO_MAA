@@ -566,9 +566,10 @@ def test_native_instance_run_read_write_whitelist(tmp_path: Path) -> None:
     save_native_instance_run(root, "全部实例")
     assert read_native_instance_run(root) == INSTANCE_RUN_ALL
 
-    # 缺失时回退「仅运行当前」（原生新建注册表通常不落盘默认值）
+    # 缺失时回退「全部实例」（对齐上游 InstanceRun.ALL 默认：键缺失时
+    # 实际行为就是跑全部实例，页面显示必须与之一致）
     write_file(root / "config" / "one_dragon.yml", {"instance_list": []})
-    assert read_native_instance_run(root) == NATIVE_INSTANCE_RUN_OPTIONS[0]
+    assert read_native_instance_run(root) == NATIVE_INSTANCE_RUN_OPTIONS[1]
 
 
 def test_onedragon_backup_fingerprint_dedup(
@@ -607,3 +608,42 @@ def test_onedragon_backup_fingerprint_dedup(
     restored_marker = archive_onedragon_backup(script_id, root, force=True)
     assert restored_marker is not None
     assert len(list_times(od_root)) == 3
+
+
+def test_archive_force_protects_existing_backups(tmp_path: Path) -> None:
+    """恢复前 force 存底不清任何现存归档（``_archive`` 的 protect 语义）。
+
+    用户选中 keep 之外的最旧一份恢复时：restore 链路先 force 归档当前
+    配置，若该次归档把选中份清掉，``restore_dir`` 随即报「备份不存在」
+    且那份备份永久丢失。
+    """
+    from app.utils.config_archive import _archive
+
+    store = tmp_path / "pool"
+    ts_book: list[str] = []
+    for i in range(3):
+        src = tmp_path / f"src{i}"
+        src.mkdir()
+        (src / "a.txt").write_text(f"v{i}", encoding="utf-8")
+        dest = _archive({"a.txt": src / "a.txt"}, store, keep=2, force=True)
+        assert dest is not None
+        ts_book.append(dest.name)
+
+    # 第 4 次 force 归档（keep=2）：已存在的 3 份全部受 protect，不被清理
+    src3 = tmp_path / "src3"
+    src3.mkdir()
+    (src3 / "a.txt").write_text("v3", encoding="utf-8")
+    assert _archive({"a.txt": src3 / "a.txt"}, store, keep=2, force=True) is not None
+    times = list_times(store)
+    assert len(times) == 4
+    assert ts_book[0] in times
+
+    # 非 force 归档正常执行保留清理：超出 keep 的最旧份被清掉（5 份 → keep 2 份）
+    (src3 / "a.txt").write_text("v4", encoding="utf-8")
+    assert (
+        _archive({"a.txt": src3 / "a.txt"}, store, keep=2, force=False) is not None
+    )
+    times = list_times(store)
+    assert len(times) == 2
+    assert ts_book[0] not in times
+    assert ts_book[1] not in times

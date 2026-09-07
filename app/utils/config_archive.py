@@ -144,6 +144,8 @@ def _archive(
         shutil.copyfile(path, target)
 
     for old in list_times(store_root)[keep:]:
+        if old in protect:  # force 归档（恢复前存底）不清任何现存归档
+            continue
         shutil.rmtree(store_root / old, ignore_errors=True)
 
     return dest

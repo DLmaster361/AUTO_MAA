@@ -1077,10 +1077,16 @@ class AutoProxyTask(TaskExecuteBase):
             elif any(new == RUN_STATUS_SUCCESS for _, _, new in diffs):
                 log_status = "Success!"
                 user_status = "完成"
-            else:
-                # 运行记录无变化：直控态=今日任务早已全部完成（或无启用任务）
+            elif self._launch_evidence(log, False) or _ZZZOD_ONE_DRAGON_SUCCESS in log:
+                # 记录无变化但有一条龙运行证据（应用层日志/成功标志）：
+                # 直控态=今日任务均已完成（zzz-od 启动后按记录跳过全部任务）
                 log_status = "今日任务均已完成"
                 user_status = "完成"
+            else:
+                # 记录无变化且无任何启动证据：启动器未能真正拉起一条龙
+                # （缺依赖早退等），判失败走重试/启动器切换，不得报成功
+                log_status = "启动器未能启动一条龙"
+                user_status = "异常"
 
         self.cur_user_log.status = log_status
         # 以 run_book 向 main_task 通信终态：「今日任务均已完成」也视为成功
@@ -1141,12 +1147,22 @@ class AutoProxyTask(TaskExecuteBase):
     async def _judge_multi(self, log: str) -> None:
         """多实例切换：按各实例槽运行记录 diff 归属每个用户的结果。
 
-        致命日志优先：整轮异常时未完成的用户一律标记异常。全部用户完成时
+        check_log 已标记的运行级终态（超时等）优先于运行记录 diff——收尾
+        阶段卡死超时即使各槽已写出成功记录也不能判成功。致命日志次之：
+        整轮异常时未完成的用户一律标记异常。全部用户完成时
         cur_user_log.status 置 ``Success!`` 以复用主流程的成功分支；任一用户
         未完成则进入重试（zzz-od 按运行记录跳过已完成任务）。
         """
 
-        fatal = _match_fatal(log)
+        # check_log 已把超时/异常态写入 cur_user_log.status：本轮按运行失败
+        # 处理，各参与用户一并标记异常（与 _judge_final 的早退守卫同源）
+        runtime_failed = self.cur_user_log.status not in (
+            "ZZZ-OD 正常运行中",
+            "",
+            "Success!",
+        )
+        runtime_status = "" if not runtime_failed else self.cur_user_log.status
+        fatal = None if runtime_failed else _match_fatal(log)
         all_ok = True
 
         for slot, (user_item, cfg) in self._slot_users.items():
@@ -1156,7 +1172,12 @@ class AutoProxyTask(TaskExecuteBase):
             # 仅关键名单内的失败把该用户判异常并触发重跑；非关键失败只记录
             failed_apps = _failed_apps(diffs)
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
-            ok = fatal is None and success and not _has_critical_failure(failed_apps)
+            ok = (
+                fatal is None
+                and not runtime_failed
+                and success
+                and not _has_critical_failure(failed_apps)
+            )
             all_ok = all_ok and ok
 
             user_item.status = "完成" if ok else "异常"
@@ -1169,6 +1190,8 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item.log_record[self.log_start_time] = record
             if ok:
                 record_status = "Success!"
+            elif runtime_failed:
+                record_status = runtime_status
             elif fatal is not None:
                 record_status = fatal
             else:
@@ -1187,7 +1210,11 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             self._multi_judged.add(slot)
 
-        if fatal is not None:
+        if runtime_failed:
+            self.cur_user_log.status = runtime_status
+            if self.cur_user_item.user_id in self._multi_uids:
+                self.cur_user_item.status = "异常"
+        elif fatal is not None:
             self.cur_user_log.status = fatal
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"

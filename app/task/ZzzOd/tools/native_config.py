@@ -213,13 +213,17 @@ def save_native_tasks(root, slot_idx: int, tasks: list[dict]) -> None:
 def read_native_instance_run(root) -> str:
     """读取 one_dragon.yml 的 instance_run 原值（仅运行当前 / 全部实例）。
 
-    值缺失或异常时回退「仅运行当前」；白名单外的历史值保持原样返回
-    （页面只提供两个标准选项，不覆盖会话期间由 --instance 临时切换的值）。
+    值缺失或异常时回退「全部实例」——对齐上游 one_dragon_config 的
+    InstanceRun.ALL 默认：键缺失时实际行为就是跑全部实例，页面显示必须
+    与之一致（回退「仅运行当前」会让显示与行为相反，且用户无法真正
+    选定该值——下拉恒等不触发 @change，保存又因值相同被跳过）。
+    白名单外的历史值保持原样返回（不覆盖会话期间由 --instance 临时
+    切换的值）。
     """
 
     value = read_instance_run(root)
     if not value:
-        return NATIVE_INSTANCE_RUN_OPTIONS[0]
+        return NATIVE_INSTANCE_RUN_OPTIONS[1]
     return str(value)
 
 

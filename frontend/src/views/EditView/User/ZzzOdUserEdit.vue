@@ -833,7 +833,7 @@
                               :value="f.value"
                               size="small"
                               style="min-width: 100px"
-                              @blur="(e: FocusEvent) => saveTaskConfigField(card, f, ((e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value)))"
+                              @blur="(e: FocusEvent) => saveTaskConfigField(card, f, numberBlurValue(e))"
                             />
                           </div>
                         </template>
@@ -1561,8 +1561,9 @@ const loadLaunchers = async () => {
 
 // ══ 直控：所选实例的原生配置（强绑定一条龙原始 YAML，页面即改原生）══
 const nativeInstanceIdx = ref<number | null>(null)
-// 运行实例（value 为一条龙原生中文取值，label 走词表）
-const nativeInstanceRun = ref('仅运行当前')
+// 运行实例（value 为一条龙原生中文取值，label 走词表；初始值对齐上游
+// InstanceRun.ALL 默认，加载后由后端返回值覆盖）
+const nativeInstanceRun = ref('全部实例')
 const instanceRunOptions = [
   { label: t('edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
   { label: t('edit.zzzodInstanceRunAll'), value: '全部实例' },
@@ -1581,7 +1582,7 @@ const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
   }
   Object.keys(nativeAccountValues).forEach(k => delete nativeAccountValues[k])
   Object.assign(nativeAccountValues, values)
-  nativeInstanceRun.value = data.instanceRun || '仅运行当前'
+  nativeInstanceRun.value = data.instanceRun || '全部实例'
   nativeTasks.value = toTaskCards(data.tasks ?? [])
 }
 
@@ -1680,7 +1681,7 @@ const saveNativeConfig = async (
     if (section === 'tasks') {
       nativeTasks.value = toTaskCards(resp.tasks ?? [])
     } else if (section === 'instanceRun') {
-      nativeInstanceRun.value = resp.instanceRun || '仅运行当前'
+      nativeInstanceRun.value = resp.instanceRun || '全部实例'
     } else {
       applyNativeConfig(resp)
     }
@@ -1822,14 +1823,23 @@ const handleTaskPopoverChange = async (card: TaskCard, open: boolean) => {
   }
 }
 
+/** 数值框 @blur 取值：空/纯空白返回 null（跳过保存），否则转数字 */
+const numberBlurValue = (e: FocusEvent) => {
+  const raw = (e.target as HTMLInputElement).value.trim()
+  return raw === '' ? null : Number(raw)
+}
+
 const saveTaskConfigField = async (
   card: TaskCard,
   field: TaskConfigField,
   value: any
 ) => {
-  // 数值框清空（@blur 拿到空串→null）：不发请求、不更新本地值、不弹成功
-  // 提示；保留用户原值避免后端 int(null) 报 400 与脏覆盖
+  // 数值框（@blur）：空串/纯空白/NaN 一律不发请求（后端 int(null/'' ) 报
+  // 400）；纯空白会被 Number() 转成 0，必须在转换前拦下。值未变也跳过
+  // ——否则 Tab 经过每个数值框都会发一次保存请求并弹一次「已保存」
   if (value === null || value === undefined || Number.isNaN(value)) return
+  if (typeof value === 'string' && value.trim() === '') return
+  if (Number(value) === Number(field.value)) return
   try {
     const resp = await Service.saveZzzodAppConfigApiApiScriptsZzzodAppConfigSavePost({
       scriptId,
@@ -2013,10 +2023,16 @@ const openRestoreModal = () => {
   restoreOpen.value = true
 }
 
-// 一键恢复成功：MAS 恢复含字段回填，刷新表单（脚本级由组件自行刷新列表）
+// 一键恢复成功：MAS 恢复含字段回填，刷新表单；一条龙恢复不回填 MAS 字段，
+// 但直控页表单（账号/任务/运行实例读自原生文件）必须重拉，否则旧表单值在
+// 下次「保存设置」时全量写回、静默撤销刚做的恢复（用户模式 AppList 同理）
 const handleRestored = (target: string) => {
+  restoreOpen.value = false
   if (target === 'mas') {
-    restoreOpen.value = false
+    void loadUserData()
+  } else if (formData.Info.Mode === '直控' && nativeInstanceIdx.value !== null) {
+    void loadNativeConfig(nativeInstanceIdx.value)
+  } else {
     void loadUserData()
   }
 }
@@ -2256,23 +2272,34 @@ onMounted(async () => {
   }
 })
 
-// 「在一条龙内配置」会话结束后回读会刷新后端字段，重新拉取保持表单同步
-// （查看会话只读不回读，无需刷新）。直控时以所选实例的原生配置为准。
+// 「在一条龙内配置」会话结束后回读会刷新后端字段，重新拉取保持表单同步。
+// 查看会话（view mask）虽不回读字段，但「查看详细配置」会先真恢复备份——
+// 会话结束后表单同样需要按恢复后的配置重新拉取，否则旧表单值会在用户
+// 下次保存时写回、静默撤销恢复。直控时以所选实例的原生配置为准。
 watch(showZzzodConfigMask, (now, before) => {
   if (before && !now && !showZzzodViewMask.value && userId.value) {
-    if (formData.Info.Mode === '直控') {
-      if (nativeInstanceIdx.value !== null) {
-        void loadNativeConfig(nativeInstanceIdx.value).catch(e => {
-          logger.error(e instanceof Error ? e.message : String(e))
-        })
-      }
-    } else {
-      void loadUserData().catch(e => {
+    refreshAfterSession()
+  }
+})
+watch(showZzzodViewMask, (now, before) => {
+  if (before && !now && userId.value) {
+    refreshAfterSession()
+  }
+})
+
+const refreshAfterSession = () => {
+  if (formData.Info.Mode === '直控') {
+    if (nativeInstanceIdx.value !== null) {
+      void loadNativeConfig(nativeInstanceIdx.value).catch(e => {
         logger.error(e instanceof Error ? e.message : String(e))
       })
     }
+  } else {
+    void loadUserData().catch(e => {
+      logger.error(e instanceof Error ? e.message : String(e))
+    })
   }
-})
+}
 
 onUnmounted(() => {
   // 直控页面关闭：补一份「配置完成时」的备份（指纹去重；与进入时的「改动前」备份配对）

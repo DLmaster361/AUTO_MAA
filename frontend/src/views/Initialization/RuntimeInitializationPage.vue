@@ -84,7 +84,7 @@ const {
   pointer-events: none;
 }
 
-:global(.dark) .launch-wash {
+html.dark .launch-wash {
   opacity: 0.16;
 }
 </style>

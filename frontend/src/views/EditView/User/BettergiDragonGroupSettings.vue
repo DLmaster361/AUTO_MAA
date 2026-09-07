@@ -74,6 +74,26 @@
                     @change="(e: Event) =>
                       emit('update', tableCellField(record, 'party'), (e.target as HTMLInputElement).value)"
                   />
+                  <!-- 策略：点击输入框弹出战斗策略弹窗（与右栏字段共用同一套弹窗）；
+                       为 MAS 扩展列（BGI 原生一条龙无 per-任务策略键），留空跟随全局策略 -->
+                  <a-input
+                    v-else-if="column.key === 'strategy'"
+                    :value="String(tableCellValue(record, 'strategy') ?? '')"
+                    readonly
+                    :disabled="!weeklySectionEnabled(section)"
+                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    class="bettergi-setting-strategy-input"
+                    @click="openWeeklyStrategyPicker(section, record)"
+                  >
+                    <template #suffix>
+                      <CloseOutlined
+                        v-if="tableCellValue(record, 'strategy')"
+                        class="bettergi-setting-strategy-clear"
+                        @click.stop="weeklySectionEnabled(section) && emit('update', tableCellField(record, 'strategy'), '')"
+                      />
+                      <DownOutlined v-else class="bettergi-setting-strategy-arrow" />
+                    </template>
+                  </a-input>
                   <!-- 秘境：有目录时点击弹三级级联选择；无目录数据时退回手输，避免锁死 -->
                   <a-button
                     v-else-if="column.key === 'domain' && weeklyDomainOptions.length > 0"
@@ -102,17 +122,60 @@
                     @change="(value: unknown) =>
                       emit('update', tableCellField(record, 'reward'), value == null ? '' : String(value))"
                   />
+                  <!-- 执行：MAS 扩展列（default 行无此列）。开启才执行；全关=默认不执行。
+                       胶囊开关；default 行 runKey 为空，不渲染任何控件（列留空）。 -->
+                  <template v-else-if="column.key === 'run'">
+                    <a-switch
+                      v-if="record.runKey"
+                      :checked="!!tableCellValue(record, 'run')"
+                      :disabled="!weeklySectionEnabled(section)"
+                      @change="(checked: boolean | string | number) =>
+                        emit('update', tableCellField(record, 'run'), Boolean(checked))"
+                    />
+                  </template>
                   <!-- 日期标签列：纯文本 -->
                   <span v-else>{{ record.label }}</span>
                 </template>
               </a-table>
             </div>
-            <!-- 通用周表（如地脉花「每周刷取」）：周一~周日 × 若干字段列 -->
+            <!-- 通用周表（每周地脉花）：顶部开关（与每日地脉花互斥）+ 好感队输入框 + 默认/周一~周日表格 -->
             <div
               v-else-if="section.kind === 'weekly-field-table'"
-              class="bettergi-weekly-table-wrap"
+              class="bettergi-weekly-section-wrap"
             >
-              <a-table
+              <div class="bettergi-weekly-table-top">
+                <a-switch
+                  :checked="weeklySectionEnabled(section)"
+                  @change="(checked: boolean | string | number) =>
+                    weeklySectionToggle(section, Boolean(checked))"
+                />
+                <span class="bettergi-weekly-table-top-label">
+                  {{ section.enableField?.label }}
+                </span>
+                <a-tooltip v-if="section.enableField?.help" :title="section.enableField?.help">
+                  <QuestionCircleOutlined class="bettergi-setting-help-icon" />
+                </a-tooltip>
+              </div>
+              <!-- 好感队输入框（masterKey=LeyLineDefaultTeam 冻结：仅默认战斗队伍填写后才可编辑；
+                   整段额外受每周地脉花开关控制：开关关闭时同样冻结） -->
+              <div class="bettergi-groups-settings-fields">
+                <div v-for="field in section.fields" :key="field.id || field.key" class="bettergi-setting-row">
+                  <span class="bettergi-setting-label">
+                    <span class="bettergi-setting-label-text">{{ field.label }}</span>
+                    <a-tooltip v-if="field.help" :title="field.help">
+                      <QuestionCircleOutlined class="bettergi-setting-help-icon" />
+                    </a-tooltip>
+                  </span>
+                  <a-input
+                    :value="String(fieldValue(field) ?? '')"
+                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :disabled="!weeklySectionEnabled(section) || fieldLocked(field)"
+                    @change="(e: Event) => emit('update', field, (e.target as HTMLInputElement).value)"
+                  />
+                </div>
+              </div>
+              <div class="bettergi-weekly-table-wrap">
+                <a-table
                 :data-source="section.weeklyFieldRows || []"
                 :columns="weeklyFieldColumns(section)"
                 :pagination="false"
@@ -121,35 +184,154 @@
                 class="bettergi-weekly-table"
               >
                 <template #bodyCell="{ column, record }">
-                  <!-- 日期标签列 -->
+                <!-- 日期标签列 -->
+                <span v-if="column.key === 'label'">{{ record.label }}</span>
+                <!-- 各字段列：复用字段类型渲染（队伍/地区/任务类型为文本或下拉，执行为开关，策略弹出战斗策略弹窗） -->
+                <template v-else>
+                  <a-switch
+                    v-if="weeklyFieldCell(record, column.key)?.type === 'bool'"
+                    :checked="Boolean(fieldValue(weeklyFieldCell(record, column.key)!))"
+                    :disabled="!weeklySectionEnabled(section)"
+                    @change="(checked: boolean | string | number) =>
+                      emit('update', weeklyFieldCell(record, column.key)!, Boolean(checked))"
+                  />
+                  <a-select
+                    v-else-if="weeklyFieldCell(record, column.key)?.type === 'select'"
+                    :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
+                    :options="weeklyFieldCell(record, column.key)!.options"
+                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    allow-clear
+                    :disabled="!weeklySectionEnabled(section)"
+                    @change="(value: unknown) =>
+                      emit('update', weeklyFieldCell(record, column.key)!, value == null ? '' : String(value))"
+                  />
+                  <a-input
+                    v-else-if="weeklyFieldCell(record, column.key)?.type === 'strategy'"
+                    :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
+                    readonly
+                    :disabled="!weeklySectionEnabled(section)"
+                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    class="bettergi-setting-strategy-input"
+                    @click="openWeeklyFieldStrategyPicker(section, record, column.key)"
+                  >
+                    <template #suffix>
+                      <CloseOutlined
+                        v-if="fieldValue(weeklyFieldCell(record, column.key)!)"
+                        class="bettergi-setting-strategy-clear"
+                        @click.stop="emit('update', weeklyFieldCell(record, column.key)!, '')"
+                      />
+                      <DownOutlined v-else class="bettergi-setting-strategy-arrow" />
+                    </template>
+                  </a-input>
+                  <a-input
+                    v-else-if="weeklyFieldCell(record, column.key)"
+                    :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
+                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :disabled="!weeklySectionEnabled(section)"
+                    @change="(e: Event) =>
+                      emit('update', weeklyFieldCell(record, column.key)!, (e.target as HTMLInputElement).value)"
+                  />
+                </template>
+                </template>
+              </a-table>
+              </div>
+            </div>
+            <!-- 每日地脉花：顶部开关（与每周刷取互斥）+ 好感队输入框 + 单行表格（队伍/策略/地区/类型/执行） -->
+            <div
+              v-else-if="section.kind === 'daily-leyline'"
+              class="bettergi-weekly-section-wrap"
+            >
+              <div class="bettergi-weekly-table-top">
+                <a-switch
+                  :checked="weeklySectionEnabled(section)"
+                  @change="(checked: boolean | string | number) =>
+                    weeklySectionToggle(section, Boolean(checked))"
+                />
+                <span class="bettergi-weekly-table-top-label">
+                  {{ section.enableField?.label }}
+                </span>
+                <a-tooltip v-if="section.enableField?.help" :title="section.enableField?.help">
+                  <QuestionCircleOutlined class="bettergi-setting-help-icon" />
+                </a-tooltip>
+              </div>
+              <!-- 好感队输入框（masterKey=team 冻结：仅战斗队伍填写后才可编辑，冻结视为空）
+                   整段额外受每日地脉花开关控制：开关关闭时同样冻结 -->
+              <div class="bettergi-groups-settings-fields">
+                <div v-for="field in section.fields" :key="field.id || field.key" class="bettergi-setting-row">
+                  <span class="bettergi-setting-label">
+                    <span class="bettergi-setting-label-text">{{ field.label }}</span>
+                    <a-tooltip v-if="field.help" :title="field.help">
+                      <QuestionCircleOutlined class="bettergi-setting-help-icon" />
+                    </a-tooltip>
+                  </span>
+                  <a-input
+                    :value="String(fieldValue(field) ?? '')"
+                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :disabled="!weeklySectionEnabled(section) || fieldLocked(field)"
+                    @change="(e: Event) => emit('update', field, (e.target as HTMLInputElement).value)"
+                  />
+                </div>
+              </div>
+              <div class="bettergi-weekly-table-wrap">
+                <a-table
+                :data-source="[section.dailyFieldRow]"
+                :columns="dailyColumns"
+                :pagination="false"
+                size="small"
+                row-key="uid"
+                class="bettergi-weekly-table"
+              >
+                <template #bodyCell="{ column, record }">
                   <span v-if="column.key === 'label'">{{ record.label }}</span>
-                  <!-- 各字段列：复用字段类型渲染（地区/任务类型为下拉，执行为开关） -->
                   <template v-else>
                     <a-switch
-                      v-if="weeklyFieldCell(record, column.key)?.type === 'bool'"
-                      :checked="Boolean(fieldValue(weeklyFieldCell(record, column.key)!))"
+                      v-if="dailyCell(record, column.key)?.type === 'bool'"
+                      :checked="Boolean(fieldValue(dailyCell(record, column.key)!))"
+                      :disabled="!weeklySectionEnabled(section)"
                       @change="(checked: boolean | string | number) =>
-                        emit('update', weeklyFieldCell(record, column.key)!, Boolean(checked))"
+                        emit('update', dailyCell(record, column.key)!, Boolean(checked))"
                     />
                     <a-select
-                      v-else-if="weeklyFieldCell(record, column.key)?.type === 'select'"
-                      :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
-                      :options="weeklyFieldCell(record, column.key)!.options"
+                      v-else-if="dailyCell(record, column.key)?.type === 'select'"
+                      :value="String(fieldValue(dailyCell(record, column.key)!) ?? '')"
+                      :options="dailyCell(record, column.key)!.options"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
                       allow-clear
+                      :disabled="!weeklySectionEnabled(section)"
                       @change="(value: unknown) =>
-                        emit('update', weeklyFieldCell(record, column.key)!, value == null ? '' : String(value))"
+                        emit('update', dailyCell(record, column.key)!, value == null ? '' : String(value))"
                     />
                     <a-input
-                      v-else-if="weeklyFieldCell(record, column.key)"
-                      :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
+                      v-else-if="dailyCell(record, column.key)?.type === 'text'"
+                      :value="String(fieldValue(dailyCell(record, column.key)!) ?? '')"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :disabled="!weeklySectionEnabled(section)"
                       @change="(e: Event) =>
-                        emit('update', weeklyFieldCell(record, column.key)!, (e.target as HTMLInputElement).value)"
+                        emit('update', dailyCell(record, column.key)!, (e.target as HTMLInputElement).value)"
                     />
+                    <!-- 策略：复用战斗策略弹窗（与右栏字段共用同一套弹窗） -->
+                    <a-input
+                      v-else-if="dailyCell(record, column.key)?.type === 'strategy'"
+                      :value="String(fieldValue(dailyCell(record, column.key)!) ?? '')"
+                      readonly
+                      :disabled="!weeklySectionEnabled(section)"
+                      :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      class="bettergi-setting-strategy-input"
+                      @click="openDailyStrategyPicker(section, record)"
+                    >
+                      <template #suffix>
+                        <CloseOutlined
+                          v-if="fieldValue(dailyCell(record, column.key)!)"
+                          class="bettergi-setting-strategy-clear"
+                          @click.stop="emit('update', dailyCell(record, column.key)!, '')"
+                        />
+                        <DownOutlined v-else class="bettergi-setting-strategy-arrow" />
+                      </template>
+                    </a-input>
                   </template>
                 </template>
               </a-table>
+              </div>
             </div>
             <div v-else class="bettergi-groups-settings-fields">
               <!-- 布尔开关（invert=true 时界面勾选与存储取反）。
@@ -327,7 +509,7 @@
       v-model:open="zoomed"
       :title="zoomTitle"
       :footer="null"
-      :width="760"
+      :width="900"
       centered
       :z-index="1000"
       wrap-class-name="bettergi-groups-zoom-modal"
@@ -538,13 +720,17 @@ type DragonSettingField = {
   masterInvert?: boolean
   hideWhenDisabled?: boolean
 }
-/** 每周秘境表格行：一行 = 默认或某一天，队伍/秘境/奖励三个 key 与 BGI 一条龙顶层键一致 */
+/** 每周秘境表格行：一行 = 默认或某一天，队伍/策略/秘境/奖励/执行 五个 key 与 BGI 一条龙顶层键一致。
+    strategyKey / runKey 为 MAS 扩展（BGI 原生一条龙无 per-任务策略键与 per-天执行开关），走执行层直传。
+    runKey 仅周一~周日行持有（default 行无此列）；留空表示该行不渲染执行开关。 */
 type WeeklyDomainTableRow = {
   uid: string
   label: string
   partyKey: string
+  strategyKey: string
   domainKey: string
   rewardKey: string
+  runKey?: string
 }
 /** 通用周表行：每行若干字段（如地脉花每周刷取：地区/任务类型/执行） */
 type WeeklyFieldRow = {
@@ -556,13 +742,15 @@ type WeeklyFieldRow = {
 type DragonSettingSection = {
   title: string
   fields: DragonSettingField[]
-  /** 每周秘境表格模式：整体开关 + 周表行（默认 + 周一~周日）；
-      通用周表模式：每行 = 周几 + 若干字段列（如地脉花「每周刷取」） */
-  kind?: 'weekly-table' | 'weekly-field-table'
+  /** 每周秘境表格模式（开关 + 默认/周一~周日逐行表格）、地脉花「每周刷取」表格模式、
+      或地脉花「每日地脉花」单日统一配置模式 */
+  kind?: 'weekly-table' | 'weekly-field-table' | 'daily-leyline'
   enableField?: DragonSettingField
   weeklyRows?: WeeklyDomainTableRow[]
   /** 通用周表模式（每行 = 周几 + 若干字段列），如地脉花「每周刷取」 */
   weeklyFieldRows?: WeeklyFieldRow[]
+  /** 地脉花「每日地脉花」模式：单行配置（队伍/策略/地区/任务类型/执行） */
+  dailyFieldRow?: WeeklyFieldRow
 }
 
 const props = withDefaults(
@@ -618,7 +806,7 @@ watch(
 // 支持 invert（每日秘境：勾选「开启每日」时 WeeklyDomainEnabled 存 false）。
 const weeklySectionEnabled = (section: DragonSettingSection): boolean => {
   const field = section.enableField
-  if (!field) return false
+  if (!field) return true
   const raw = Boolean(fieldValue(field))
   return field.invert ? !raw : raw
 }
@@ -628,20 +816,26 @@ const weeklySectionToggle = (section: DragonSettingSection, checked: boolean): v
   if (!field) return
   emit('update', field, field.invert ? !checked : checked)
 }
-// 表格列：日期标签 / 队伍(文本) / 秘境(下拉) / 奖励(下拉)
+// 表格列：日期标签 / 队伍(文本) / 策略(弹窗单选) / 秘境(下拉) / 奖励(下拉) / 执行(胶囊开关)
 const weeklyColumns = [
   { title: '', key: 'label', width: 72 },
   { title: '队伍', key: 'party' },
+  { title: '策略', key: 'strategy' },
   { title: '秘境', key: 'domain' },
   { title: '奖励', key: 'reward' },
+  { title: '执行', key: 'run', width: 64 },
 ]
-// 通用周表列：日期标签 + 各行 fields 的列（列标题取该 section 首行的 field.label，
-// 周一~周日结构一致时展示统一表头；字段值按“行内同下标 field”读取/写回）
+// 通用周表列：日期标签 + 各行 fields 的列（列标题取该 section 字段最多的行的 field.label，
+// 使「默认」行（无执行列）与周一~周日行（含执行列）共用统一表头；字段值按“行内同下标 field”读取/写回）
 const weeklyFieldColumns = (section: DragonSettingSection): { title: string; key: string; width?: number }[] => {
-  const row = section.weeklyFieldRows?.[0]
+  const rows = section.weeklyFieldRows || []
+  const tpl = rows.reduce<WeeklyFieldRow | undefined>(
+    (best, r) => ((r.fields?.length || 0) > (best?.fields?.length || 0) ? r : best),
+    rows[0]
+  )
   const cols: { title: string; key: string; width?: number }[] = [{ title: '', key: 'label', width: 72 }]
-  if (row) {
-    row.fields.forEach((f, i) => cols.push({ title: f.label, key: `col${i}` }))
+  if (tpl) {
+    tpl.fields.forEach((f, i) => cols.push({ title: f.label, key: `col${i}` }))
   }
   return cols
 }
@@ -655,14 +849,57 @@ const weeklyFieldCell = (
   const idx = Number(match[1])
   return record.fields[idx] ?? null
 }
+// 每日地脉花单行表格列：队伍/策略/地区/任务类型/执行（对应 dailyFieldRow.fields 下标 0~4）
+const dailyColumns = [
+  { title: '', key: 'label', width: 72 },
+  { title: '队伍', key: 'col0' },
+  { title: '策略', key: 'col1' },
+  { title: '地区', key: 'col2' },
+  { title: '任务类型', key: 'col3' },
+]
+// 每日地脉花表格：取该行第 index 列的字段（column.key = col0/col1/...）
+const dailyCell = (
+  record: WeeklyFieldRow,
+  colKey: string
+): DragonSettingField | null => {
+  const match = /^col(\d+)$/.exec(colKey)
+  if (!match || !record.fields) return null
+  const idx = Number(match[1])
+  return record.fields[idx] ?? null
+}
+// 每日地脉花「策略」格：整段启用（与每周刷取互斥开关）才允许选，点击交由父组件弹策略弹窗
+const openDailyStrategyPicker = (
+  section: DragonSettingSection,
+  row: WeeklyFieldRow
+): void => {
+  if (!weeklySectionEnabled(section)) return
+  const field = dailyCell(row, 'col1')
+  if (field) emit('pick-strategy', field)
+}
+// 每周地脉花「策略」格：整表启用才允许选（周表的禁用态由整表开关决定，而非字段级 fieldLocked）
+const openWeeklyFieldStrategyPicker = (
+  section: DragonSettingSection,
+  row: WeeklyFieldRow,
+  colKey: string
+): void => {
+  if (!weeklySectionEnabled(section)) return
+  const field = weeklyFieldCell(row, colKey)
+  if (field) emit('pick-strategy', field)
+}
 // 读某行某列的当前值（key 即该行对应字段 key）
-const tableCellValue = (row: WeeklyDomainTableRow, col: 'party' | 'domain' | 'reward'): unknown =>
-  props.dragonSettings[row[`${col}Key`]]
+const tableCellValue = (
+  row: WeeklyDomainTableRow,
+  col: 'party' | 'strategy' | 'domain' | 'reward' | 'run'
+): unknown => props.dragonSettings[row[`${col}Key`] as string]
 // 构造该格子的字段描述（用于统一走 update 事件写回 per-user 设置）
-const tableCellField = (row: WeeklyDomainTableRow, col: 'party' | 'domain' | 'reward'): DragonSettingField => ({
-  key: row[`${col}Key`],
+const tableCellField = (
+  row: WeeklyDomainTableRow,
+  col: 'party' | 'strategy' | 'domain' | 'reward' | 'run'
+): DragonSettingField => ({
+  key: row[`${col}Key`] as string,
   label: row.label,
-  type: col === 'party' ? 'text' : 'select',
+  type:
+    col === 'party' ? 'text' : col === 'strategy' ? 'strategy' : col === 'run' ? 'bool' : 'select',
   source: 'dragon',
 })
 // 该行当前选中秘境的目录项（无选中/不在目录中返回 undefined）
@@ -858,15 +1095,17 @@ const selectDisplayValue = (field: DragonSettingField): string => {
   return raw
 }
 
-// 字段是否因 master 联动被冻结（true 不可编辑；hideWhenDisabled 时整行隐藏）
+// 字段是否因 master 联动被冻结（true 不可编辑；hideWhenDisabled 时整行隐藏）。
+// master 未配置（undefined/null）归一为空串，保证「team 未填写」也能冻结依赖它的好感队等字段。
 const fieldLocked = (field: DragonSettingField): boolean => {
   if (!field.masterKey) return false
-  const master =
+  const raw =
     field.source === 'globalDomain'
       ? props.globalDomainSettings?.[field.masterKey]
       : field.source === 'globalStygian'
         ? props.globalStygianSettings?.[field.masterKey]
         : props.dragonSettings[field.masterKey]
+  const master = raw == null ? '' : raw
   const hit = master === field.masterValue
   return field.masterInvert ? hit : !hit
 }
@@ -875,6 +1114,14 @@ const fieldLocked = (field: DragonSettingField): boolean => {
 const openStrategyFieldPicker = (field: DragonSettingField): void => {
   if (fieldLocked(field)) return
   emit('pick-strategy', field)
+}
+// 周表「策略」格：整表启用才允许选（周表的禁用态由整表开关决定，而非字段级 fieldLocked）
+const openWeeklyStrategyPicker = (
+  section: DragonSettingSection,
+  row: WeeklyDomainTableRow
+): void => {
+  if (!weeklySectionEnabled(section)) return
+  emit('pick-strategy', tableCellField(row, 'strategy'))
 }
 
 // ---- 讨伐首领二级连列弹窗（地区 → 首领名称-地点）----
@@ -1072,6 +1319,14 @@ const onConfirmBossPicker = (): void => {
 }
 
 /* ---- 每周秘境周表 ---- */
+/* 周表区域外层：开关/好感队/表格按列排列；仅表格自身进入可滚动容器，
+   避免 a-table 表头 sticky 遮挡上方的好感队输入框。 */
+.bettergi-weekly-section-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .bettergi-weekly-table-wrap {
   display: flex;
   flex-direction: column;

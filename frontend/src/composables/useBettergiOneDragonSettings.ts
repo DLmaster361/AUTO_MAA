@@ -16,12 +16,14 @@ const logger = window.electronAPI.getLogger('BetterGI一条龙设置')
 export const fetchOneDragonSettings = async (
   scriptId: string,
   userId: string,
-  configName: string
+  configName: string,
+  groupName = ''
 ): Promise<Record<string, unknown>> => {
   const resp = await BetterGiService.getBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsGet(
     scriptId,
     userId,
-    configName
+    configName,
+    groupName
   )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 一条龙设置请求失败')
@@ -37,9 +39,16 @@ export const saveOneDragonSettings = async (
   scriptId: string,
   userId: string,
   configName: string,
-  settings: Record<string, unknown>
+  settings: Record<string, unknown>,
+  groupName = ''
 ): Promise<void> => {
-  const body: BetterGIOneDragonSettingsIn = { scriptId, userId, configName, settings }
+  const body: BetterGIOneDragonSettingsIn = {
+    scriptId,
+    userId,
+    configName,
+    groupName,
+    settings,
+  }
   try {
     const resp =
       await BetterGiService.saveBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsPost(

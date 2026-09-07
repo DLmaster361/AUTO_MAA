@@ -92,7 +92,12 @@ def _bettergi_user_id(script_config, user_id: str) -> uuid.UUID:
 
 
 def _bettergi_user_config(script_config, user_id: str):
-    """解析并返回 BetterGI 用户配置对象（用于读写 OneDragon.Plan 等字段）。"""
+    """解析并返回 BetterGI 用户配置对象（用于读写 OneDragon.Plan 等字段）。
+
+    该对象是 ``UserData``（MultipleConfig）的成员，**没有自己的配置文件**，写字段请用
+    ``await user_config.set(...)``（内部触发父级统一落盘）；直接 ``save()`` 会抛
+    “文件路径未设置”。
+    """
     return script_config.UserData[uuid.UUID(user_id)]
 
 
@@ -108,9 +113,13 @@ def _route_combat_to_plan(
     settings: dict,
     source: str,
 ) -> tuple[dict, "str | None"]:
-    """战斗4项右栏设置：可映射字段翻译后写入 OneDragon.Plan（仅写 Plan）。
+    """战斗4项右栏设置：可映射字段翻译后写入 OneDragon.Plan（执行层参数源）。
 
-    返回 ``(原生剩余字段, 新 Plan JSON 或 None)``。非战斗组 / 无可映射键时返回
+    原生侧**保留全量字段**（双写）：执行层只接管「Plan 中有该组步骤且队列中启用」
+    的战斗组，其余战斗组仍走原生一条龙 / 全局 config.json，必须能读到最新值；
+    已被接管的组会从一条龙副本剔除，多写的原生值不会被消费。
+
+    返回 ``(原生字段, 新 Plan JSON 或 None)``。非战斗组 / 无可映射键时返回
     ``(settings, None)``，调用方按原逻辑写原生存储即可。
     """
     from app.task.BetterGI.tools import one_dragon_plan
@@ -119,22 +128,24 @@ def _route_combat_to_plan(
     mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(target_group)
     if not mapping or not settings:
         return settings, None
-    weekly_keys = one_dragon_plan.weekly_plan_keys(target_group)
     plan_settings = {k: v for k, v in settings.items() if k in mapping}
-    native_leftover = {
-        k: v
-        for k, v in settings.items()
-        if k not in mapping and k not in weekly_keys
-    }
     extra = one_dragon_plan.extract_weekly_struct(target_group, settings)
     if not plan_settings and not extra:
-        return native_leftover, None
+        return settings, None
     user_config = _bettergi_user_config(script_config, user_id)
     plan_json = user_config.get("OneDragon", "Plan") or ""
     new_plan = one_dragon_plan.merge_rightbar_into_plan(
         plan_json, target_group, plan_settings, extra=extra or None
     )
-    return native_leftover, new_plan
+    # ``maxArtifactStar`` 是秘境与幽境危战共用的全局字段（BGI 同一份
+    # ``autoArtifactSalvageConfig`` 段），两边面板的 ``source`` 都是 ``globalDomain``，
+    # 会被本端点统一写到秘境 step；这里再把同一份值同步进幽境 step，
+    # 执行层幽境分支才能透传。
+    if target_group == "自动秘境" and "maxArtifactStar" in settings:
+        new_plan = one_dragon_plan.merge_rightbar_into_plan(
+            new_plan, "自动幽境危战", {"maxArtifactStar": settings["maxArtifactStar"]}
+        )
+    return settings, new_plan
 
 
 def _read_combat_from_plan(
@@ -159,6 +170,10 @@ def _read_combat_from_plan(
                 target_group, target.get("settings") or {}
             )
         )
+    # 「开启每日地脉花」未配置（Plan 无该键，如新用户）时默认开启：与种子模板的
+    # 「每日耗尽模式」标准状态一致；用户选过每周模式则 Plan 已有显式 false，不受影响。
+    if target_group == "自动地脉花":
+        data.setdefault("leyLineDailyEnabled", True)
     return data
 
 
@@ -1374,11 +1389,13 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
     status_code=200,
 )
 async def get_bettergi_one_dragon_settings_api(
-    scriptId: str, userId: str, configName: str = ""
+    scriptId: str, userId: str, configName: str = "", groupName: str = ""
 ) -> BetterGIOneDragonSettingsOut:
     """返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
 
     供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
+    ``groupName`` 为右栏当前编辑的内置组名，战斗 4 项 Plan 回显按其查映射，
+    缺省/不匹配时跳过 Plan 回显。
     """
 
     try:
@@ -1390,8 +1407,9 @@ async def get_bettergi_one_dragon_settings_api(
         data = one_dragon.read_user_one_dragon_settings(
             root, scriptId, userId, configName
         )
-        # 战斗4项：用 Plan 中的执行层参数回显右栏（原生副本已不再存这些字段）
-        data = _read_combat_from_plan(script_config, userId, configName, "dragon", data)
+        # 战斗4项：用 Plan 中的执行层参数回显右栏（原生副本已不再存这些字段）。
+        # 第三参必须传 groupName（内置组名），传 configName 会导致 Plan 回显失效。
+        data = _read_combat_from_plan(script_config, userId, groupName, "dragon", data)
         return BetterGIOneDragonSettingsOut(
             code=200,
             status="success",
@@ -1426,14 +1444,17 @@ async def save_bettergi_one_dragon_settings_api(
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
-        # 战斗4项：可映射字段仅写 Plan，不可映射字段（如每周秘境表）仍落原生副本
+        # 战斗4项：可映射字段仅写 Plan，不可映射字段（如每周秘境表）仍落原生副本。
+        # 注意第三参是「右栏当前编辑的内置组名」（前端 groupName），绝不能传 configName——
+        # RIGHTBAR_TO_PLAN 按组名（自动秘境/自动地脉花…）查映射，传配置名会导致
+        # Plan 路由静默失效，周表/每日行等白名单外键（StrategyName/leyLineDailyEnabled/
+        # team/country/LeyLineDefault* 等）全部丢弃。
         native_leftover, new_plan = _route_combat_to_plan(
-            script_config, req.userId, req.configName, req.settings, "dragon"
+            script_config, req.userId, req.groupName, req.settings, "dragon"
         )
         if new_plan is not None:
             user_config = _bettergi_user_config(script_config, req.userId)
-            user_config.OneDragon_Plan.setValue(new_plan)
-            await user_config.save()
+            await user_config.set("OneDragon", "Plan", new_plan)
         if native_leftover:
             one_dragon.write_user_one_dragon_settings(
                 root, req.scriptId, req.userId, req.configName, native_leftover
@@ -1525,8 +1546,7 @@ async def save_bettergi_global_domain_settings_api(
             )
             if new_plan is not None:
                 user_config = _bettergi_user_config(script_config, req.userId)
-                user_config.OneDragon_Plan.setValue(new_plan)
-                await user_config.save()
+                await user_config.set("OneDragon", "Plan", new_plan)
             if native_leftover:
                 one_dragon.write_user_global_domain_settings(
                     req.scriptId, req.userId, native_leftover
@@ -1620,8 +1640,7 @@ async def save_bettergi_global_stygian_settings_api(
             )
             if new_plan is not None:
                 user_config = _bettergi_user_config(script_config, req.userId)
-                user_config.OneDragon_Plan.setValue(new_plan)
-                await user_config.save()
+                await user_config.set("OneDragon", "Plan", new_plan)
             if native_leftover:
                 one_dragon.write_user_global_stygian_settings(
                     req.scriptId, req.userId, native_leftover

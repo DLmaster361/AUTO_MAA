@@ -19,6 +19,10 @@ export type BetterGIOneDragonSettingsIn = {
      */
     configName: string;
     /**
+     * 右栏当前编辑的内置任务组名（战斗4项 Plan 路由用；空或非战斗组时不做 Plan 路由）
+     */
+    groupName?: string;
+    /**
      * 要覆盖写入的设置项（camelCase 键）
      */
     settings?: Record<string, any>;

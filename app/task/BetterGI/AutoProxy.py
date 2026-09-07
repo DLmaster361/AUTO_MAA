@@ -40,7 +40,7 @@ from .tools import (
     one_dragon_bridge,
     push_notification,
 )
-from .tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES, parse_one_dragon_plan
+from .tools.one_dragon_plan import build_combat_steps, parse_one_dragon_plan
 from .tools.one_dragon_report import parse_one_dragon_report
 
 logger = get_logger("BetterGI 自动代理")
@@ -282,19 +282,17 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_config.get("OneDragon", "Queue") or ""
         )
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
-        # plan 模式下战斗 4 项由 --startGroups MAS一条龙 直连执行层；日常 4 项仍走一条龙
-        # （_write_one_dragon_config 会把战斗 4 项从一条龙副本过滤，避免重复执行）。
+        # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
+        # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
         self.use_execution_layer = bool(
             self.cur_user_config.get("OneDragon", "UseExecutionLayer")
         )
         _plan_steps = parse_one_dragon_plan(
             self.cur_user_config.get("OneDragon", "Plan") or ""
         )
-        self.plan_combat_steps = [
-            s
-            for s in _plan_steps
-            if s.get("name") in BUILTIN_COMBAT_STEP_NAMES and s.get("enabled", True)
-        ]
+        self.plan_combat_steps = build_combat_steps(
+            _plan_steps, self.one_dragon_queue, self.one_dragon_groups
+        )
         self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
@@ -333,9 +331,12 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.use_mas_config:
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
-        # 路径 B：plan 模式下把战斗 4 项从一条龙副本过滤，交由 --startGroups MAS一条龙 直连
+        # 路径 B：只把「本次确实被执行层接管」的战斗组从副本过滤；未接管的组（Plan 无配置
+        # 或队列中已停用）继续留在一条龙，避免任务静默消失或关不掉。
         _exclude = exclude_task_names or (
-            list(BUILTIN_COMBAT_STEP_NAMES) if self.plan_mode else None
+            sorted({str(s.get("name", "")) for s in self.plan_combat_steps})
+            if self.plan_mode
+            else None
         )
         self._materialized_script_groups = one_dragon.write_user_one_dragon(
             self.script_root_path,
@@ -354,19 +355,20 @@ class AutoProxyTask(TaskExecuteBase):
             queue=self.one_dragon_queue,
             exclude_task_names=_exclude,
         )
-        # 幽境危战面板设置（刷取战场/树脂策略等）先物化到 config.json 的
-        # autoStygianOnslaughtConfig 段；随后顶部「通用战斗队伍/策略」非空会覆盖同段的
-        # fightTeamName/strategyName（顶部优先），留空则保留面板/BGI 现有值。
-        one_dragon.apply_user_global_stygian_settings(
-            self.script_root_path,
-            self.script_info.script_id,
-            self.cur_user_item.user_id,
-        )
-        # 通用战斗队伍/策略补写进全局 config.json（秘境/地脉花/幽境危战读取段）
+        # 通用战斗队伍/策略先补写进全局 config.json（秘境/地脉花/幽境危战读取段）；
+        # 优先级：右栏配置 > 顶部通用（通用仅兜底）
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
         one_dragon.apply_global_battle_strategy(
             self.script_root_path,
             str(self.cur_user_config.get("OneDragon", "AutoBossStrategyName") or ""),
+        )
+        # 幽境危战面板设置（刷取战场/树脂策略等）随后物化到 config.json 的
+        # autoStygianOnslaughtConfig 段：右栏 fightTeamName/strategyName 非空时覆盖
+        # 通用值（右栏优先），留空则保留刚补写的通用值（通用兜底）。
+        one_dragon.apply_user_global_stygian_settings(
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
         )
         # 秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）：有 per-user 副本则物化到
         # BGI config.json 的 autoDomainConfig/autoArtifactSalvageConfig 段（运行结束还原）
@@ -620,7 +622,7 @@ class AutoProxyTask(TaskExecuteBase):
             await monitor.stop()
             await self.kill_managed_process()
             with suppress(Exception):
-                one_dragon_bridge.scrub_one_dragon_group(self.script_root_path)
+                one_dragon_bridge.remove_one_dragon_group(self.script_root_path)
 
         if result["success"]:
             await self._push_dispatch_log("执行层（战斗4项）完成")

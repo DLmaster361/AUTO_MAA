@@ -1128,16 +1128,16 @@ type BetterGIUserFormData = {
 
 // 一条龙内置配置组（与后端 BetterGIUserConfig.OneDragon.Groups 的默认项保持一致）。
 // value 参与后端判定，保持中文原样；只有显示名接词表。
-// 顺序为 MAS 默认一条龙顺序（体力作战插入其第 3 位，见 initDragonList）：
-// 领取邮件 → 合成树脂 → 自动幽境危战 → 自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励
+// 顺序为 MAS 默认一条龙顺序（体力作战插在「自动幽境危战」之前，见 initDragonList）：
+// 领取邮件 → 领取尘歌壶奖励 → 合成树脂 → 自动幽境危战 → 自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取每日奖励
 const ONE_DRAGON_GROUPS = [
   { value: '领取邮件', labelKey: 'edit.bettergiGroupMail' },
+  { value: '领取尘歌壶奖励', labelKey: 'edit.bettergiGroupTeapot' },
   { value: '合成树脂', labelKey: 'edit.bettergiGroupResin' },
   { value: '自动幽境危战', labelKey: 'edit.bettergiGroupStygian' },
   { value: '自动地脉花', labelKey: 'edit.bettergiGroupLeyLine' },
   { value: '自动首领讨伐', labelKey: 'edit.bettergiGroupBoss' },
   { value: '自动秘境', labelKey: 'edit.bettergiGroupDomain' },
-  { value: '领取尘歌壶奖励', labelKey: 'edit.bettergiGroupTeapot' },
   { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
 ]
 
@@ -1600,8 +1600,8 @@ const persistDragonQueue = () => {
 // 依据用户数据初始化一条龙队列（loadUser 后调用一次，随后由增删/拖拽维护）：
 // 已持久化队列优先（顺序与成员、含重复实例原样恢复）；否则种子 =
 // 8 内置（默认在列，enabled 由 Groups 表达）+ 体力作战（默认在列，默认关闭）。
-// 默认顺序：领取邮件 → 合成树脂 → 体力作战 → 自动幽境危战 → 自动地脉花 →
-//           自动首领讨伐 → 自动秘境 → 领取尘歌壶奖励 → 领取每日奖励
+// 默认顺序：领取邮件 → 领取尘歌壶奖励 → 合成树脂 → 体力作战 → 自动幽境危战 →
+//           自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取每日奖励
 const initDragonList = () => {
   const stored = readStoredQueue()
   if (stored.length) {
@@ -1810,7 +1810,7 @@ const selectConfigGroup = (item: ConfigGroupIdentity) => {
 
 // ---- 右栏「任务设置」：内置组 → BGI 一条龙可设置字段（按任务分组）----
 // 字段 key 与 BGI 一条龙 JSON 顶层 camelCase 键一致（对应 res/templates 默认配置.json）；
-// 少数字段来自 BGI 全局 config.json 段（source: 'globalDomain'，见「自动秘境-秘境刷取配置」）。
+// 少数字段来自 BGI 全局 config.json 段（source: 'globalDomain'，见「自动秘境-刷取设置/次数与树脂」）。
 type DragonSettingField = {
   key: string
   label: string
@@ -1838,13 +1838,17 @@ type DragonSettingField = {
   hideWhenDisabled?: boolean
 }
 
-/** 每周秘境周表行：默认（兜底）或某天，三个 key 与 BGI 一条龙顶层键一致 */
+/** 每周秘境周表行：默认（兜底）或某天，队伍/秘境/奖励/执行 key 与 BGI 一条龙顶层键一致；
+    strategyKey / runKey 为 MAS 扩展（BGI 原生一条龙无 per-任务策略键与 per-天执行开关）。
+    runKey 仅周一~周日行持有（default 行无此列），留空=该行不渲染执行开关 */
 type WeeklyDomainTableRow = {
   uid: string
   label: string
   partyKey: string
+  strategyKey: string
   domainKey: string
   rewardKey: string
+  runKey?: string
 }
 
 /** 通用周表行：仅当行内所有列都可由普通字段描述时使用（如地脉花每周刷取） */
@@ -2026,12 +2030,12 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
       // 刷取战场(bossNum)/战斗队伍(fightTeamName)/战斗策略(strategyName)/分解圣遗物(autoArtifactSalvage)：
       // 前四项存于 BGI 全局 config.json 的 autoStygianOnslaughtConfig 段（source: 'globalStygian'）；
       // 分解圣遗物星级(maxArtifactStar)走 autoArtifactSalvageConfig 段（source: 'globalDomain'，与秘境共用）。
-      // 队伍/策略与顶部「通用战斗队伍/策略」同段——顶部非空运行时覆盖；面板仅在顶部留空时生效。
-      title: '刷取配置',
+      // 队伍/策略与顶部「通用战斗队伍/策略」同段——面板非空运行时覆盖通用值，留空由通用兜底。
+      title: '刷取设置',
       fields: [
         { key: 'bossNum', label: '刷取战场', type: 'select', source: 'globalStygian', options: STYGIAN_BOSS_NUM_OPTIONS, help: '选择要挑战的 Boss（1/2/3），不同编号对应幽境危战的不同战场。' },
-        { key: 'fightTeamName', label: '战斗队伍', type: 'text', source: 'globalStygian', help: '填游戏内队伍名；留空不指定（顶部「通用战斗队伍」非空时以顶部为准）。' },
-        { key: 'strategyName', label: '战斗策略', type: 'strategy', source: 'globalStygian', help: '选择战斗策略；留空使用内置默认（顶部「通用战斗策略」非空时以顶部为准）。' },
+        { key: 'fightTeamName', label: '战斗队伍', type: 'text', source: 'globalStygian', help: '填游戏内队伍名；留空不指定（由顶部「通用战斗队伍」兜底）。' },
+        { key: 'strategyName', label: '战斗策略', type: 'strategy', source: 'globalStygian', help: '选择战斗策略；留空由顶部「通用战斗策略」兜底。' },
         { key: 'autoArtifactSalvage', label: '分解圣遗物', type: 'bool', source: 'globalStygian', help: '任务结束后自动分解圣遗物。' },
         { key: 'maxArtifactStar', label: '分解圣遗物星级', type: 'select', source: 'globalDomain', options: ARTIFACT_STAR_OPTIONS, help: '分解的最高星级。' },
       ],
@@ -2054,43 +2058,95 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
       title: '刷取设置',
       fields: [
         { key: 'LeyLineOneDragonMode', label: '跳过准备流程', type: 'bool', help: '跳过部分准备流程（例如传送回七天神像）。' },
-        { key: 'LeyLineResinExhaustionMode', label: '树脂耗尽模式', type: 'bool', help: '按当前树脂与库存自动计算可刷次数，结束后自动停止。' },
-        { key: 'LeyLineOpenModeCountMin', label: '刷取次数最小值', type: 'bool', help: '与手动次数取最小值，避免超过树脂可用次数。' },
-        { key: 'LeyLineRunCount', label: '刷取次数', type: 'number', min: 0, help: '填 0 则使用独立任务配置。' },
+        { key: 'useAdventurerHandbook', label: '不使用冒险之证寻路', type: 'bool', help: '勾选后改用内置路线，不通过冒险之证定位地脉花。' },
         { key: 'LeyLineTimeout', label: '战斗超时(秒)', type: 'number', min: 0, help: '单次执行最长等待时间（秒）；0 表示不限制（使用 BetterGI 默认）。' },
       ],
     },
     {
-      // 每周刷取：周一~周日 表格（列=地区/任务类型/执行）。执行=仅勾选的星期刷取；
-      // 未勾选任何星期则每天执行（BGI 一条龙 JSON 顶层 LeyLineRun{Day}/LeyLine{Day}Country/
-      // LeyLine{Day}Type，与旧的平铺 schema 字段一致，仅换表格布局）。
-      title: '每周刷取',
-      kind: 'weekly-field-table',
-      fields: [],
-      weeklyFieldRows: WEEKDAY_KEYS.map(({ key, label }) => ({
-        uid: key,
-        label,
+      title: '次数与树脂',
+      fields: [
+        { key: 'LeyLineResinExhaustionMode', label: '树脂耗尽模式', type: 'bool', help: '按当前树脂与库存自动计算可刷次数，结束后自动停止。' },
+        { key: 'LeyLineOpenModeCountMin', label: '刷取次数最小值', type: 'bool', help: '与手动次数取最小值，避免超过树脂可用次数。' },
+        { key: 'LeyLineRunCount', label: '刷取次数', type: 'number', min: 0, help: '填 0 则使用独立任务配置。' },
+        { key: 'useFragileResin', label: '使用脆弱树脂', type: 'bool', help: '原粹与浓缩耗尽后，允许使用脆弱树脂继续刷取。' },
+        { key: 'useTransientResin', label: '使用须臾树脂', type: 'bool', help: '原粹与浓缩耗尽后，允许使用须臾树脂继续刷取。' },
+      ],
+    },
+    {
+      // 每日地脉花：与「每周刷取」互斥（共用 leyLineDailyEnabled 开关，invert 区分）。
+      // 开启后使用每日统一的一套配置（队伍/策略/地区/任务类型/执行）。
+      title: '每日地脉花',
+      kind: 'daily-leyline',
+      enableField: { key: 'leyLineDailyEnabled', label: '开启每日地脉花', type: 'bool', help: '开启后使用每日统一配置（队伍/策略/地区/任务类型/执行），与「每周刷取」互斥。' },
+      fields: [
+        { key: 'friendshipTeam', label: '领取前切换队伍（好感队）', type: 'text', masterKey: 'team', masterValue: '', masterInvert: true, help: '进入战斗前切换到该队伍，留空则不切换。必须填写战斗队伍后才能填写。' },
+      ],
+      dailyFieldRow: {
+        uid: 'daily',
+        label: '每日',
         fields: [
-          { key: `LeyLine${key}Country`, label: '地区', type: 'select' as const, options: LEY_LINE_COUNTRY_OPTIONS, help: '留空时使用独立任务默认设置。' },
-          { key: `LeyLine${key}Type`, label: '任务类型', type: 'select' as const, options: LEY_LINE_TYPE_OPTIONS, help: '留空时使用独立任务默认设置。' },
-          { key: `LeyLineRun${key}`, label: '执行', type: 'bool' as const, help: '仅勾选的星期执行；未勾选任何星期则每天执行。' },
+          { key: 'team', label: '队伍', type: 'text' },
+          { key: 'combatStrategyPath', label: '策略', type: 'strategy' },
+          { key: 'country', label: '地区', type: 'select', options: LEY_LINE_COUNTRY_OPTIONS },
+          { key: 'leyLineOutcropType', label: '任务类型', type: 'select', options: LEY_LINE_TYPE_OPTIONS },
         ],
-      })),
+      },
+    },
+    {
+      // 每周地脉花：与「每日地脉花」互斥（共用 leyLineDailyEnabled 开关，invert 区分）。
+      // 表格最前为「默认」行（无执行开关），当天某字段为空时按默认行兜底；
+      // 列=队伍/策略/地区/任务类型/执行。执行开关默认关闭，全部关闭=当天不执行。
+      title: '每周地脉花',
+      kind: 'weekly-field-table',
+      enableField: { key: 'leyLineDailyEnabled', label: '开启每周地脉花', type: 'bool', invert: true, help: '开启后按周一~周日分别配置，与「每日地脉花」互斥。' },
+      fields: [
+        { key: 'friendshipTeam', label: '领取前切换队伍（好感队）', type: 'text', masterKey: 'LeyLineDefaultTeam', masterValue: '', masterInvert: true, help: '进入战斗前切换到该队伍，留空则不切换。必须填写默认战斗队伍后才能填写。' },
+      ],
+      weeklyFieldRows: [
+        {
+          uid: 'default',
+          label: '默认',
+          fields: [
+            { key: 'LeyLineDefaultTeam', label: '队伍', type: 'text' },
+            { key: 'LeyLineDefaultStrategy', label: '策略', type: 'strategy' },
+            { key: 'LeyLineDefaultCountry', label: '地区', type: 'select' as const, options: LEY_LINE_COUNTRY_OPTIONS, help: '留空时使用独立任务默认设置。' },
+            { key: 'LeyLineDefaultType', label: '任务类型', type: 'select' as const, options: LEY_LINE_TYPE_OPTIONS, help: '留空时使用独立任务默认设置。' },
+          ],
+        },
+        ...WEEKDAY_KEYS.map(({ key, label }) => ({
+          uid: key,
+          label,
+          fields: [
+            { key: `LeyLine${key}Team`, label: '队伍', type: 'text' },
+            { key: `LeyLine${key}Strategy`, label: '策略', type: 'strategy' },
+            { key: `LeyLine${key}Country`, label: '地区', type: 'select' as const, options: LEY_LINE_COUNTRY_OPTIONS, help: '留空时使用独立任务默认设置。' },
+            { key: `LeyLine${key}Type`, label: '任务类型', type: 'select' as const, options: LEY_LINE_TYPE_OPTIONS, help: '留空时使用独立任务默认设置。' },
+            { key: `LeyLineRun${key}`, label: '执行', type: 'bool' as const, help: '仅勾选的星期执行；未勾选则不执行。' },
+          ],
+        })),
+      ],
     },
   ],
   自动秘境: [
     {
-      // 领奖树脂设定 / 分解圣遗物 / 启用奖励识别：存于 BGI 全局 config.json 段（autoDomainConfig/autoArtifactSalvageConfig）
-      title: '秘境刷取配置',
+      // 分解圣遗物 / 启用奖励识别：存于 BGI 全局 config.json 段（autoDomainConfig/autoArtifactSalvageConfig）
+      title: '刷取设置',
       fields: [
         { key: 'autoArtifactSalvage', label: '分解圣遗物', type: 'bool', source: 'globalDomain', help: '领取奖励后自动分解圣遗物。' },
         { key: 'maxArtifactStar', label: '分解圣遗物星级', type: 'select', source: 'globalDomain', options: ARTIFACT_STAR_OPTIONS, help: '分解的最高星级。' },
         { key: 'rewardRecognitionEnabled', label: '启用奖励识别', type: 'bool', source: 'globalDomain', help: '每轮领取后识别奖励名称与数量，任务结束打印汇总。' },
-        { key: 'specifyResinUse', label: '领奖树脂设定', type: 'bool', source: 'globalDomain', help: '关闭=先用浓缩，后原粹，其余不用；开启=按下方配置数量使用树脂。' },
-        { key: 'originalResinUseCount', label: '原粹树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, hideWhenDisabled: true },
-        { key: 'condensedResinUseCount', label: '浓缩树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, hideWhenDisabled: true },
-        { key: 'transientResinUseCount', label: '须臾树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, hideWhenDisabled: true },
-        { key: 'fragileResinUseCount', label: '脆弱树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, hideWhenDisabled: true },
+      ],
+    },
+    {
+      // 次数与树脂：specifyResinUse=false=刷取至树脂耗尽 / true=按下方指定次数（两个互斥开关 UI）
+      title: '次数与树脂',
+      fields: [
+        { id: 'domain-exhaust', key: 'specifyResinUse', label: '刷取至树脂耗尽', type: 'bool', source: 'globalDomain', invert: true, help: '开启=刷至可用树脂耗尽后停止（与「指定树脂刷取次数」互斥）。' },
+        { id: 'domain-specify', key: 'specifyResinUse', label: '指定树脂刷取次数', type: 'bool', source: 'globalDomain', help: '开启=按下方指定次数刷取（与「刷取至树脂耗尽」互斥）。' },
+        { key: 'originalResinUseCount', label: '原粹树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, help: '指定树脂刷取次数模式下使用原粹树脂的刷取次数。' },
+        { key: 'condensedResinUseCount', label: '浓缩树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, help: '指定树脂刷取次数模式下使用浓缩树脂的刷取次数。' },
+        { key: 'transientResinUseCount', label: '须臾树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, help: '指定树脂刷取次数模式下使用须臾树脂的刷取次数。' },
+        { key: 'fragileResinUseCount', label: '脆弱树脂刷取次数', type: 'number', source: 'globalDomain', min: 0, masterKey: 'specifyResinUse', masterValue: true, help: '指定树脂刷取次数模式下使用脆弱树脂的刷取次数。' },
       ],
     },
     {
@@ -2111,6 +2167,7 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
           uid: 'daily',
           label: '每日',
           partyKey: 'PartyName',
+          strategyKey: 'StrategyName',
           domainKey: 'DomainName',
           rewardKey: 'SundayEverySelectedValue',
         },
@@ -2134,6 +2191,7 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
           uid: 'default',
           label: '默认',
           partyKey: 'PartyName',
+          strategyKey: 'StrategyName',
           domainKey: 'DomainName',
           rewardKey: 'SundayWeeklySelectedValue',
         },
@@ -2141,19 +2199,25 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
           uid: key,
           label,
           partyKey: `${key}PartyName`,
+          strategyKey: `${key}StrategyName`,
           domainKey: `${key}DomainName`,
           rewardKey: `${key}SelectedValue`,
+          runKey: `DomainRun${key}`,
         })),
       ],
     },
   ],
   自动首领讨伐: [
     {
-      title: '讨伐目标',
+      title: '刷取设置',
       fields: [
         { key: 'AutoBossName', label: '选择首领', type: 'boss', help: '部分首领因机制问题未添加。' },
         { key: 'AutoBossTeamName', label: '切换队伍', type: 'text', help: '留空则不更换队伍；例如：首领队。' },
         { key: 'AutoBossStrategyName', label: '选择战斗策略', type: 'strategy', help: '仅用于首领讨伐，不覆盖其他策略设置。' },
+        { key: 'AutoBossReviveRetryCount', label: '角色死亡后重试次数', type: 'number', min: 0, help: '战斗中存在角色死亡时，复活后重新讨伐当前首领。' },
+        { key: 'AutoBossReturnToStatueAfterEachRound', label: '每轮讨伐后返回七天神像', type: 'bool', help: '开启后每次领奖后先回血，再重新前往首领。' },
+        { key: 'AutoBossRewardRecognitionEnabled', label: '启用奖励识别', type: 'bool', help: '每轮领取后识别奖励名称与数量，任务结束打印汇总。' },
+        { key: 'AutoBossTimeout', label: '战斗超时（秒）', type: 'number', min: 1, help: '单轮战斗超时秒数，超时后按失败处理（默认 240）。' },
       ],
     },
     {
@@ -2166,15 +2230,6 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
         { key: 'AutoBossRunCount', label: '讨伐次数', type: 'number', min: 1, masterKey: 'AutoBossSpecifyRunCount', masterValue: true, help: '指定成功后按成功领取奖励次数停止。' },
         { key: 'AutoBossUseTransientResin', label: '原粹不足时使用须臾树脂', type: 'bool', masterKey: 'AutoBossSpecifyRunCount', masterValue: true, help: '原粹不足时使用须臾树脂补充。' },
         { key: 'AutoBossUseFragileResin', label: '原粹不足时使用脆弱树脂', type: 'bool', masterKey: 'AutoBossSpecifyRunCount', masterValue: true, help: '原粹不足时使用脆弱树脂补充。' },
-      ],
-    },
-    {
-      title: '战斗细节',
-      fields: [
-        { key: 'AutoBossReviveRetryCount', label: '角色死亡后重试次数', type: 'number', min: 0, help: '战斗中存在角色死亡时，复活后重新讨伐当前首领。' },
-        { key: 'AutoBossReturnToStatueAfterEachRound', label: '每轮讨伐后返回七天神像', type: 'bool', help: '开启后每次领奖后先回血，再重新前往首领。' },
-        { key: 'AutoBossRewardRecognitionEnabled', label: '启用奖励识别', type: 'bool', help: '每轮领取后识别奖励名称与数量，任务结束打印汇总。' },
-        { key: 'AutoBossTimeout', label: '战斗超时（秒）', type: 'number', min: 1, help: '单轮战斗超时秒数，超时后按失败处理（默认 240）。' },
       ],
     },
   ],
@@ -2307,7 +2362,8 @@ const loadDragonGroupSettings = async () => {
     dragonSettings.value = await fetchOneDragonSettings(
       scriptId,
       userId.value,
-      dragonConfigName.value
+      dragonConfigName.value,
+      sel.key
     )
     dragonSettingsDirty.value = false
     if (needGlobalDomainSettings.value) {
@@ -2349,7 +2405,13 @@ const saveDragonGroupSettings = async () => {
   dragonSettingsSaving.value = true
   try {
     if (dragonSettingsDirty.value) {
-      await saveOneDragonSettings(scriptId, userId.value, dragonConfigName.value, dragonSettings.value)
+      await saveOneDragonSettings(
+        scriptId,
+        userId.value,
+        dragonConfigName.value,
+        dragonSettings.value,
+        sel.key
+      )
       dragonSettingsDirty.value = false
     }
     if (globalDomainSettingsDirty.value) {

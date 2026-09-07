@@ -58,6 +58,7 @@ export class BetterGiService {
         scriptId: string,
         userId: string,
         configName: string = '',
+        groupName: string = '',
     ): CancelablePromise<BetterGIOneDragonSettingsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -66,6 +67,7 @@ export class BetterGiService {
                 'scriptId': scriptId,
                 'userId': userId,
                 'configName': configName,
+                'groupName': groupName,
             },
             errors: {
                 422: `Validation Error`,

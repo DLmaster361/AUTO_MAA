@@ -118,6 +118,10 @@ class BetterGIOneDragonSettingsIn(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
     userId: str = Field(..., description="所属用户ID")
     configName: str = Field(..., description="一条龙配置名")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的内置任务组名（战斗4项 Plan 路由用；空或非战斗组时不做 Plan 路由）",
+    )
     settings: Dict[str, Any] = Field(
         default_factory=dict, description="要覆盖写入的设置项（camelCase 键）"
     )
@@ -1169,8 +1173,9 @@ class BetterGIUserConfig_OneDragon(BaseModel):
     )
     UseExecutionLayer: Optional[bool] = Field(
         default=None,
-        description="是否启用「直连执行层」灰度开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、"
-        "战斗 4 项直连 BetterGI 原生任务；默认关，保持旧链路",
+        description="是否启用「直连执行层」开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、"
+        "战斗 4 项直连 BetterGI 原生任务；默认开，但只有用户配置过该组且队列中启用时才接管，"
+        "其余战斗组仍走原生一条龙",
     )
 
 

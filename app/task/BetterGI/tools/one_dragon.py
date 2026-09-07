@@ -1143,7 +1143,8 @@ _GLOBAL_DOMAIN_LEAVES: tuple[tuple[str, str], ...] = tuple(
 # 的 globalDomain 机制一致：右栏幽境面板的键存于 per-user 副本，运行时物化到 BGI 全局
 # config.json 的 autoStygianOnslaughtConfig 段（运行结束快照还原）。
 # 其中 fightTeamName/strategyName 的叶子已由 _GLOBAL_TEAM_LEAVES / _GLOBAL_STRATEGY_LEAVES
-# 纳入快照（顶部「通用战斗队伍/策略」在非空时覆盖这两个键；留空则保留面板/BGI 现有值），
+# 纳入快照（运行时先补写顶部「通用战斗队伍/策略」，面板值非空时再覆盖这两个键；
+# 面板留空则保留通用值兜底），
 # 故本段补充快照的叶子只需其余独有键；白名单（副本读写）则含全部面板键。
 _GLOBAL_STYGIAN_SEGMENT = "autoStygianOnslaughtConfig"
 # 幽境面板「次数与树脂」可编辑的树脂次数（与 domain 段同键，但分属不同段）
@@ -1330,12 +1331,13 @@ def apply_user_global_domain_settings(
 
 # ---- 自动幽境危战（autoStygianOnslaughtConfig 段）读写 ----
 # 段默认值（与 BGI AutoStygianOnslaughtConfig.cs 一致）：刷取战场默认 1、次数均为 0、
-# 开关均为 false、队伍/策略留空（空值不覆盖 BGI 现有/顶部通用值）。
+# 开关均为 false、队伍留空（空值不覆盖 BGI 现有/顶部通用值）、策略为 BGI 默认选项
+# 「根据队伍自动选择」。此默认同时是新用户（无 per-user 副本）右栏的标准状态。
 def _default_stygian_settings() -> dict[str, Any]:
     return {
         "bossNum": 1,
         "fightTeamName": "",
-        "strategyName": "",
+        "strategyName": "根据队伍自动选择",
         "specifyResinUse": False,
         "autoArtifactSalvage": False,
         "originalResinUseCount": 0,
@@ -1450,14 +1452,19 @@ def per_user_global_stygian_path(script_id: str, user_id: str) -> Path:
 def read_user_global_stygian_settings(
     root: Path, script_id: str, user_id: str
 ) -> dict[str, Any]:
-    """读取某用户的幽境危战设置（per-user 副本为权威源，缺失键兜底 BGI 全局/默认）。"""
-    base = read_global_stygian_settings(root)
+    """读取某用户的幽境危战设置（per-user 副本为权威源）。
+
+    副本缺失/为空时返回固定标准默认（``_default_stygian_settings``），**不回退 BGI
+    config.json 现状**——现状可能被其他用户/历史运行污染（如 fightTeamName 残留脏值），
+    新用户右栏必须始终呈现标准空白状态；用户首次保存后副本即固化其视图值。
+    """
+    out = _default_stygian_settings()
     copy = read_file(per_user_global_stygian_path(script_id, user_id))
     if isinstance(copy, dict) and copy:
-        base.update(
-            {k: v for k, v in copy.items() if k in _GLOBAL_STYGIAN_SETTING_KEYS}
-        )
-    return base
+        for key in _GLOBAL_STYGIAN_SETTING_KEYS:
+            if key in copy:
+                out[key] = _coerce_stygian_leaf(key, copy[key])
+    return out
 
 
 def write_user_global_stygian_settings(

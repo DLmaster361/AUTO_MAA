@@ -27,6 +27,8 @@
 
 from __future__ import annotations
 
+import json
+from contextlib import suppress
 from pathlib import Path
 from shutil import copy2
 from typing import Any
@@ -56,10 +58,13 @@ def ensure_script_assets(root_path: Path) -> None:
 
     验证1 已坐实：本地脚本经配置组 ``folderName`` 引用即可运行，无需订阅；
     这里负责把自建脚本本体落到该目录。内容不变则不重写，避免无谓 IO。
+    settings.json 必须部署：manifest 声明 ``settings_ui`` 后 BGI 才会把配置组的
+    ``jsScriptSettingsObject``（Plan）注入为脚本 settings 全局，缺失则 main.js
+    读到空 Plan 秒退（2026-09 实机排障结论）。
     """
     dst_dir = root_path / _JS_SCRIPT_REL_DIR / SCRIPT_FOLDER_NAME
     dst_dir.mkdir(parents=True, exist_ok=True)
-    for fname in ("main.js", "manifest.json"):
+    for fname in ("main.js", "manifest.json", "settings.json"):
         src = _SCRIPT_ASSET_DIR / fname
         if not src.is_file():
             logger.warning(f"一条龙执行层脚本资产缺失，跳过复制: {src}")
@@ -87,21 +92,26 @@ def write_one_dragon_group(root_path: Path, plan_steps: list[dict[str, Any]]) ->
     if not isinstance(project, dict):
         raise RuntimeError(f"一条龙执行层配置组模板缺 projects[0]: {template_path}")
     project["folderName"] = SCRIPT_FOLDER_NAME
-    project["jsScriptSettingsObject"] = {"plan": {"version": 1, "steps": plan_steps}}
+    # plan 必须以 JSON 字符串注入：BGI 的 settings 注入是 .NET 对象包装（实测
+    # MAS_SETTINGS_KEYS 打出 GetType/ToString 等），JS 侧对嵌套值（steps/weeklyLeyLine）
+    # 做属性访问会拿到 undefined，序列化成字符串后由 main.js safeParsePlan 解析。
+    project["jsScriptSettingsObject"] = {
+        "plan": json.dumps(
+            {"version": 1, "steps": plan_steps}, ensure_ascii=False
+        )
+    }
     out_path = root_path / _GROUP_REL_DIR / f"{GROUP_NAME}.json"
     write_file(out_path, template)
     logger.info(f"已生成一条龙执行层配置组: {out_path}（{len(plan_steps)} 步）")
     return out_path
 
 
-def scrub_one_dragon_group(root_path: Path) -> None:
-    """运行结束后脱敏一条龙执行层配置组。
+def remove_one_dragon_group(root_path: Path) -> None:
+    """运行结束后删除一条龙执行层配置组文件 ``User/ScriptGroup/MAS一条龙.json``。
 
-    Plan 注入的是执行层参数（战斗队伍/策略/次数等），不含明文账号密码，
-    故此处目前仅保留与切号一致的清理流程占位；若后续 steps 引入凭据再扩展。
+    该配置组由 MAS 每次运行前重新生成，不属于用户资产；留着会常驻在 BGI 的配置组
+    列表里干扰用户。脚本本体（``User/JsScript/MASOneDragon``）保留，不随配置组删除。
     """
     out_path = root_path / _GROUP_REL_DIR / f"{GROUP_NAME}.json"
-    data = read_file(out_path)
-    if not isinstance(data, dict):
-        return
-    write_file(out_path, data)
+    with suppress(OSError):
+        out_path.unlink(missing_ok=True)

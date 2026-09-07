@@ -97,7 +97,8 @@
                 "HSR专项与SRC专项 修复英文与日文界面的术语错误：「历战余响」在英文下被显示为「差分宇宙」（两者在同一页面上是不同玩法），「体力配置」沿用了明日方舟的「理智」译法，「侵蚀隧洞」英文名复数有误 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 修复项目 interface 的同一个预设里重复写了同一个任务（例如 MXU 的随机启动标记）时整份项目读不出来、建项向导卡在第一步的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 从新链路回退到旧链路后准备项目运行环境时，改为直接复用 Runtime 已经装好的 uv，不再要求用户自己再准备一份 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)",
+                "BetterGI专项 修复一条龙战斗任务（秘境 / 地脉花 / 幽境危战 / 首领讨伐）右栏设置保存报错、关掉的任务仍会执行、没配过参数的任务反而不执行的问题，并修复地脉花按星期刷取每天都跑、秘境每周表奖励档位不按所配星期下发的问题 by [@TCddddd](https://github.com/TCddddd)"
             ]
         },
         "v5.5.0-beta.2": {

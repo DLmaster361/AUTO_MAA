@@ -100,6 +100,7 @@ BUILTIN_STEP_SETTING_KEYS: dict[str, frozenset[str]] = {
             "fragileResinUseCount",
             "resinPriorityList",
             "combatStrategyPath",
+            "domainRoundNum",
             "weeklyDomain",
         }
     ),
@@ -113,14 +114,13 @@ BUILTIN_STEP_SETTING_KEYS: dict[str, frozenset[str]] = {
             "team",
             "leyLineOneDragonMode",
             "timeout",
-            "runMonday",
-            "runTuesday",
-            "runWednesday",
-            "runThursday",
-            "runFriday",
-            "runSaturday",
-            "runSunday",
             "weeklyLeyLine",
+            "useAdventurerHandbook",
+            "useFragileResin",
+            "useTransientResin",
+            "leyLineDailyEnabled",
+            "friendshipTeam",
+            "combatStrategyPath",
         }
     ),
     "自动幽境危战": frozenset(
@@ -135,6 +135,8 @@ BUILTIN_STEP_SETTING_KEYS: dict[str, frozenset[str]] = {
             "transientResinUseCount",
             "fragileResinUseCount",
             "resinPriorityList",
+            "combatStrategyPath",
+            "maxArtifactStar",
         }
     ),
     "自动首领讨伐": frozenset(
@@ -342,6 +344,7 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
         "fightTeamName": "fightTeamName",
         "strategyName": "strategyName",
         "autoArtifactSalvage": "autoArtifactSalvage",
+        "maxArtifactStar": "maxArtifactStar",
         "specifyResinUse": "specifyResinUse",
         "originalResinUseCount": "originalResinUseCount",
         "condensedResinUseCount": "condensedResinUseCount",
@@ -350,6 +353,7 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
     },
     "自动秘境": {
         "autoArtifactSalvage": "autoArtifactSalvage",
+        "maxArtifactStar": "maxArtifactStar",
         "rewardRecognitionEnabled": "rewardRecognitionEnabled",
         "specifyResinUse": "specifyResinUse",
         "originalResinUseCount": "originalResinUseCount",
@@ -359,6 +363,7 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
         "PartyName": "partyName",
         "DomainName": "domainName",
         "SundayEverySelectedValue": "sundaySelectedValue",
+        "WeeklyDomainEnabled": "weeklyDomainEnabled",
     },
     "自动首领讨伐": {
         "AutoBossName": "bossName",
@@ -379,13 +384,15 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
         "LeyLineRunCount": "count",
         "LeyLineOneDragonMode": "leyLineOneDragonMode",
         "LeyLineTimeout": "timeout",
-        "LeyLineRunMon": "runMonday",
-        "LeyLineRunTue": "runTuesday",
-        "LeyLineRunWed": "runWednesday",
-        "LeyLineRunThu": "runThursday",
-        "LeyLineRunFri": "runFriday",
-        "LeyLineRunSat": "runSaturday",
-        "LeyLineRunSun": "runSunday",
+        "useAdventurerHandbook": "useAdventurerHandbook",
+        "useFragileResin": "useFragileResin",
+        "useTransientResin": "useTransientResin",
+        "country": "country",
+        "leyLineOutcropType": "leyLineOutcropType",
+        "team": "team",
+        "leyLineDailyEnabled": "leyLineDailyEnabled",
+        "friendshipTeam": "friendshipTeam",
+        "combatStrategyPath": "combatStrategyPath",
     },
 }
 
@@ -400,26 +407,57 @@ WEEKDAY_KEYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturda
 
 
 def _secret_weekly_plan_key(field_key: str):
-    """秘境 weekly 平铺键 → (天键, 嵌套字段)；非 weekly 返 None。"""
+    """秘境 weekly 平铺键 → (天键, 嵌套字段)；非 weekly 返 None。
+
+    ``PartyName`` / ``DomainName`` / ``StrategyName`` 既是每日行的单值，也是每周表的
+    「默认」行，两者同键同值（见前端每周秘境表 default 行），统一归到 ``default``。
+    ``default.reward`` 只认 ``SundayWeeklySelectedValue``（每周表默认行的奖励）；
+    每日行的 ``SundayEverySelectedValue`` 归扁平 ``sundaySelectedValue``，二者语义
+    不同（BGI 原生：开每周走前者、走每日走后者），不能混用。
+    ``StrategyName`` 是 MAS 扩展键（BGI 原生一条龙没有 per-任务战斗策略键），由执行层
+    ``setCombatStrategyPath`` 直传，不走全局 ``autoFightConfig``。
+    """
     if field_key == "PartyName":
         return "default", "partyName"
     if field_key == "DomainName":
         return "default", "domainName"
-    if field_key == "SundayEverySelectedValue":
+    if field_key == "StrategyName":
+        return "default", "strategy"
+    if field_key == "SundayWeeklySelectedValue":
         return "default", "reward"
     for day in WEEKDAY_KEYS:
         if field_key == f"{day}PartyName":
             return day, "partyName"
+        if field_key == f"{day}StrategyName":
+            return day, "strategy"
         if field_key == f"{day}DomainName":
             return day, "domainName"
         if field_key == f"{day}SelectedValue":
             return day, "reward"
+        if field_key == f"DomainRun{day}":
+            return day, "run"
     return None
 
 
 def _leyline_weekly_plan_key(field_key: str):
-    """地脉花 weekly 平铺键 → (天键, 嵌套字段)；非 weekly 返 None。"""
+    """地脉花 weekly 平铺键 → (天键, 嵌套字段)；非 weekly 返 None。
+
+    default 行是兜底：当天某字段为空时按默认行填写（default 行无执行开关）。
+    team/strategy 为 MAS 扩展列（BGI 原生一条龙无 per-天队伍/策略键）。"""
+    # 默认行（兜底）
+    if field_key == "LeyLineDefaultTeam":
+        return "default", "team"
+    if field_key == "LeyLineDefaultStrategy":
+        return "default", "strategy"
+    if field_key == "LeyLineDefaultCountry":
+        return "default", "country"
+    if field_key == "LeyLineDefaultType":
+        return "default", "type"
     for day in WEEKDAY_KEYS:
+        if field_key == f"LeyLine{day}Team":
+            return day, "team"
+        if field_key == f"LeyLine{day}Strategy":
+            return day, "strategy"
         if field_key == f"LeyLine{day}Country":
             return day, "country"
         if field_key == f"LeyLine{day}Type":
@@ -453,19 +491,6 @@ def extract_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
     return result
 
 
-def weekly_plan_keys(group: str) -> set[str]:
-    """该组所有 weekly 平铺键集合（用于从原生剩余中剥离）。"""
-    keys: set[str] = set()
-    if group == "自动秘境":
-        keys.add("SundayEverySelectedValue")
-        for day in WEEKDAY_KEYS:
-            keys.update({f"{day}PartyName", f"{day}DomainName", f"{day}SelectedValue"})
-    elif group == "自动地脉花":
-        for day in WEEKDAY_KEYS:
-            keys.update({f"LeyLine{day}Country", f"LeyLine{day}Type", f"LeyLineRun{day}"})
-    return keys
-
-
 def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any]:
     """把 Plan settings 里的 weeklyDomain/weeklyLeyLine 还原为平铺右栏键（回显）。"""
     out: dict[str, Any] = {}
@@ -475,34 +500,112 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
                 continue
             if day == "default":
                 if "reward" in vals:
-                    out["SundayEverySelectedValue"] = vals["reward"]
+                    out["SundayWeeklySelectedValue"] = vals["reward"]
                 if "partyName" in vals:
                     out["PartyName"] = vals["partyName"]
+                if "strategy" in vals:
+                    out["StrategyName"] = vals["strategy"]
                 if "domainName" in vals:
                     out["DomainName"] = vals["domainName"]
             else:
                 if "partyName" in vals:
                     out[f"{day}PartyName"] = vals["partyName"]
+                if "strategy" in vals:
+                    out[f"{day}StrategyName"] = vals["strategy"]
                 if "domainName" in vals:
                     out[f"{day}DomainName"] = vals["domainName"]
                 if "reward" in vals:
                     out[f"{day}SelectedValue"] = vals["reward"]
+                if "run" in vals:
+                    out[f"DomainRun{day}"] = vals["run"]
     if group == "自动地脉花" and isinstance(settings.get("weeklyLeyLine"), dict):
         for day, vals in settings["weeklyLeyLine"].items():
             if not isinstance(vals, dict):
                 continue
-            if "country" in vals:
-                out[f"LeyLine{day}Country"] = vals["country"]
-            if "type" in vals:
-                out[f"LeyLine{day}Type"] = vals["type"]
-            if "run" in vals:
-                out[f"LeyLineRun{day}"] = vals["run"]
+            if day == "default":
+                if "team" in vals:
+                    out["LeyLineDefaultTeam"] = vals["team"]
+                if "strategy" in vals:
+                    out["LeyLineDefaultStrategy"] = vals["strategy"]
+                if "country" in vals:
+                    out["LeyLineDefaultCountry"] = vals["country"]
+                if "type" in vals:
+                    out["LeyLineDefaultType"] = vals["type"]
+            else:
+                if "team" in vals:
+                    out[f"LeyLine{day}Team"] = vals["team"]
+                if "strategy" in vals:
+                    out[f"LeyLine{day}Strategy"] = vals["strategy"]
+                if "country" in vals:
+                    out[f"LeyLine{day}Country"] = vals["country"]
+                if "type" in vals:
+                    out[f"LeyLine{day}Type"] = vals["type"]
+                if "run" in vals:
+                    out[f"LeyLineRun{day}"] = vals["run"]
     return out
 
 
 def is_combat_group(group: str) -> bool:
     """是否为带执行层 Plan 的战斗 4 项组名。"""
     return group in RIGHTBAR_TO_PLAN
+
+
+def build_combat_steps(
+    plan_steps: list[dict[str, Any]],
+    queue: list[dict[str, Any]] | None = None,
+    enabled_groups: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """按队列顺序挑出「由执行层接管」的战斗 4 项步骤。
+
+    接管需同时满足三条，缺一则留在原生一条龙，避免「关不掉」或「静默消失」：
+
+    1. Plan 中存在该组的步骤（用户在右栏配置过该组）；
+    2. 该组在 ``enabled_groups``（``OneDragon.Groups``）中处于启用状态——组开关是
+       启停的权威源，可视化队列只决定顺序，其条目本身不携带启停；
+    3. 队列中存在该条目。
+
+    ``queue`` 为空（用户未保存过队列）时按 Plan 自身顺序回退。队列里同一组的重复
+    实例共用该组在 Plan 中的同一份参数，但各自持独立 uid，保证步骤级报告可区分。
+    """
+    enabled = {str(name) for name in (enabled_groups or [])}
+    plan_by_name: dict[str, dict[str, Any]] = {}
+    for step in plan_steps:
+        name = str(step.get("name", ""))
+        if name not in BUILTIN_COMBAT_STEP_NAMES or name in plan_by_name:
+            continue
+        if enabled and name not in enabled:
+            continue
+        plan_by_name[name] = step
+    if not plan_by_name:
+        return []
+
+    if queue:
+        ordered = [
+            item
+            for item in queue
+            if isinstance(item, dict)
+            and str(item.get("name", "")) in plan_by_name
+            and bool(item.get("enabled", True))
+        ]
+    else:
+        ordered = [
+            {"name": name, "enabled": bool(step.get("enabled", True))}
+            for name, step in plan_by_name.items()
+        ]
+
+    steps: list[dict[str, Any]] = []
+    seen: dict[str, int] = {}
+    for item in ordered:
+        name = str(item.get("name", ""))
+        src = plan_by_name[name]
+        seq = seen.get(name, 0)
+        seen[name] = seq + 1
+        step = dict(src)
+        step["settings"] = dict(src.get("settings") or {})
+        if seq:
+            step["uid"] = f"{step.get('uid') or _gen_uid()}#{seq}"
+        steps.append(step)
+    return steps
 
 
 def merge_rightbar_into_plan(

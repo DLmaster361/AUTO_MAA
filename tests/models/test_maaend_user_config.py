@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from app.models.config import MaaEndPlanConfig, MaaEndUserConfig
+from app.models.config import (
+    MaaEndConfigModeValidator,
+    MaaEndPlanConfig,
+    MaaEndUserConfig,
+)
+from app.models.ConfigBase import OptionsValidator
 from app.models.schema import MaaEndUserConfig_Task
 
 UTC4 = timezone(timedelta(hours=4))
@@ -21,6 +26,18 @@ WEEKDAY_NAMES = (
 
 
 class MaaEndUserConfigTest(unittest.IsolatedAsyncioTestCase):
+    def test_mode_validator_maps_legacy_values_before_parent_correction(self) -> None:
+        validator = MaaEndConfigModeValidator()
+
+        with patch.object(
+            OptionsValidator,
+            "correct",
+            side_effect=AssertionError("父类校验不应提前执行"),
+        ):
+            self.assertEqual(validator.correct("简洁"), "脚本")
+            self.assertEqual(validator.correct("详细"), "用户")
+            self.assertEqual(validator.correct("自定义"), "用户")
+
     async def test_pull_count_calculator_is_disabled_by_default(self) -> None:
         config = MaaEndUserConfig()
 

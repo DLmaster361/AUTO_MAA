@@ -1040,7 +1040,9 @@ class MaaEndConfigModeValidator(OptionsValidator):
         super().__init__(["脚本", "用户", "直控"])
 
     def correct(self, value: Any) -> Any:
-        return self.LEGACY_MODE_MAP.get(value, super().correct(value))
+        if value in self.LEGACY_MODE_MAP:
+            return self.LEGACY_MODE_MAP[value]
+        return super().correct(value)
 
 
 class MaaEndUserConfig(ConfigBase):

@@ -432,10 +432,7 @@ def main():
     app.include_router(ocr_router)
     app.include_router(openclaw_qq_router)
     app.include_router(openclaw_weixin_router)
-
-    # 可选补丁：米游社扫码登录
-    if qr_login_router is not None:
-        app.include_router(qr_login_router)
+    app.include_router(qr_login_router)
 
     app.mount(
         "/api/res/materials",

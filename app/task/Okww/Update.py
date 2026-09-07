@@ -93,9 +93,6 @@ class WuwaUpdateTask(TaskExecuteBase):
         )
         self.cur_user_item.status = "完成"
 
-    async def final_task(self) -> None:
-        pass
-
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"鸣潮更新任务出现异常: {e}")

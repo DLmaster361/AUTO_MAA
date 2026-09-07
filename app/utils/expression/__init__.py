@@ -23,14 +23,7 @@
 """
 
 from .evaluator import CompiledExpression, compile_expression
-from .functions import (
-    FUNCTIONS,
-    REGISTRY,
-    Process,
-    apply_function,
-    make_process,
-    register_process,
-)
+from .functions import FUNCTIONS, apply_function
 from .parser import ExpressionError, parse
 
 __all__ = [
@@ -39,9 +32,5 @@ __all__ = [
     "ExpressionError",
     "parse",
     "FUNCTIONS",
-    "Process",
-    "REGISTRY",
-    "register_process",
-    "make_process",
     "apply_function",
 ]

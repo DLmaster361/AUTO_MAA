@@ -1593,6 +1593,8 @@ export default {
     configRestoreListFailed: '加载备份列表失败',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
+    configRestoreDetailConfirm: '将用该时间点的配置覆盖当前位置，再打开脚本查看页面；查看结束前请勿切换任务开关（会被误写回旧编排），确认？',
+    configRestoreConfirmOk: '恢复并查看',
     configRestoreAction: '一键恢复',
     configRestoreSuccess: '配置已恢复',
     configRestoreFailed: '恢复配置失败',

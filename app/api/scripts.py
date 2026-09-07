@@ -2083,12 +2083,20 @@ async def get_zzzod_backup_preview_api(
             **data,
         )
     except Exception as e:
+        # 响应模型 info/account/tasks/instances 全部 required（...）；除填
+        # account/tasks/instances 外还要填 info，否则 Pydantic 校验失败抛
+        # ValidationError → 裸 500。错误信息塞进 info 的首项展示给用户。
         return ZzzOdBackupPreviewOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             time=time,
             target=target,
+            info=[
+                ZzzOdPreviewField(
+                    key="error", title="错误", value=str(e)
+                )
+            ],
             account=[],
             tasks=[],
             instances=[],

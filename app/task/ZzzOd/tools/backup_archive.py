@@ -253,13 +253,35 @@ def archive_mas_backup(
     存底）；跳过返回 ``None``，否则返回归档目录。``meta`` 为随槽一起归档的
     信息字段快照（见 :data:`MAS_USER_INFO_FILE`），写入后 ``list/preview/
     restore`` 可在不触碰当前配置的情况下还原该时点的基本信息卡内容。
+
+    指纹一致性：``mas_user_info.yml`` 必须在 ``archive_dir`` 内部指纹对比
+    之前已存在于源目录内（否则新归档目录比旧目录多 1 个文件、hash 永远
+    不等 → MAS 池每轮都新建一份，第 11 次起最旧的被清）。本函数把 meta
+    临时写入源槽做指纹对比，归档后立刻清理临时文件——归档目录内仍保留
+    完整 ``mas_user_info.yml`` 副本。
     """
 
-    dest = archive_dir(slot_dir, mas_backup_root(script_id, slot_idx), force=force)
+    staged_meta_path: Path | None = None
+    if meta:
+        # 临时把 meta 写进源目录，dir_files 自动收录，让指纹对比看到这一文件
+        staged_meta_path = slot_dir / MAS_USER_INFO_FILE
+        write_file(staged_meta_path, meta)
+    try:
+        dest = archive_dir(
+            slot_dir, mas_backup_root(script_id, slot_idx), force=force
+        )
+    finally:
+        # 即便 archive_dir 抛错也清理临时文件，避免污染源 slot_dir
+        if staged_meta_path is not None:
+            try:
+                staged_meta_path.unlink()
+            except OSError as e:
+                logger.warning(f"清理临时 {MAS_USER_INFO_FILE} 失败: {e}")
     if dest is None:
         logger.info(f"槽 {slot_idx:02d} MAS 配置无变化，跳过归档")
         return None
     if meta:
+        # 归档目录内保留完整副本（list/preview/restore 消费该文件）
         write_file(dest / MAS_USER_INFO_FILE, meta)
 
     logger.info(f"槽 {slot_idx:02d} MAS 配置已归档: {dest.name}")

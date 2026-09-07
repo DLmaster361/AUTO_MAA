@@ -833,7 +833,7 @@
                               :value="f.value"
                               size="small"
                               style="min-width: 100px"
-                              @change="(v: any) => saveTaskConfigField(card, f, v)"
+                              @blur="(e: FocusEvent) => saveTaskConfigField(card, f, ((e.target as HTMLInputElement).value === '' ? null : Number((e.target as HTMLInputElement).value)))"
                             />
                           </div>
                         </template>
@@ -1827,6 +1827,9 @@ const saveTaskConfigField = async (
   field: TaskConfigField,
   value: any
 ) => {
+  // 数值框清空（@blur 拿到空串→null）：不发请求、不更新本地值、不弹成功
+  // 提示；保留用户原值避免后端 int(null) 报 400 与脏覆盖
+  if (value === null || value === undefined || Number.isNaN(value)) return
   try {
     const resp = await Service.saveZzzodAppConfigApiApiScriptsZzzodAppConfigSavePost({
       scriptId,
@@ -2020,13 +2023,19 @@ const handleRestored = (target: string) => {
 
 const handleRestoreView = (target: string, item: { time: string }) => {
   const isMas = target === 'mas'
+  // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
+  // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
+  // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
+  // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
   Modal.confirm({
     title: t('edit.configRestoreDetailView'),
     content: h(
       'p',
       { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailHint', { script: ZZZOD_DISPLAY_NAME })
+      t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
     ),
+    okText: t('edit.configRestoreConfirmOk'),
+    cancelText: t('edit.cancel'),
     onOk: async () => {
       try {
         await Service.restoreZzzodBackupApiApiScriptsZzzodBackupRestorePost({

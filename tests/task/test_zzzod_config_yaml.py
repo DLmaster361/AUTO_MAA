@@ -327,7 +327,14 @@ def test_native_account_fields_whitelist_and_write(tmp_path: Path) -> None:
 
 
 def test_native_account_default_merge_and_default_skip(tmp_path: Path) -> None:
-    """直控账号字段与一条龙 GUI 同步：缺失字段合并默认值；默认值不落盘。"""
+    """直控账号字段与一条龙 GUI 同步：缺失字段合并默认值；值变化（含回退默认）落盘。
+
+    行为：
+    - 原文件缺失 + 提交值 = 默认 → 跳过（不污染）
+    - 原文件缺失 + 提交值 ≠ 默认 → 落盘
+    - 原文件有值 + 值变化 → 落盘（含清空回默认：删字段）
+    - 原文件有值 + 值未变 → 跳过
+    """
     root = _make_root(tmp_path)
     slot_dir = instance_dir(root, 1)
 
@@ -344,7 +351,8 @@ def test_native_account_default_merge_and_default_skip(tmp_path: Path) -> None:
     assert by_key["bilibili_account_name"]["value"] == ""
     assert by_key["game_path"]["value"] == r"G:\Games\ZZZ.exe"
 
-    # 保存时等于默认值的字段跳过不落盘（与 zzz-od 行为一致，避免文件被污染）
+    # 整表 patch：所有白名单内字段（值未变时由 yaml_operator.update 自动
+    # 跳过 → 不污染文件；值变化时落盘——含「等于默认」的字段）
     save_native_account_fields(
         root,
         1,
@@ -356,10 +364,41 @@ def test_native_account_default_merge_and_default_skip(tmp_path: Path) -> None:
         },
     )
     data = read_game_account(slot_dir)
+    # 文件内未变化的字段保持原状：game_path 原本就有仍保留；
+    # game_region/game_language/account 在 patch 里显式提交且值与默认
+    # 相同（等于 yaml_operator.update 跳过条件），不落盘
     assert "game_region" not in data
     assert "game_language" not in data
     assert "account" not in data
     assert data["game_path"] == r"G:\Games\ZZZ.exe"
+
+    # 值变化时（含回退到默认）必须落盘：原值 "abc" → 清空（= 默认空串）→
+    # 字段被 yaml_operator.update 写为空串（read 端会合并为默认 → 表单显示空）
+    write_file(
+        slot_dir / "game_account.yml",
+        {
+            "game_path": r"G:\Games\ZZZ.exe",
+            "account": "abc",
+            "password": "secret",
+        },
+    )
+    save_native_account_fields(
+        root,
+        1,
+        {
+            "game_region": "cn",
+            "account": "abc",  # 未变，跳过
+            "password": "",    # 原 secret → 清空（= 默认），落盘为空串
+        },
+    )
+    data = read_game_account(slot_dir)
+    assert data["account"] == "abc"          # 未变 → 保持
+    assert data["password"] == ""            # 清空回默认 → 字段被写为空串
+    assert data["game_path"] == r"G:\Games\ZZZ.exe"
+    # read_native_account_fields 把空串视为默认 = 表单清空
+    fields = read_native_account_fields(root, 1)
+    by_key = {f["key"]: f for f in fields}
+    assert by_key["password"]["value"] == ""
 
 
 def test_native_tasks_merge_and_full_order_writeback(tmp_path: Path) -> None:

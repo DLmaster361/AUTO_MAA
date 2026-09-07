@@ -1219,12 +1219,27 @@ class AppConfig(GlobalConfig):
         return script_config
 
     def _zzzod_root(self, script_config: ZzzOdConfig) -> Path:
-        """返回 zzz-od 安装根目录并校验有效。"""
+        """返回 zzz-od 安装根目录并校验有效。
 
-        root = Path(script_config.get("Info", "RootPath")).expanduser()
-        if not root.is_dir():
+        拒绝空字符串（``FolderValidator`` 对空串放行会让 ``Path("").is_dir()``
+        在 cwd 下返真、用户态保存时把 ``SlotIdx`` 写 1 并把 ``one_dragon.yml``
+        落到 MAS 工作目录）与 ``Path.cwd()``（防用户填了工作目录当安装目录），
+        显式统一到与 ``FolderValidator`` 非空分支一致的语义。
+        """
+
+        raw = str(script_config.get("Info", "RootPath") or "").strip()
+        if not raw:
             raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
-        return root
+        root = Path(raw).expanduser()
+        if not root.is_absolute() or not root.is_dir():
+            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
+        try:
+            resolved = root.resolve()
+        except (OSError, ValueError):
+            raise ValueError("请先在脚本设置中配置绝区零一条龙安装目录")
+        if resolved == Path.cwd().resolve():
+            raise ValueError("绝区零一条龙安装目录不能为 MAS 工作目录")
+        return resolved
 
     def get_zzzod_instances(self, script_id: str) -> list[dict]:
         """列出 zzz-od 实例（供用户配置「快速导入」选择来源实例）。"""
@@ -2237,6 +2252,7 @@ class AppConfig(GlobalConfig):
         slot = int(instance_idx)
 
         from app.task.ZzzOd.tools import (
+            read_native_instance_run,
             save_native_account_fields,
             save_native_instance_run,
             save_native_tasks,
@@ -2247,7 +2263,12 @@ class AppConfig(GlobalConfig):
         if tasks is not None:
             save_native_tasks(root, slot, tasks)
         if instance_run is not None:
-            save_native_instance_run(root, instance_run)
+            # 等于原生文件当前值时跳过写：避免直控页保存账号/任务时把
+            # 用户没改过的运行实例值写死（review 提的：从没动过下拉的多
+            # 实例用户会被「仅运行当前」覆盖 → 一条龙从跑全部变成只跑当前）
+            current = read_native_instance_run(root)
+            if instance_run != current:
+                save_native_instance_run(root, instance_run)
         logger.info(f"ZZZ-OD 实例 {slot:02d} 原生配置已由直控页面保存")
         return {
             "instanceIdx": slot,

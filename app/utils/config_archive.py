@@ -106,15 +106,24 @@ def _archive(
     *,
     keep: int,
     force: bool,
+    protect: frozenset[str] = frozenset(),
 ) -> Path | None:
     """把文件集复制为 ``store_root`` 下新时间戳目录。
 
     内容与最近一份备份完全一致时跳过（``force=True`` 强制归档，用于恢复前
     存底——让「恢复前的配置」在列表里有明确的时间戳条目）；跳过返回
     ``None``，否则返回归档目录。指纹对比失败的边界下照常归档。
+
+    ``protect``：保留清理时排除的时间戳集合（不在超时清理中删）。用于
+    ``restore_dir`` 链路上 force 归档后立刻恢复——用户选中的那份若在
+    ``keep`` 之外不能被这条 force 归档清掉，否则随后 ``restore_dir`` 报
+    备份不存在。`force` 隐含 protect 包含全部现存归档（恢复前不能清掉
+    任何历史条目）。
     """
 
     times = list_times(store_root)
+    if force:
+        protect = frozenset(times) | protect
     if not force and times:
         try:
             latest = dir_files(store_root / times[0])
@@ -242,5 +251,7 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     if not dir_files(backup_dir):
         raise ValueError(f"备份内容为空: {ts}")
     target = Path(target)
+    # 先清再拷，copytree 加 dirs_exist_ok=True：目标残留目录被占用时
+    # 不再「部分已删、备份一个没拷回」；与 #564 写法保持一致。
     shutil.rmtree(target, ignore_errors=True)
-    shutil.copytree(backup_dir, target)
+    shutil.copytree(backup_dir, target, dirs_exist_ok=True)

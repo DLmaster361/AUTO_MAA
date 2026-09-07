@@ -117,20 +117,42 @@ def save_native_account_fields(
 ) -> None:
     """白名单过滤后写回实例原生 game_account.yml（页面所见即所得）。
 
-    与 zzz-od 只持久化非默认字段的行为一致：等于默认值（含空串）的字段
-    跳过不落盘，避免原生文件被无意义字段污染。
+    与 zzz-od 行为对齐：值未变即跳过（既不强制写空、也不污染原文件）；
+    值变化时全部 patch（含「= 默认」的回退操作——清空密码、改国服必须落盘）。
+
+    判断分支：
+    - 字段原文件缺失 + 提交值 = 默认 → 跳过（保持文件干净，与原生 GUI 同步）
+    - 字段原文件缺失 + 提交值 ≠ 默认 → 落盘（首次设置）
+    - 字段原文件有值 + 提交值相同 → 跳过（值未变）
+    - 字段原文件有值 + 提交值不同 → 落盘（含清空回默认：删字段）
     """
+
+    from app.utils.io import read_file
 
     allowed = {meta["key"] for meta in _NATIVE_ACCOUNT_FIELDS}
     unknown = {str(k) for k in values} - allowed
     if unknown:
         raise ValueError(f"不支持的账号配置字段: {', '.join(sorted(unknown))}")
-    patch = {
-        str(k): str(v)
-        for k, v in values.items()
-        if str(v) != _native_default(str(k))
-    }
-    write_game_account(instance_dir(root, int(slot_idx)), patch)
+
+    slot_path = instance_dir(root, int(slot_idx)) / "game_account.yml"
+    existing = read_file(slot_path) or {}
+    patch: dict[str, str] = {}
+    for raw_k, raw_v in values.items():
+        key = str(raw_k)
+        new_val = str(raw_v)
+        default = _native_default(key)
+        old_val = existing.get(key)
+        if old_val is None:
+            # 原文件缺失：值=默认则保持文件干净不写
+            if new_val != default:
+                patch[key] = new_val
+            continue
+        # 原文件有值：值未变就跳过
+        if str(old_val) == new_val:
+            continue
+        patch[key] = new_val
+    if patch:
+        write_game_account(slot_path.parent, patch)
 
 
 def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:

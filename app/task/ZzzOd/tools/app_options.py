@@ -104,15 +104,16 @@ _LOST_VOID_TASK_OPTIONS = [
     {"label": "完成周计划次数", "value": "完成周计划次数"},
 ]
 
-# NotoriousHuntWeekdayEnum（value 为 int，保存时转 int）
+# NotoriousHuntWeekdayEnum（value 为 int，对齐上游 `notorious_hunt_run_record.py:47`
+# 的 `>=` 比较，避免 select 分支 str 落盘后上游抛 TypeError；其他 select 字段保持字符串）
 _WEEKDAY_OPTIONS = [
-    {"label": "周一", "value": "1"},
-    {"label": "周二", "value": "2"},
-    {"label": "周三", "value": "3"},
-    {"label": "周四", "value": "4"},
-    {"label": "周五", "value": "5"},
-    {"label": "周六", "value": "6"},
-    {"label": "周日", "value": "7"},
+    {"label": "周一", "value": 1},
+    {"label": "周二", "value": 2},
+    {"label": "周三", "value": 3},
+    {"label": "周四", "value": 4},
+    {"label": "周五", "value": 5},
+    {"label": "周六", "value": 6},
+    {"label": "周日", "value": 7},
 ]
 
 # 周几短标签（按 1~7，咖啡每日选择等字段标题用）

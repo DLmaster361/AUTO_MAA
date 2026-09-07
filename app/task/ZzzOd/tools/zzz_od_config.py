@@ -158,16 +158,26 @@ def write_instance_run(root: Path, value: str) -> None:
 def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int:
     """返回最小空闲实例 idx。
 
-    占位集合 = 原生 ``instance_list`` 的 idx ∪ ``used_idxs``（所有 MAS 用户
-    已绑定的槽，跨脚本收集）。对齐 zzz-od ``create_new_instance`` 的最小
-    正整数规则。
+    占位集合（按以下顺序合并，确保新槽不与任何已有槽冲突）：
+    1. 原生 ``instance_list`` 的 idx
+    2. 盘上 ``config/NN`` 目录（覆盖 finalize 失败导致 deepcopy 未回写、
+       但实例目录已创建的情况——保证后续用户不会分配到同一槽）
+    3. ``used_idxs``（本次会话内已分配 / 跨脚本 MAS 用户已绑定的槽）
+    对齐 zzz-od ``create_new_instance`` 的最小正整数规则。
     """
 
-    used = {
+    used: set[int] = set()
+    used.update(
         int(item.get("idx", -1))
         for item in list_instances(root)
         if isinstance(item, dict)
-    }
+    )
+    config_root = root / "config"
+    if config_root.is_dir():
+        for child in config_root.iterdir():
+            if not child.is_dir() or not child.name.isdigit():
+                continue
+            used.add(int(child.name))
     if used_idxs:
         used |= {int(i) for i in used_idxs}
     idx = 1
@@ -281,6 +291,10 @@ def add_instance(
     if not name:
         raise ValueError("实例名称不能为空")
     idx = find_free_instance_idx(root, used_idxs)
+    # 本轮已分配：写入 used_idxs 让后续同次会话的 add_instance / ensure_user_slot
+    # 不会撞到本槽（find_free_instance_idx 也已扫盘 config/NN 双保险）
+    if used_idxs is not None:
+        used_idxs.add(idx)
     slot_dir = instance_dir(root, idx)
     slot_dir.mkdir(parents=True, exist_ok=True)
     if not (slot_dir / "game_account.yml").is_file():
@@ -521,6 +535,10 @@ def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
     for i, item in enumerate(teams):
         if str(item.get("name") or "").strip() == "" and i >= len(existing):
             continue
+        # 配队方案字段前端发 autoBattle、磁盘/上游均用 auto_battle：两键兼容
+        auto_battle = (
+            str(item.get("auto_battle") or item.get("autoBattle") or "全配队通用")
+        )
         incoming_agents = item.get("agent_id_list")
         prev_agents = existing[i].get("agent_id_list") if i < len(existing) else None
         agents_src = (
@@ -534,7 +552,7 @@ def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
         normalized.append(
             {
                 "name": str(item.get("name") or f"编队{i + 1}"),
-                "auto_battle": str(item.get("auto_battle") or "全配队通用"),
+                "auto_battle": auto_battle,
                 "agent_id_list": agents,
             }
         )

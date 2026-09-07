@@ -676,7 +676,24 @@ class AutoProxyTask(TaskExecuteBase):
             force_login=force_login,
         )
 
+    async def _reset_daily_proxy_count(self) -> None:
+        """跨日重置：仅重置日期变化的用户（多实例切换下每个用户都判一次）。
+
+        单独放在 check 入口而非 main_task 是为避免 main_task 的「仅重置触发用户」
+        漏洞——非触发用户的 ProxyTimes/LastProxyDate 从不重置就会从第二天起
+        永久触发 ProxyTimesLimit 上限被跳过。
+        """
+
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        for cfg in self.user_config.values():
+            if cfg.get("Data", "LastProxyDate") != self.curdate:
+                await cfg.set("Data", "LastProxyDate", self.curdate)
+                await cfg.set("Data", "ProxyTimes", 0)
+
     async def check(self) -> str:
+        # 跨日重置：必须在 ProxyTimesLimit 上限比较之前完成（对齐 ok-nte，
+        # 避免 check 入口拿过期 ProxyTimes 误判为超限、永久跳过）
+        await self._reset_daily_proxy_count()
         root = Path(self.script_config.get("Info", "RootPath"))
         if not root.is_dir():
             return "请设置绝区零一条龙安装目录"
@@ -782,11 +799,8 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def main_task(self):
         await self.prepare()
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
-
+        # 跨日重置：check 入口已对全部用户完成日期+ProxyTimes 同步，main_task
+        # 无需再就地重置触发用户
         self.cur_user_item.status = "运行"
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
@@ -1016,7 +1030,23 @@ class AutoProxyTask(TaskExecuteBase):
         return self._app_name_book.get(app_id, app_id)
 
     def _judge_final(self, records_before: dict, records_after: dict, log: str) -> None:
-        """进程退出后的终态判定（优先级：致命日志 > 失败任务 > 成功任务 > 无变化）。"""
+        """进程退出后的终态判定（优先级：check_log 已标记的终态 > 致命日志 >
+        失败任务 > 成功任务 > 无变化）。"""
+
+        # check_log 已把超时/异常/致命态写入 cur_user_log.status 并 need_stop；
+        # 该值对 main_task 的最终结果判定具有最高优先级（避免被无 diff 的
+        # 「今日任务均已完成」覆盖成 run_book=True 而绕过重试）。
+        # 「Success!」（check_log 成功标志）和「ZZZ-OD 正常运行中/空」继续走
+        # 后续 diff 路径，由运行记录与致命日志统一判定。
+        if self.cur_user_log.status not in (
+            "ZZZ-OD 正常运行中",
+            "",
+            "Success!",
+        ):
+            self.run_book = False
+            if self.cur_user_item.status not in ("异常", "跳过"):
+                self.cur_user_item.status = "异常"
+            return
 
         log_status = "ZZZ-OD 正常运行中"
         user_status: str | None = None

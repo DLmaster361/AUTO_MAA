@@ -2,14 +2,12 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { useTheme } from '@/composables/useTheme'
-import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
+import { useLogHighlight } from '@/composables/useLogHighlight'
 const logger = window.electronAPI.getLogger('日志查看')
 const route = useRoute()
-const { isDark } = useTheme()
-const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
+const { registerLogLanguage, editorTheme } = useLogHighlight()
 
 defineOptions({ name: 'LogViewer' })
 
@@ -26,9 +24,6 @@ const selectedLogFile = ref<'app' | 'frontend'>(route.query.file === 'frontend' 
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
-
-// Monaco Editor 主题（isDark 由 useTheme 响应式驱动，system 模式下跟随系统变化）
-const editorTheme = computed(() => (isDark.value ? 'vs-dark' : 'vs'))
 
 // 文件不存在时主进程返回空串。直接把空串塞进编辑器只会得到一片白，说一句人话。
 const emptyHint = computed(() =>
@@ -206,13 +201,6 @@ onUnmounted(() => {
             </template>
             {{ realTimeEnabled ? '自动更新' : '停止更新' }}
           </a-button>
-
-          <a-button :loading="exporting" type="primary" @click="exportMaaEndIssueReport">
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出 MaaEnd 问题包
-          </a-button>
         </a-space>
       </div>
     </div>
@@ -224,10 +212,11 @@ onUnmounted(() => {
           <vue-monaco-editor
             v-else
             v-model:value="logs"
-            language="log"
+            language="logfile"
             :theme="editorTheme"
             :options="editorOptions"
             class="log-editor"
+            @before-mount="registerLogLanguage"
             @mount="handleEditorMount"
           />
         </div>

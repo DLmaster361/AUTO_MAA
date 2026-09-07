@@ -75,6 +75,7 @@ export const launchHomeTasks = async ({
 
   for (const taskId of taskIds) {
     const taskLabel = taskLabelOf(taskId, options, fallbackLabel)
+    let startedResult: HomeTaskStartResult | undefined
     try {
       const response = await startTask(taskId)
       if (response.code !== 200 || !response.taskId) {
@@ -85,15 +86,16 @@ export const launchHomeTasks = async ({
         continue
       }
 
-      const result = { taskId: response.taskId, selectedTaskId: taskId, taskLabel }
-      outcome.started.push(result)
-      onTaskStarted(result)
+      startedResult = { taskId: response.taskId, selectedTaskId: taskId, taskLabel }
+      outcome.started.push(startedResult)
     } catch (error) {
       outcome.failed.push({
         taskLabel,
-        reason: error instanceof Error && error.message ? error.message : failureReason,
+          reason: error instanceof Error && error.message ? error.message : failureReason,
       })
     }
+
+    if (startedResult) onTaskStarted(startedResult)
   }
 
   return outcome

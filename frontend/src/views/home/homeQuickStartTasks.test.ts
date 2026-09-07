@@ -71,4 +71,19 @@ describe('home quick-start batch launch', () => {
       { taskLabel: '任务二', reason: 'task is running' },
     ])
   })
+
+  it('does not classify callback failures as task-start failures', async () => {
+    await expect(
+      launchHomeTasks({
+        taskIds: ['task-1'],
+        options: [{ label: '任务一', value: 'task-1' }],
+        fallbackLabel: '首页快速任务',
+        failureReason: '开始任务失败',
+        startTask: async () => ({ code: 200, taskId: 'run-task-1' }),
+        onTaskStarted: () => {
+          throw new Error('tracking unavailable')
+        },
+      })
+    ).rejects.toThrow('tracking unavailable')
+  })
 })

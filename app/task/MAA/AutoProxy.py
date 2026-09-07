@@ -624,10 +624,10 @@ class AutoProxyTask(TaskExecuteBase):
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         task_set = {}
+        # 活动关优先是独立任务，仅由自身开关控制，不受理智作战开关影响
         activity_stage = None
         if (
             self.mode == "Routine"
-            and self.task_dict["Fight"]
             and self.cur_user_config.get("Task", "IfActivityFirst")
         ):
             stage_info = await Config.get_stage_info(

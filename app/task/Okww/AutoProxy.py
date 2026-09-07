@@ -151,7 +151,7 @@ def _configure_okww_launcher(
     ):
         raise ValueError(f"当前 OK-WW 安装不支持{resource}资源")
     changed = False
-    if "auto_start" not in app_config:
+    if app_config.get("auto_start") is not True:
         app_config["auto_start"] = True
         changed = True
     if "update_method" not in app_config:

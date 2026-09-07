@@ -168,10 +168,16 @@ onMounted(() => {
   if (realTimeEnabled.value) {
     startRealTimeRefresh()
   }
+  // 窗口已经开着时主进程不会重新载入，靠这条推送换文件
+  window.electronAPI.onLogSelectFile?.(file => {
+    selectedLogFile.value = file
+    void loadLogs()
+  })
 })
 
 onUnmounted(() => {
   stopRealTimeRefresh()
+  window.electronAPI.removeLogSelectFileListener?.()
 })
 </script>
 

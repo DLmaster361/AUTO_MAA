@@ -1071,8 +1071,10 @@ function createWindow() {
 // file 指定落地时选中哪一份日志；启动/初始化路径要的是主进程写的 frontend.log，
 // 因为那时后端还没起来，debug/app.log 不存在或者还停在上一轮。
 function createLogWindow(file?: LogWindowFile) {
-  // 如果日志窗口已存在，则聚焦并返回
+  // 如果日志窗口已存在，则切到请求的那一份再聚焦——只聚焦的话，之前停在后端日志的窗口
+  // 会让「查看日志」看上去仍然没有内容，正是这次要修的现象。
   if (logWindow && !logWindow.isDestroyed()) {
+    if (file) logWindow.webContents.send('log:selectFile', file)
     logWindow.focus()
     return
   }

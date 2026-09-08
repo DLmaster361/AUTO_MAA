@@ -1,3 +1,4 @@
+import * as path from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -879,7 +880,9 @@ describe('Runtime 随本体更新', () => {
     )
 
     expect(outcome.success).toBe(true)
-    expect(syncCalls).toEqual([{ runtimePath: RUNTIME_PATH, sourceRoot: `${APP_ROOT}\\repo` }])
+    expect(syncCalls).toEqual([
+      { runtimePath: RUNTIME_PATH, sourceRoot: path.join(APP_ROOT, 'repo') },
+    ])
 
     const stages = progressUpdates.map(update => update.stage)
     expect(stages.indexOf('runtime')).toBeGreaterThan(stages.lastIndexOf('repository'))

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RUNTIME_EXE_ENV } from './runtime'
 import {
   RUNTIME_BINARY_DOWNLOAD_FAILED,
+  RUNTIME_BINARY_REPLACE_FAILED,
   RUNTIME_PIN_RELATIVE_PATH,
   buildRuntimeBinarySources,
   hashFileSha256,
@@ -17,6 +18,25 @@ import {
 } from './runtimeBinaryService'
 
 vi.mock('electron', () => ({ app: { isPackaged: false } }))
+/**
+ * `fs.renameSync` 的前置钩子：让用例模拟「目标 exe 被占用」——真实占用只能靠起一个进程，
+ * 这里在真正 rename 之前按参数决定抛不抛 EBUSY，其余行为照旧走真实文件系统。
+ */
+const renameHook = vi.hoisted(() => ({
+  before: null as ((from: string, to: string) => void) | null,
+  calls: [] as [string, string][],
+}))
+vi.mock('fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return {
+    ...actual,
+    renameSync: (from: fs.PathLike, to: fs.PathLike) => {
+      renameHook.calls.push([String(from), String(to)])
+      renameHook.before?.(String(from), String(to))
+      return actual.renameSync(from, to)
+    },
+  }
+})
 vi.mock('./logger', () => ({
   getLogger: () => ({
     error: vi.fn(),
@@ -329,6 +349,7 @@ describe('syncRuntimeBinary', () => {
   it('上次中断留下的临时文件不会被当成结果', async () => {
     writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
     fs.writeFileSync(`${runtimePath}.download`, '半截文件', 'utf8')
+    fs.writeFileSync(`${runtimePath}.download-abc-1`, '上次超时放弃的半截文件', 'utf8')
     fs.writeFileSync(`${runtimePath}.old`, '上次让路的旧文件', 'utf8')
     const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
 
@@ -337,6 +358,175 @@ describe('syncRuntimeBinary', () => {
     expect(outcome.status).toBe('upgraded')
     expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
     expect(fs.readdirSync(path.dirname(runtimePath))).toEqual(['auto-mas-runtime.exe'])
+  })
+
+  describe('在途互斥', () => {
+    it('并发两次同步只下载一次，后来者拿到同一个结果与进度', async () => {
+      writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
+      let finish: (() => void) | undefined
+      const download = vi.fn(
+        (_url: string, savePath: string, onProgress?: (p: { progress: number }) => void) =>
+          new Promise<{ success: boolean }>(resolve => {
+            finish = () => {
+              onProgress?.({ progress: 50 })
+              fs.writeFileSync(savePath, NEW_BINARY, 'utf8')
+              resolve({ success: true })
+            }
+          })
+      )
+      const firstProgress: RuntimeBinarySyncProgress[] = []
+      const secondProgress: RuntimeBinarySyncProgress[] = []
+
+      const first = syncRuntimeBinary(
+        syncOptions({ download, onProgress: update => firstProgress.push(update) })
+      )
+      const second = syncRuntimeBinary(
+        syncOptions({ download, onProgress: update => secondProgress.push(update) })
+      )
+      await vi.waitFor(() => expect(download).toHaveBeenCalledTimes(1))
+      expect(finish).toBeDefined()
+      finish?.()
+
+      const outcomes = await Promise.all([first, second])
+
+      expect(download).toHaveBeenCalledTimes(1)
+      expect(readVersion).toHaveBeenCalledTimes(1)
+      expect(outcomes[0]).toBe(outcomes[1])
+      expect(outcomes[0].status).toBe('upgraded')
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+      expect(secondProgress).toContainEqual({ progress: 50, message: expect.any(String) })
+      expect(secondProgress.at(-1)).toEqual(firstProgress.at(-1))
+    })
+
+    it('上一次结束后再调用会重新同步', async () => {
+      writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+
+      await syncRuntimeBinary(syncOptions({ download }))
+      await syncRuntimeBinary(syncOptions({ download }))
+
+      expect(download).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('慢源上限', () => {
+    /** 前 `stallCount` 个源永远不结束，直到测试自己放行；其余源立刻成功。 */
+    function createStallingDownload(stallCount = 1) {
+      const urls: string[] = []
+      let releaseStalled: (() => void) | undefined
+      const stalled = new Promise<void>(resolve => {
+        releaseStalled = resolve
+      })
+      const download = vi.fn(
+        async (url: string, savePath: string, onProgress?: (p: { progress: number }) => void) => {
+          urls.push(url)
+          if (urls.length <= stallCount) {
+            await stalled
+            // 放弃之后才写进来的内容不能影响任何东西。
+            onProgress?.({ progress: 99 })
+            fs.writeFileSync(savePath, '<html>late garbage</html>', 'utf8')
+            return { success: true }
+          }
+          fs.writeFileSync(savePath, NEW_BINARY, 'utf8')
+          return { success: true }
+        }
+      )
+      return { download, urls, release: () => releaseStalled?.() }
+    }
+
+    it('单个源超过时长上限就换下一个源', async () => {
+      writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
+      const { download, urls, release } = createStallingDownload()
+      const progress: RuntimeBinarySyncProgress[] = []
+
+      const outcome = await syncRuntimeBinary(
+        syncOptions({ download, sourceTimeoutMs: 20, onProgress: update => progress.push(update) })
+      )
+
+      expect(outcome.status).toBe('upgraded')
+      expect(urls).toHaveLength(2)
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+
+      // 被放弃的那次下载最终写完时：不动 exe，不再上报进度，临时文件被清掉。
+      release()
+      await vi.waitFor(() =>
+        expect(fs.readdirSync(path.dirname(runtimePath))).toEqual(['auto-mas-runtime.exe'])
+      )
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+      expect(progress.some(update => update.progress === 99)).toBe(false)
+    })
+
+    it('单源上限不超过本轮剩余预算', async () => {
+      writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
+      // 所有源都停滞：定时器相对 Date.now() 可能早触发约 1ms，此时预算还剩一点，实现会以那
+      // 一点为上限再试下一个源，这是对的；用例只断言不会等满 60 秒的单源上限。
+      const { download, urls, release } = createStallingDownload(Infinity)
+      const startedAt = Date.now()
+
+      const outcome = await syncRuntimeBinary(
+        syncOptions({ download, budgetMs: 30, sourceTimeoutMs: 60 * 1000 })
+      )
+
+      expect(Date.now() - startedAt).toBeLessThan(2000)
+      expect(outcome.status).toBe('failed')
+      expect(outcome.code).toBe(RUNTIME_BINARY_DOWNLOAD_FAILED)
+      expect(outcome.error).toContain('放弃该源')
+      expect(urls.length).toBeGreaterThanOrEqual(1)
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+      release()
+    })
+  })
+
+  describe('目标被占用时的替换', () => {
+    const busyError = () =>
+      Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
+
+    const isOverwrite = (from: string, to: string) =>
+      to === runtimePath && from.includes('.download')
+
+    afterEach(() => {
+      renameHook.before = null
+      renameHook.calls.length = 0
+    })
+
+    it('直接覆盖失败时先把旧文件改名让路，成功后清掉旧文件', async () => {
+      writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+      let overwriteAttempts = 0
+      // 正在运行的 exe 不能被覆盖，但可以被改名：只拦「新文件盖到 exe 路径」的第一次。
+      renameHook.before = (from, to) => {
+        if (!isOverwrite(from, to)) return
+        overwriteAttempts += 1
+        if (overwriteAttempts === 1) throw busyError()
+      }
+
+      const outcome = await syncRuntimeBinary(syncOptions({ download }))
+
+      expect(outcome.status).toBe('upgraded')
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(NEW_BINARY)
+      expect(fs.readdirSync(path.dirname(runtimePath))).toEqual(['auto-mas-runtime.exe'])
+      // 让路：旧 exe 先改名成 .old，再把新文件挪过来。
+      expect(renameHook.calls).toContainEqual([runtimePath, `${runtimePath}.old`])
+      expect(overwriteAttempts).toBe(2)
+    })
+
+    it('让路后仍挪不进去时把旧文件改回来，exe 保持原样', async () => {
+      writePin({ version: PINNED_VERSION, sha256: sha256(NEW_BINARY) })
+      const { download } = createDownload(() => ({ success: true, content: NEW_BINARY }))
+      renameHook.before = (from, to) => {
+        if (isOverwrite(from, to)) throw busyError()
+      }
+
+      const outcome = await syncRuntimeBinary(syncOptions({ download }))
+
+      expect(outcome.status).toBe('failed')
+      expect(outcome.code).toBe(RUNTIME_BINARY_REPLACE_FAILED)
+      expect(outcome.error).toContain('EBUSY')
+      expect(fs.readFileSync(runtimePath, 'utf8')).toBe(OLD_BINARY)
+      expect(fs.readdirSync(path.dirname(runtimePath))).toEqual(['auto-mas-runtime.exe'])
+      // 回滚：让路的 .old 被改回 exe 路径。
+      expect(renameHook.calls).toContainEqual([`${runtimePath}.old`, runtimePath])
+    })
   })
 })
 

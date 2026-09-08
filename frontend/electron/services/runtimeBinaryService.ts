@@ -232,6 +232,8 @@ export interface RuntimeBinarySyncOptions {
   onProgress?: (progress: RuntimeBinarySyncProgress) => void
   /** 本轮同步的总时间预算，缺省 {@link RUNTIME_BINARY_SYNC_BUDGET_MS}。 */
   budgetMs?: number
+  /** 单个下载源的时长上限，缺省 {@link RUNTIME_BINARY_SOURCE_TIMEOUT_MS}。 */
+  sourceTimeoutMs?: number
   /** 测试注入；默认用真实下载器。 */
   download?: (
     url: string,
@@ -244,7 +246,13 @@ export interface RuntimeBinarySyncOptions {
 
 // ==================== 同步 ====================
 
-/** 下载中的临时文件与让路后的旧文件都用固定后缀，便于下次启动清扫残留。 */
+/**
+ * 下载中的临时文件与让路后的旧文件都用固定后缀，便于下次同步清扫残留。
+ *
+ * 临时文件名是 `<exe>.download-<token>`，每次向一个源发起下载都换一个：下载器不支持取消，
+ * 放弃一个慢源之后它仍在后台往自己的文件里写，若各源共用一个文件名，它会在下一个源
+ * 校验通过之后把文件截断重写，让一个没校验过的文件盖到 exe 上。
+ */
 const DOWNLOAD_SUFFIX = '.download'
 const BACKUP_SUFFIX = '.old'
 
@@ -253,10 +261,19 @@ const BACKUP_SUFFIX = '.old'
  *
  * 卡死的连接由 `SmartDownloader` 自己的超时兜住（HEAD 10 秒、分片 30 秒空闲），但「连得上、
  * 就是慢」不会触发那些超时——四个源依次各拉一遍十几兆，最坏能把启动挂上一个钟头。这里在
- * 换下一个源之前查一次预算，超了就当本轮失败，继续用现有 Runtime 启动，下次启动再试。
- * 只能限制还要不要开下一个源，限制不了已经开始的那一次。
+ * 换下一个源之前查一次预算，超了就当本轮失败，继续用现有 Runtime 启动，下次启动再试；
+ * 已经开始的那一次由 {@link RUNTIME_BINARY_SOURCE_TIMEOUT_MS} 兜住。
  */
 export const RUNTIME_BINARY_SYNC_BUDGET_MS = 10 * 60 * 1000
+
+/**
+ * 单个下载源的时长上限，与剩余预算取小。
+ *
+ * 取总预算的一半：一个被限速到十几 KB/s 的源最多只能吃掉半份预算，保证至少还有机会换
+ * 一个源。超时后只是不再等它——下载器没有取消接口，那次下载会继续跑到自己结束为止，
+ * 所以每次尝试都写自己的临时文件（见 {@link DOWNLOAD_SUFFIX}），结束后再顺手清掉。
+ */
+export const RUNTIME_BINARY_SOURCE_TIMEOUT_MS = RUNTIME_BINARY_SYNC_BUDGET_MS / 2
 
 const defaultDownload: NonNullable<RuntimeBinarySyncOptions['download']> = (
   url,
@@ -264,15 +281,50 @@ const defaultDownload: NonNullable<RuntimeBinarySyncOptions['download']> = (
   onProgress
 ) => new SmartDownloader().download(url, savePath, onProgress)
 
+/** 正在进行的那一次同步；后来者复用它的结果而不是再开一份下载。 */
+interface SyncFlight {
+  promise: Promise<RuntimeBinarySyncResult>
+  /** 所有等着这次同步的调用方的进度回调，后来者也能看到进度。 */
+  listeners: Set<(progress: RuntimeBinarySyncProgress) => void>
+}
+
+let inFlight: SyncFlight | null = null
+
 /**
  * 让磁盘上的 Runtime 与本体钉扎一致。
  *
  * 只在 managed 链路、`bootstrap` 已经把 `repo/` 换成目标版本之后调用；此时没有任何进程
  * 持有 exe，可以安全替换。
+ *
+ * 同一时刻只允许一次同步在途：两个挂接点（启动链路与更新链路）之间隔着有意重启标志，
+ * 正常界面操作不会撞上，但开发者工具里的重启按钮与 `backend-start` IPC 能在更新链路的
+ * 同步还没结束时再触发一次启动。两份下载各写各的临时文件不会互相污染，但会白拉一份
+ * 十几兆并把同一个 exe 换两次，所以后来者直接等前一次的结果。
  */
-export async function syncRuntimeBinary(
+export function syncRuntimeBinary(
   options: RuntimeBinarySyncOptions
 ): Promise<RuntimeBinarySyncResult> {
+  if (inFlight) {
+    logger.info('已有一次 Runtime 同步在进行，等待其结果')
+    if (options.onProgress) inFlight.listeners.add(options.onProgress)
+    return inFlight.promise
+  }
+
+  const listeners: SyncFlight['listeners'] = new Set()
+  if (options.onProgress) listeners.add(options.onProgress)
+  const promise = runSync({
+    ...options,
+    onProgress: progress => {
+      for (const listener of listeners) listener(progress)
+    },
+  }).finally(() => {
+    if (inFlight?.promise === promise) inFlight = null
+  })
+  inFlight = { promise, listeners }
+  return promise
+}
+
+async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinarySyncResult> {
   const { runtimePath, appRoot, sourceRoot } = options
 
   const pin = readRuntimeBinaryPin(sourceRoot)
@@ -288,10 +340,8 @@ export async function syncRuntimeBinary(
   // 上次被打断（应用退出、断电）留下的半截文件与让路用的旧文件在这里统一清掉，不等到
   // 真要替换时才清：版本一直对得上时那条路根本不会走到，十几兆就会一直留在安装目录里。
   const directory = path.dirname(runtimePath)
-  const downloadPath = `${runtimePath}${DOWNLOAD_SUFFIX}`
   const backupPath = `${runtimePath}${BACKUP_SUFFIX}`
-  removeQuietly(downloadPath)
-  removeQuietly(backupPath)
+  removeResiduals(runtimePath)
 
   const installed = await (options.readVersion ?? readInstalledRuntimeVersion)(runtimePath, appRoot)
   if (installed === pin.version) {
@@ -301,9 +351,8 @@ export async function syncRuntimeBinary(
 
   logger.info(`现有 Runtime ${installed ?? '版本未知'}，本体要求 ${pin.version}，开始下载并替换`)
 
-  const downloaded = await downloadPinned(pin, downloadPath, options)
+  const downloaded = await downloadPinned(pin, runtimePath, options)
   if (!downloaded.success) {
-    removeQuietly(downloadPath)
     return {
       status: 'failed',
       pin,
@@ -313,11 +362,11 @@ export async function syncRuntimeBinary(
   }
 
   try {
-    replaceRuntimeBinary(runtimePath, downloadPath, backupPath)
+    replaceRuntimeBinary(runtimePath, downloaded.downloadPath, backupPath)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`替换 Runtime 可执行文件失败: ${message}`)
-    removeQuietly(downloadPath)
+    removeQuietly(downloaded.downloadPath)
     return {
       status: 'failed',
       pin,
@@ -331,42 +380,50 @@ export async function syncRuntimeBinary(
   return { status: 'upgraded', pin }
 }
 
-/** 逐个源尝试下载并校验 SHA-256，任一源拿到正确文件即返回。 */
+type DownloadOutcome = { success: true; downloadPath: string } | { success: false; error: string }
+
+/** 逐个源尝试下载并校验 SHA-256，任一源拿到正确文件即返回该文件的路径。 */
 async function downloadPinned(
   pin: RuntimeBinaryPin,
-  downloadPath: string,
+  runtimePath: string,
   options: RuntimeBinarySyncOptions
-): Promise<{ success: boolean; error?: string }> {
+): Promise<DownloadOutcome> {
   const download = options.download ?? defaultDownload
   const sources = buildRuntimeBinarySources(pin.version)
   const failures: string[] = []
   const deadline = Date.now() + (options.budgetMs ?? RUNTIME_BINARY_SYNC_BUDGET_MS)
+  const sourceTimeoutMs = options.sourceTimeoutMs ?? RUNTIME_BINARY_SOURCE_TIMEOUT_MS
 
   for (const [index, source] of sources.entries()) {
-    if (Date.now() >= deadline) {
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) {
       failures.push('已用满本轮时间预算，剩余下载源不再尝试')
       logger.warn('Runtime 下载已用满时间预算，本轮放弃')
       break
     }
 
     const label = `${source.name}（${index + 1}/${sources.length}）`
+    const message = `正在从 ${label} 下载 Runtime ${pin.version}`
     logger.info(`尝试从 ${label} 下载 Runtime ${pin.version}: ${source.url}`)
-    options.onProgress?.({ progress: 0, message: `正在从 ${label} 下载 Runtime ${pin.version}` })
+    options.onProgress?.({ progress: 0, message })
 
-    const result = await download(source.url, downloadPath, progress => {
-      options.onProgress?.({
-        progress: progress.progress,
-        message: `正在从 ${label} 下载 Runtime ${pin.version}`,
-      })
-    })
+    const downloadPath = nextDownloadPath(runtimePath)
+    const result = await downloadWithTimeout(
+      download,
+      source.url,
+      downloadPath,
+      Math.min(remainingMs, sourceTimeoutMs),
+      progress => options.onProgress?.({ progress: progress.progress, message })
+    )
     if (!result.success) {
-      failures.push(`${source.name}: ${result.error ?? '下载失败'}`)
-      removeQuietly(downloadPath)
+      failures.push(`${source.name}: ${result.error}`)
+      // 超时放弃的那次仍在后台写自己的文件，等它自己结束时再清；这里删了也会被写回来。
+      if (!result.timedOut) removeQuietly(downloadPath)
       continue
     }
 
     const actual = await hashFileSha256(downloadPath)
-    if (actual === pin.sha256) return { success: true }
+    if (actual === pin.sha256) return { success: true, downloadPath }
 
     // 代理源可能把错误页当正文返回，也可能是发布资产被换过；两种都只能换下一个源。
     failures.push(`${source.name}: SHA-256 不匹配（得到 ${actual ?? '不可读'}）`)
@@ -375,6 +432,87 @@ async function downloadPinned(
   }
 
   return { success: false, error: `全部下载源均失败 —— ${failures.join('；')}` }
+}
+
+let downloadSequence = 0
+
+/** 每次尝试各用一个临时文件名，理由见 {@link DOWNLOAD_SUFFIX}。 */
+function nextDownloadPath(runtimePath: string): string {
+  downloadSequence += 1
+  const token = `${Date.now().toString(36)}-${downloadSequence.toString(36)}`
+  return `${runtimePath}${DOWNLOAD_SUFFIX}-${token}`
+}
+
+/**
+ * 给一次下载加时长上限。
+ *
+ * 下载器没有取消接口，超时后只是不再等它：在途的那次会继续把数据写进 `savePath`，跑完后
+ * 才由这里顺手删掉；它的进度也不再往上报，免得界面上出现两个源的进度交错跳动。
+ */
+async function downloadWithTimeout(
+  download: NonNullable<RuntimeBinarySyncOptions['download']>,
+  url: string,
+  savePath: string,
+  timeoutMs: number,
+  onProgress: (progress: { progress: number }) => void
+): Promise<{ success: boolean; error?: string; timedOut?: boolean }> {
+  let abandoned = false
+  let attempt: Promise<{ success: boolean; error?: string }>
+  try {
+    attempt = download(url, savePath, progress => {
+      if (!abandoned) onProgress(progress)
+    })
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+  const settled = attempt.then(
+    result => (result.success ? result : { success: false, error: result.error ?? '下载失败' }),
+    error => ({ success: false, error: error instanceof Error ? error.message : String(error) })
+  )
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<{ success: false; error: string; timedOut: true }>(resolve => {
+    timer = setTimeout(() => {
+      resolve({
+        success: false,
+        timedOut: true,
+        error: `超过 ${Math.ceil(timeoutMs / 1000)} 秒仍未下载完成，放弃该源`,
+      })
+    }, timeoutMs)
+    timer.unref?.()
+  })
+
+  try {
+    const result = await Promise.race([settled, timeout])
+    if ('timedOut' in result) {
+      abandoned = true
+      logger.warn(`${url} 下载超时，换下一个源；在途的下载结束后会清掉 ${savePath}`)
+      void settled.then(() => removeQuietly(savePath))
+    }
+    return result
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** 清掉上次留下的全部临时文件（任意 token）与让路用的旧文件。 */
+function removeResiduals(runtimePath: string): void {
+  const directory = path.dirname(runtimePath)
+  const basename = path.basename(runtimePath)
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(directory)
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (
+      entry === `${basename}${BACKUP_SUFFIX}` ||
+      entry.startsWith(`${basename}${DOWNLOAD_SUFFIX}`)
+    ) {
+      removeQuietly(path.join(directory, entry))
+    }
+  }
 }
 
 /**

@@ -91,7 +91,6 @@ class LogMonitor:
         self,
         log_file_path_resolver: Callable[[], Path],
         log_start_time: datetime,
-        bak_log_path: Path | None = None,
     ):
         """监控日志文件
 
@@ -190,30 +189,23 @@ class LogMonitor:
 
             # 尝试读取文件
             try:
-                # 发生日志轮转或文件被替换，重置监控状态并加载被轮换的旧日志
+                # 轮转或文件被替换（同一路径上换了文件身份）：滚动前后属于
+                # 同一次运行，log_contents 与 if_log_start 保留不清空，否则
+                # 落库历史只剩轮转后内容（跨零点实测）；被重命名的旧文件按
+                # inode 在同目录找回，把未读尾部接回来
                 if (
                     log_stat.st_ino != current_path.stat().st_ino
                     or log_stat.st_size > current_path.stat().st_size
                 ):
+                    if_log_start = await self._recover_rotated_tail(
+                        current_path,
+                        log_stat.st_ino,
+                        offset,
+                        log_contents,
+                        if_log_start,
+                        log_start_time,
+                    )
                     offset = 0
-                    log_contents = []
-                    if_log_start = False
-                    if bak_log_path is not None and bak_log_path.exists():
-                        async with aiofiles.open(bak_log_path, "rb") as f:
-                            async for bline in f:
-                                line = decode_bytes(bline)
-                                if not if_log_start:
-                                    with suppress(IndexError, ValueError):
-                                        entry_time = strptime(
-                                            line[self.time_start : self.time_end],
-                                            self.time_format,
-                                            self.last_callback_time,
-                                        )
-                                        if entry_time > log_start_time:
-                                            if_log_start = True
-                                            self.append_line(log_contents, line)
-                                else:
-                                    self.append_line(log_contents, line)
 
                 log_stat = current_path.stat()
 
@@ -408,6 +400,68 @@ class LogMonitor:
             return offset, if_log_start, e
         return offset, if_log_start, None
 
+    def _find_rotated_file(self, current_path: Path, old_ino: int) -> Path | None:
+        """在同目录里找回被重命名的旧日志文件（重命名不改变 inode）
+
+        固定路径监控下，脚本把正在写的日志重命名滚动（如跨零点
+        ``log.txt`` → ``log.txt.YYYY-MM-DD``）后，同目录里持有旧 inode 的
+        那个文件就是它：重命名前后是同一文件，离开时记录的 offset 逐字节
+        对应，不依赖任何命名猜测，也不会误读同名旧残留。旧文件已被删除或
+        文件系统不提供 inode（st_ino 为 0）时返回 None。
+        """
+
+        if not old_ino:
+            return None
+        try:
+            for candidate in current_path.parent.iterdir():
+                if candidate == current_path or not candidate.is_file():
+                    continue
+                try:
+                    if candidate.stat().st_ino == old_ino:
+                        return candidate
+                except OSError:
+                    continue
+        except OSError:
+            return None
+        return None
+
+    async def _recover_rotated_tail(
+        self,
+        current_path: Path,
+        old_ino: int,
+        offset: int,
+        log_contents: list[str],
+        if_log_start: bool,
+        log_start_time: datetime,
+    ) -> bool:
+        """轮转后从被重命名的旧文件续读未读尾部，接回既有日志内容
+
+        Args:
+            current_path: 监控目标路径（轮转后指向新文件）
+            old_ino: 轮转前记录的旧文件 inode
+            offset: 离开旧文件时的读取偏移
+            log_contents: 累积中的日志内容（就地追加找回的行）
+            if_log_start: 是否已越过本次运行的起始时刻
+            log_start_time: 本次运行的起始时刻
+
+        Returns:
+            是否已越过本次运行的起始时刻（供后续新文件读取沿用）
+        """
+
+        rotated = self._find_rotated_file(current_path, old_ino)
+        if rotated is None:
+            return if_log_start
+        offset, if_log_start, error = await self._consume_new_lines(
+            rotated, offset, log_contents, if_log_start, log_start_time
+        )
+        if error is not None:
+            logger.warning(f"轮转旧日志读取失败: {error}")
+            return if_log_start
+        # 找回的行立刻同步一次：新文件可能还没有新行，等空闲节流回调会让
+        # 刚接回的完成/失败标志迟到一整个空闲周期
+        await self._sync_and_callback(log_contents)
+        return if_log_start
+
     async def _sync_and_callback(self, log_contents: list[str]) -> None:
         """日志内容有变化时同步到实例缓冲区并触发回调。
 
@@ -423,7 +477,6 @@ class LogMonitor:
         self,
         log_file_path_resolver: Callable[[], Path],
         start_time: datetime,
-        bak_log_path: Path | None = None,
     ) -> None:
         """
         开始监控日志文件
@@ -442,7 +495,7 @@ class LogMonitor:
             await self.stop()
 
         self.task = asyncio.create_task(
-            self.monitor_file(log_file_path_resolver, start_time, bak_log_path)
+            self.monitor_file(log_file_path_resolver, start_time)
         )
         logger.info(f"日志文件监控已启动: {probe_path}")
 

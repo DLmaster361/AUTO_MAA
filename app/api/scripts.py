@@ -767,6 +767,277 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+def _managed_store():
+    """Project Store 服务。
+
+    与 `MaaFWEmbeddedManager._resolve_managed_gateway` 同样的处境：插件形态下由
+    `adapter.py` 查服务契约注入，树内没有注册表，直接实例化。Store 根按 cwd 解析，
+    多次实例化指向同一根是允许的（内部有身份校验）。
+    """
+
+    from app.task.MaaFW.tools.core.automas_maafw_project_store import (
+        MaaFWProjectStoreService,
+    )
+
+    return MaaFWProjectStoreService()
+
+
+def _managed_projection(manifest: dict) -> MaaFWManagedProjection:
+    """把 Store manifest 里现成的脱壳统计整理成界面用的形状，不另算。"""
+
+    projection = manifest.get("projection") or {}
+    shells = manifest.get("shells") or {}
+    reasons = projection.get("excludedReasons") or {}
+    return MaaFWManagedProjection(
+        sourceSizeBytes=int(projection.get("sourceSizeBytes") or 0),
+        payloadSizeBytes=int(projection.get("payloadSizeBytes") or 0),
+        savedBytes=int(projection.get("savedBytes") or 0),
+        savedPercent=float(projection.get("savedPercent") or 0.0),
+        excludedCount=len(projection.get("excluded") or []),
+        shellFamilies=list(shells.get("families") or []),
+        excludedReasons={str(k): str(v) for k, v in list(reasons.items())[:128]},
+    )
+
+
+@router.post(
+    "/maafw/managed/import",
+    tags=["MaaFW"],
+    summary="导入 MFW 项目到托管 Store",
+    response_model=MaaFWManagedImportOut,
+    status_code=200,
+)
+async def import_managed_maafw_project(
+    payload: MaaFWManagedImportIn = Body(...),
+) -> MaaFWManagedImportOut:
+    """把本地目录或 ZIP 发行包导入不可变 Store，并可选地绑定到一个托管脚本。
+
+    绑定不是可有可无的一步：只写 projectId/version 而不带 Store 身份，运行时会被
+    「脚本缺少可验证的 Project Store 身份」直接拒掉。
+    """
+
+    store = _managed_store()
+    try:
+        record = await asyncio.to_thread(
+            store.import_project,
+            payload.sourcePath,
+            activate=payload.activate,
+        )
+    except Exception as exc:
+        # 闸门的拒绝理由（依赖不合规、ABI 未知、路径越界等）对用户是首要信息，
+        # 原样带出来，不要吞成一句「导入失败」。
+        return MaaFWManagedImportOut(
+            code=400,
+            status="error",
+            message=f"导入 MFW 项目失败: {exc}",
+            data=None,
+        )
+
+    manifest = record.get("manifest") or {}
+    bound = False
+    if payload.scriptId:
+        try:
+            await Config.update_script(
+                payload.scriptId,
+                {
+                    "Managed": {
+                        "Enabled": True,
+                        "ProjectId": record["projectId"],
+                        "Version": record["version"],
+                        "StoreId": record["storeId"],
+                        "ProjectManifest": manifest,
+                    }
+                },
+            )
+            bound = True
+        except Exception as exc:
+            return MaaFWManagedImportOut(
+                code=500,
+                status="error",
+                message=f"项目已入库但绑定脚本失败: {exc}",
+                data=None,
+            )
+
+    data = MaaFWManagedImportData(
+        projectId=record["projectId"],
+        version=record["version"],
+        storeId=record["storeId"],
+        dataPath=str(record.get("dataPath") or ""),
+        bound=bound,
+        projection=_managed_projection(manifest),
+    )
+    return MaaFWManagedImportOut(
+        message=(
+            f"已导入 {data.projectId}@{data.version}，"
+            f"脱壳省下 {data.projection.savedPercent:.2f}%"
+        ),
+        data=data,
+    )
+
+
+@router.post(
+    "/maafw/managed/versions",
+    tags=["MaaFW"],
+    summary="列出托管项目的版本",
+    response_model=MaaFWManagedVersionsOut,
+    status_code=200,
+)
+async def list_managed_maafw_versions(
+    payload: MaaFWManagedVersionsIn = Body(...),
+) -> MaaFWManagedVersionsOut:
+    store = _managed_store()
+    try:
+        records = await asyncio.to_thread(store.list_versions, payload.projectId)
+    except Exception as exc:
+        return MaaFWManagedVersionsOut(
+            code=400, status="error", message=f"读取版本列表失败: {exc}", data=None
+        )
+
+    versions = [
+        MaaFWManagedVersionItem(
+            version=str(item.get("version") or ""),
+            createdAt=(item.get("manifest") or {}).get("createdAt"),
+            lastUsedAt=item.get("lastUsedAt"),
+            current=bool(item.get("current")),
+            pinned=bool(item.get("pinned")),
+            references=list(item.get("references") or []),
+            sizeBytes=int(((item.get("summary") or {}).get("payloadSizeBytes")) or 0),
+        )
+        for item in records
+    ]
+    current = next((v.version for v in versions if v.current), None)
+    return MaaFWManagedVersionsOut(
+        message=f"共 {len(versions)} 个版本",
+        data=MaaFWManagedVersionsData(
+            projectId=payload.projectId, current=current, versions=versions
+        ),
+    )
+
+
+@router.post(
+    "/maafw/managed/switch",
+    tags=["MaaFW"],
+    summary="切换托管项目的当前版本",
+    response_model=OutBase,
+    status_code=200,
+)
+async def switch_managed_maafw_version(
+    payload: MaaFWManagedSwitchIn = Body(...),
+) -> OutBase:
+    store = _managed_store()
+    try:
+        await asyncio.to_thread(store.switch_version, payload.projectId, payload.version)
+    except Exception as exc:
+        return OutBase(code=400, status="error", message=f"切换版本失败: {exc}")
+
+    if payload.scriptId:
+        try:
+            resolved = await asyncio.to_thread(
+                store.resolve_project, payload.projectId, payload.version
+            )
+            await Config.update_script(
+                payload.scriptId,
+                {
+                    "Managed": {
+                        "Version": payload.version,
+                        "StoreId": resolved["storeId"],
+                        "ProjectManifest": resolved.get("manifest") or {},
+                    }
+                },
+            )
+        except Exception as exc:
+            return OutBase(
+                code=500,
+                status="error",
+                message=f"版本已切换但更新脚本绑定失败: {exc}",
+            )
+
+    return OutBase(message=f"已切换到 {payload.projectId}@{payload.version}")
+
+
+@router.post(
+    "/maafw/managed/version/delete",
+    tags=["MaaFW"],
+    summary="删除托管项目的一个版本",
+    response_model=OutBase,
+    status_code=200,
+)
+async def delete_managed_maafw_version(
+    payload: MaaFWManagedVersionDeleteIn = Body(...),
+) -> OutBase:
+    """删除受 current / pinned / references / lease 阻断——阻断理由原样返回。"""
+
+    store = _managed_store()
+    try:
+        await asyncio.to_thread(store.delete_version, payload.projectId, payload.version)
+    except Exception as exc:
+        return OutBase(code=400, status="error", message=f"删除版本失败: {exc}")
+    return OutBase(message=f"已删除 {payload.projectId}@{payload.version}")
+
+
+@router.post(
+    "/maafw/managed/inventory",
+    tags=["MaaFW"],
+    summary="查看托管 Store 的占用",
+    response_model=MaaFWManagedInventoryOut,
+    status_code=200,
+)
+async def get_managed_maafw_inventory() -> MaaFWManagedInventoryOut:
+    store = _managed_store()
+    try:
+        info = await asyncio.to_thread(store.storage_info)
+        projects = await asyncio.to_thread(store.list_projects)
+    except Exception as exc:
+        return MaaFWManagedInventoryOut(
+            code=500, status="error", message=f"读取 Store 库存失败: {exc}", data=None
+        )
+
+    items: list[MaaFWManagedProjectItem] = []
+    total = 0
+    for project in projects:
+        size = int(project.get("sizeBytes") or 0)
+        total += size
+        items.append(
+            MaaFWManagedProjectItem(
+                projectId=str(project.get("projectId") or ""),
+                current=project.get("current"),
+                versionCount=int(project.get("versionCount") or 0),
+                sizeBytes=size,
+            )
+        )
+    return MaaFWManagedInventoryOut(
+        message=f"共 {len(items)} 个托管项目",
+        data=MaaFWManagedInventoryData(
+            storeId=str(info.get("storeId") or ""),
+            root=str(info.get("root") or ""),
+            runRoot=str(info.get("runRoot") or ""),
+            totalBytes=total,
+            projects=items,
+        ),
+    )
+
+
+@router.post(
+    "/maafw/managed/gc",
+    tags=["MaaFW"],
+    summary="回收托管 Store 中无人引用的版本",
+    response_model=MaaFWManagedGcOut,
+    status_code=200,
+)
+async def collect_managed_maafw_garbage(
+    payload: MaaFWManagedGcIn = Body(...),
+) -> MaaFWManagedGcOut:
+    store = _managed_store()
+    try:
+        result = await asyncio.to_thread(store.collect_garbage, dry_run=payload.dryRun)
+    except Exception as exc:
+        return MaaFWManagedGcOut(
+            code=500, status="error", message=f"回收失败: {exc}", data=None
+        )
+    removed = result.get("removed") or result.get("deleted") or []
+    verb = "预览完成" if payload.dryRun else "回收完成"
+    return MaaFWManagedGcOut(message=f"{verb}，涉及 {len(removed)} 项", data=result)
+
+
 @router.post(
     "/maafw/preview",
     tags=["MaaFW"],

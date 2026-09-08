@@ -400,6 +400,7 @@ def main():
         openclaw_qq_router,
         openclaw_weixin_router,
         qr_login_router,
+        skland_qr_router,
     )
 
     app = FastAPI(
@@ -433,6 +434,10 @@ def main():
     app.include_router(openclaw_qq_router)
     app.include_router(openclaw_weixin_router)
     app.include_router(qr_login_router)
+
+    # 可选补丁：森空岛扫码登录
+    if skland_qr_router is not None:
+        app.include_router(skland_qr_router)
 
     app.mount(
         "/api/res/materials",

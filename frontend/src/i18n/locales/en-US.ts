@@ -3086,6 +3086,35 @@ export default {
       voiceType: 'Voice style',
       voiceTypeTip: 'How much the voice prompts say',
     },
+    display: {
+      section: 'Virtual display',
+      intro:
+        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS attaches a virtual display only when there is no real display output at all, and removes it when the run finishes. You must install the Parsec virtual display driver yourself; MAS does not ship it.',
+      enable: 'Enable virtual display',
+      enableTip:
+        'Only attaches one when no real display output is detected; nothing is added while a monitor works normally. It is removed when the run finishes, and if the program is force-killed, the leftover display is cleaned up on the next start.',
+      mode: 'Refresh rate',
+      modeTip:
+        'The resolution is fixed at 1920x1080 — it is the only one Windows shows at 100%, so the game window never goes through DPI scaling. Higher resolutions get scaled up automatically, which brings the problem back. A virtual display only runs scripts, so a high refresh rate buys nothing.',
+      refreshDefault: 'recommended',
+      refreshLowPower: 'lighter on the GPU',
+      check: 'Driver check',
+      checkTip:
+        'Checks whether the driver is installed, whether it can be driven, and whether a display can actually be attached. The last step briefly changes your monitor layout.',
+      checkAction: 'Run check',
+      checkFailed: 'Check request failed',
+      checkPassed: 'Check passed',
+      checkIssue: 'Check did not pass',
+      monitors: 'Monitors during the check',
+      download: 'Download the Parsec virtual display driver',
+      driverUnavailable: 'No usable virtual display driver detected ({reason}); the switch is unavailable',
+      enabledButUnavailable: 'The switch is on, but no usable driver is detected ({reason}); this feature will not take effect',
+      stage: {
+        installed: 'Driver installed',
+        openable: 'Driver reachable',
+        effective: 'Actually attached',
+      },
+    },
     notify: {
       contentSection: 'Notification content',
       sendTest: 'Send a test notification',

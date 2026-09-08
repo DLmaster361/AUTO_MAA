@@ -2973,6 +2973,35 @@ export default {
       voiceType: '语音类型',
       voiceTypeTip: '选择语音提示的详细程度',
     },
+    display: {
+      section: '虚拟显示器',
+      intro:
+        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 只在「桌面上没有任何真实显示输出」时临时挂一块虚拟显示器，任务结束即拆除。需先自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动。',
+      enable: '启用虚拟显示器',
+      enableTip:
+        '仅在检测不到任何真实显示输出时才挂载，显示器正常工作时不会多挂一块。任务结束会自动拆除；程序若被强制结束，下次启动时会清理掉遗留的那块。',
+      mode: '刷新率',
+      modeTip:
+        '分辨率固定为 1920x1080——只有这一档 Windows 会按 100% 显示，游戏窗口不必经过 DPI 缩放；更高的分辨率会被自动放大，反而把问题带回来。虚拟屏只用来跑脚本，高刷没有意义。',
+      refreshDefault: '推荐',
+      refreshLowPower: '更省 GPU',
+      check: '驱动检测',
+      checkTip:
+        '依次检查驱动装没装、能不能调用、以及能否真的挂出一块屏。最后一步会短暂改变桌面显示器布局。',
+      checkAction: '开始检测',
+      checkFailed: '检测请求失败',
+      checkPassed: '检测通过',
+      checkIssue: '检测未通过',
+      monitors: '检测时的显示器',
+      download: '下载 Parsec 虚拟显示驱动',
+      driverUnavailable: '未检测到可用的虚拟显示驱动（{reason}），开关不可用',
+      enabledButUnavailable: '开关已打开，但当前检测不到可用的驱动（{reason}），该功能不会生效',
+      stage: {
+        installed: '驱动安装',
+        openable: '驱动调用',
+        effective: '实际挂载',
+      },
+    },
     notify: {
       contentSection: '通知内容',
       sendTest: '发送测试通知',

@@ -21,6 +21,7 @@ import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
+import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
@@ -59,7 +60,7 @@ export class ActionService {
         });
     }
     /**
-     * 上传脚本配置到网络
+     * 分享脚本配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -340,6 +341,28 @@ export class ActionService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 发起配置中心浏览器授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static startShareAuthApiShareAuthStartPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/start',
+        });
+    }
+    /**
+     * 取消等待中的配置中心授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelShareAuthApiShareAuthCancelPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/cancel',
         });
     }
     /**

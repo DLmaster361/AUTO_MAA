@@ -32,7 +32,7 @@
 
 ### 破坏性变更
 
-- 森空岛获取凭据改为扫码登录，完善游戏社区签到、云游戏时长判断与日常便笺展示
+- 森空岛获取凭据改为扫码登录，完善游戏社区签到、云游戏时长判断与日常便笺展示 by [@qiyinxi](https://github.com/qiyinxi)
 - MFW 项目新增了自动更新时机设置，升级后**已有脚本一律默认为「运行前更新」**；不需要的话在项目配置里改成「不更新」 by [@qiyinxi](https://github.com/qiyinxi)
 - HSR 专项脚本页的「游戏启动参数」已移除，**旧配置中的该项会在下次保存时自动清除**；窗口大小改由「1920×1080 窗口模式」开关控制 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA 专项代理接管配置时**会强制开启「开始唤醒」的账号切换开关**，以确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@qiyinxi](https://github.com/qiyinxi)
@@ -69,6 +69,7 @@
 ### 变更
 
 - 启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)
+- 配置分享 通用脚本的模板浏览与分享改用新的 AUTO-MAS 配置中心，分享前需在浏览器完成一次登录授权，分享者身份由登录账号确定、不再手填作者
 - OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
 - 后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA) by [@qiyinxi](https://github.com/qiyinxi)
 - 配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
@@ -157,7 +158,7 @@
 - MFW专项 修复脚本侧强制停止任务（如 MaaEnd 分辨率不达标时的强停）被记成「任务完成」的问题：现在被强停的任务按失败记录，本轮剩余任务不再投递，不会再出现整轮一件事没做却报成全部成功 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复 MAA 卡死后不会被判定为超时、任务一直挂着的问题：MAA 每隔一段时间输出的日志停滞提示被当成任务仍在推进，把超时计时反复重置，剿灭等超时阈值长于提示间隔的模式永远等不到超时；现已识别新旧两版 MAA 的该提示，MAA 的五种界面语言均生效 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
-- BetterGI专项、ZZZ-OD专项 修复任务出错时提示送不到前端、用户看到的报错与实际出错原因无关的问题
+- BetterGI专项、ZZZ-OD专项 修复任务出错时提示送不到前端、用户看到的报错与实际出错原因无关的问题 by [@qiyinxi](https://github.com/qiyinxi)
 
 ### 开发流程
 

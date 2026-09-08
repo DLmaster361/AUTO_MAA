@@ -205,6 +205,9 @@
     :submitting="addLoading || templateLoading"
     :template-loading="templateLoading"
     :template-error="templateError"
+    :template-page="templatePage"
+    :template-page-size="TEMPLATE_PAGE_SIZE"
+    :template-total="templateTotal"
     @request-templates="loadTemplates"
     @submit="handleSubmitScriptCreate"
   />
@@ -565,7 +568,7 @@
         <div v-else class="templates-container">
           <div class="templates-header">
             <div class="templates-count">
-              <span class="count-badge">{{ filteredTemplates.length }}</span>
+              <span class="count-badge">{{ templateTotal }}</span>
               <span class="count-text">{{ t('scripts.template.count') }}</span>
             </div>
             <div class="search-container">
@@ -588,14 +591,14 @@
             </div>
           </div>
           <div class="templates-list">
-            <div v-if="filteredTemplates.length === 0" class="no-search-results">
+            <div v-if="templates.length === 0" class="no-search-results">
               <FileSearchOutlined class="no-results-icon" />
               <p>{{ t('scripts.template.noMatch') }}</p>
               <p class="no-results-tip">{{ t('scripts.template.noMatchTip') }}</p>
             </div>
             <template v-else>
               <div
-                v-for="(template, index) in filteredTemplates"
+                v-for="(template, index) in templates"
                 :key="getTemplateKey(template, index)"
                 :class="['template-item', { selected: isSelectedTemplate(template) }]"
                 @click="selectedTemplate = template"
@@ -603,25 +606,25 @@
                 <div class="template-content">
                   <div class="template-header">
                     <div class="template-info">
-                      <h3 class="template-name">{{ template.configName }}</h3>
+                      <h3 class="template-name">{{ template.displayName }}</h3>
                       <div class="template-meta">
                         <span class="template-author">
                           <UserOutlined />
-                          {{ template.author || t('scripts.template.unknownAuthor') }}
+                          {{ template.ownerUsername || t('scripts.template.unknownAuthor') }}
                         </span>
                         <span class="template-time">
                           <ClockCircleOutlined />
-                          {{ template.createTime || t('scripts.template.unknownTime') }}
+                          {{ template.publishedAt || t('scripts.template.unknownTime') }}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <!-- eslint-disable vue/no-v-html 模板描述来自 MAS 后端 markdown，属可信内容 -->
+                  <!-- eslint-disable vue/no-v-html 描述由配置中心用户提交，MarkdownIt 已关闭原始 HTML，渲染前全部转义 -->
                   <div
                     class="template-description"
                     @click="handleTemplateDescriptionClick"
-                    v-html="parseMarkdown(template.description)"
+                    v-html="parseMarkdown(template.description ?? '')"
                   ></div>
                   <!-- eslint-enable vue/no-v-html -->
                 </div>
@@ -656,6 +659,7 @@ import type { Script, ScriptType, User } from '@/types/script'
 import {
   getScriptEditSegment,
   type ScriptCreateRequest,
+  type TemplateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
@@ -666,7 +670,11 @@ import {
   type WSTaskCompletedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
-import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
+import {
+  TEMPLATE_PAGE_SIZE,
+  useTemplateApi,
+  type ShareTemplateItem,
+} from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
@@ -686,7 +694,7 @@ const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
+const { getShareTemplates, importScriptFromTemplate, error: templateError } = useTemplateApi()
 const { getPlans } = usePlanApi()
 
 // 初始化markdown解析器
@@ -717,8 +725,11 @@ const selectedCreateMode = ref('new') // 'copy' or 'new'
 const selectedScriptId = ref<string | null>(null) // 选中要复制的脚本ID
 const selectedType = ref<ScriptType>('MAA')
 const selectedGeneralMode = ref('template')
-const selectedTemplate = ref<WebConfigTemplate | null>(null)
-const templates = ref<WebConfigTemplate[]>([])
+const selectedTemplate = ref<ShareTemplateItem | null>(null)
+const templates = ref<ShareTemplateItem[]>([])
+const templatePage = ref(1)
+const templateTotal = ref(0)
+let templateRequestId = 0
 const addLoading = ref(false)
 const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
@@ -767,12 +778,12 @@ const parseMarkdown = (text: string) => {
   return md.render(text)
 }
 
-const getTemplateKey = (template: WebConfigTemplate, index: number) =>
-  [template.downloadUrl, template.configName, template.author, template.createTime, index]
+const getTemplateKey = (template: ShareTemplateItem, index: number) =>
+  [template.configKey, template.displayName, index]
     .filter(value => value !== undefined && value !== '')
     .join('::')
 
-const isSelectedTemplate = (template: WebConfigTemplate) => selectedTemplate.value === template
+const isSelectedTemplate = (template: ShareTemplateItem) => selectedTemplate.value === template
 
 const handleTemplateDescriptionClick = (event: MouseEvent) => {
   const link = (event.target as HTMLElement | null)?.closest('a')
@@ -780,41 +791,23 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
   event.preventDefault()
   const url = link.getAttribute('href')
-  if (url) {
+  // 描述由配置中心的其他用户提交，只把普通网页链接交给系统浏览器
+  if (url && /^https?:\/\//i.test(url)) {
     openExternalUrl(url)
   }
 }
 
-// 过滤模板
-const filteredTemplates = computed(() => {
-  if (!appliedSearchKeyword.value.trim()) {
-    return templates.value
-  }
-
-  const keyword = appliedSearchKeyword.value.toLowerCase()
-  return templates.value.filter(
-    template =>
-      template.configName.toLowerCase().includes(keyword) ||
-      (template.author && template.author.toLowerCase().includes(keyword)) ||
-      (template.description && template.description.toLowerCase().includes(keyword))
-  )
-})
-
 const handleSearchTemplates = () => {
   appliedSearchKeyword.value = pendingSearchKeyword.value.trim()
+  loadTemplates({ page: 1, keyword: appliedSearchKeyword.value })
 }
 
 const handleSearchInputChange = () => {
-  if (!pendingSearchKeyword.value.trim()) {
+  if (!pendingSearchKeyword.value.trim() && appliedSearchKeyword.value) {
     appliedSearchKeyword.value = ''
+    loadTemplates({ page: 1, keyword: '' })
   }
 }
-
-watch(filteredTemplates, filtered => {
-  if (selectedTemplate.value && !filtered.includes(selectedTemplate.value)) {
-    selectedTemplate.value = null
-  }
-})
 
 onMounted(() => {
   loadScripts()
@@ -923,9 +916,16 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
     if (!result) return
 
     if (request.kind === 'general-template') {
-      const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
-      if (!imported) return
-      message.success(t('scripts.toast.createdFromTemplate', { name: request.template.configName }))
+      const imported = await importScriptFromTemplate(result.scriptId, request.template)
+      // 导入失败就把刚建出来的空脚本删掉，不给用户留一个没有配置的壳
+      if (!imported) {
+        await deleteScript(result.scriptId)
+        await loadScripts()
+        return
+      }
+      message.success(
+        t('scripts.toast.createdFromTemplate', { name: request.template.displayName })
+      )
       await loadScripts()
       scriptCreateVisible.value = false
       navigateToCreatedScript(result.scriptId, 'General')
@@ -1032,7 +1032,7 @@ const handleConfirmAddScript = async () => {
 const handleConfirmGeneralMode = async () => {
   if (selectedGeneralMode.value === 'template') {
     // 加载模板列表并打开模板选择弹窗
-    await loadTemplates()
+    await loadTemplates({ page: 1, keyword: '' })
     generalModeSelectVisible.value = false
     templateSelectVisible.value = true
   } else {
@@ -1062,16 +1062,26 @@ const handleConfirmGeneralMode = async () => {
   }
 }
 
-const loadTemplates = async () => {
+const loadTemplates = async (query: TemplateRequest = { page: 1, keyword: '' }) => {
+  const requestId = ++templateRequestId
   templateLoading.value = true
   try {
-    templates.value = await getWebConfigTemplates()
+    const result = await getShareTemplates({
+      page: query.page,
+      pageSize: TEMPLATE_PAGE_SIZE,
+      keyword: query.keyword,
+    })
+    // 快速改关键字时请求可能乱序返回，只认最后一次
+    if (requestId !== templateRequestId) return
+    templates.value = result.items
+    templatePage.value = result.page
+    templateTotal.value = result.total
     selectedTemplate.value = null
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载模板列表失败: ${errorMsg}`)
   } finally {
-    templateLoading.value = false
+    if (requestId === templateRequestId) templateLoading.value = false
   }
 }
 
@@ -1089,15 +1099,21 @@ const handleConfirmTemplate = async () => {
       return
     }
 
-    // 2. 使用模板URL导入配置
-    const importResult = await importScriptFromWeb(
+    // 2. 按配置中心的结构化标识导入配置
+    const importResult = await importScriptFromTemplate(
       createResult.scriptId,
-      selectedTemplate.value.downloadUrl
+      selectedTemplate.value
     )
+
+    if (!importResult) {
+      await deleteScript(createResult.scriptId)
+      await loadScripts()
+      return
+    }
 
     if (importResult) {
       message.success(
-        t('scripts.toast.createdFromTemplate', { name: selectedTemplate.value.configName })
+        t('scripts.toast.createdFromTemplate', { name: selectedTemplate.value.displayName })
       )
       templateSelectVisible.value = false
       selectedTemplate.value = null

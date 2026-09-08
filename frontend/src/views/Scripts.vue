@@ -738,6 +738,7 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   OkNte: 'oknte',
   SRC: 'src',
   MaaEnd: 'maaend',
+  MaaFWManaged: 'maafw',
   M9A: 'm9a',
   MaaFW: 'maafw',
   HSR: 'hsr',

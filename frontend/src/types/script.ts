@@ -33,6 +33,7 @@ export type ScriptType =
   | 'MaaEnd'
   | 'M9A'
   | 'MaaFW'
+  | 'MaaFWManaged'
   | 'HSR'
   | 'BetterGI'
   | 'ZzzOd'

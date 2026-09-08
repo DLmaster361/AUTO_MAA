@@ -769,6 +769,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   MaaEnd: 'blue',
   M9A: 'cyan',
   MaaFW: 'geekblue',
+  MaaFWManaged: 'geekblue',
   Okww: 'blue',
   OkNte: 'blue',
   HSR: 'purple',

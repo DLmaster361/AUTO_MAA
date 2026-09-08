@@ -248,6 +248,13 @@ class JSONValidator(ValidatorBase):
             return False
 
     def correct(self, value):
+        if isinstance(value, self.type):
+            # 调用方直接给结构化数据是自然的期望（托管环境服务就是写 dict），
+            # 存储形式仍是 JSON 字符串，这里补上序列化——否则值会被静默丢成空。
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except (TypeError, ValueError):
+                pass
         return (
             value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
         )
@@ -371,6 +378,15 @@ class FileValidator(ValidatorBase):
 class FolderValidator(ValidatorBase):
     """文件夹路径验证器"""
 
+    def _forbidden_paths(self) -> tuple[Path, ...]:
+        """不允许作为配置路径的目录。
+
+        工作目录也在内：这条规则防的是用户手选目录时指到 AUTO-MAS 自己头上，
+        两边会互相污染。子类可以按自己的语义收窄这个集合。
+        """
+
+        return (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve())
+
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -386,7 +402,7 @@ class FolderValidator(ValidatorBase):
             return False
         if len(resolved.parts) == 1:
             return False
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+        for forbidden in self._forbidden_paths():
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
@@ -412,7 +428,7 @@ class FolderValidator(ValidatorBase):
             return ""
         if len(resolved.parts) == 1:
             raise ValueError("不允许将驱动器根目录作为配置路径")
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+        for forbidden in self._forbidden_paths():
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
@@ -423,6 +439,19 @@ class FolderValidator(ValidatorBase):
             raise ValueError(f"不允许将系统程序目录作为配置路径: {value}")
         return resolved.as_posix()
 
+
+
+class ManagedFolderValidator(FolderValidator):
+    """托管形态的项目目录验证器。
+
+    与 `FolderValidator` 的唯一区别是**允许工作目录内的路径**。托管 checkout
+    由 AUTO-MAS 自己产出在 `data/maafw_project_runs/` 下，用「不许指向工作
+    目录」那条规则去卡它等于禁掉托管形态本身——而那条规则本来防的是用户手选
+    目录时指到 MAS 自己头上。系统目录与驱动器根目录仍然禁止。
+    """
+
+    def _forbidden_paths(self) -> tuple[Path, ...]:
+        return tuple(FORBIDDEN_PATH_PREFIXES)
 
 class EmulatorPathValidator(FileValidator):
     """模拟器管理器路径验证器"""

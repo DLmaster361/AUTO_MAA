@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaFWConfig, MaaFWUserConfig
+from app.models.config import MaaFWConfig, MaaFWManagedConfig, MaaFWUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
@@ -272,6 +272,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._auto_update_mode: AutoUpdateMode = "Off"
         # 只有 main_task 正常跑完全部用户才置位；取消/崩溃路径不跑运行后更新。
         self._users_completed = False
+        # 托管形态（第三层）：check() 判定，环境准备产出可信 route 与 DTO。
+        self._is_managed = False
+        self._managed_route: Any = None
+        self._managed_project: dict[str, Any] | None = None
+        self._managed_runtime_binding: dict[str, Any] | None = None
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。"""
@@ -293,11 +298,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
 
+        self._is_managed = isinstance(script_config, MaaFWManagedConfig)
         project_value = str(script_config.get("Info", "Path") or "").strip()
-        if not project_value:
-            return "请设置 MFW 项目路径"
-        if not Path(project_value).resolve().is_dir():
-            return "请设置包含 interface.json 的 MFW 项目目录"
+        if self._is_managed:
+            # 托管形态的项目目录是**环境准备的产物**：checkout 要等
+            # prepare_script_environment 解析出来才存在，首次运行时 Info.Path
+            # 还是空的。这里只校验托管自己的前置条件，路径与运行环境的可用性
+            # 一并交给那一步（失败会带着可读原因中止 main_task）。
+            managed_problem = self._describe_managed_prerequisite(script_config)
+            if managed_problem:
+                return managed_problem
+        else:
+            if not project_value:
+                return "请设置 MFW 项目路径"
+            if not Path(project_value).resolve().is_dir():
+                return "请设置包含 interface.json 的 MFW 项目目录"
 
         user_config: MultipleConfig[MaaFWUserConfig] = MultipleConfig([MaaFWUserConfig])
         await user_config.load(await script_config.UserData.toDict())
@@ -316,11 +331,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         self.emulator_manager = await self._resolve_emulator_manager(script_config)
 
-        environment_problem = await asyncio.to_thread(
-            describe_unusable_runtime, Path(project_value)
-        )
-        if environment_problem:
-            return environment_problem
+        if not self._is_managed:
+            environment_problem = await asyncio.to_thread(
+                describe_unusable_runtime, Path(project_value)
+            )
+            if environment_problem:
+                return environment_problem
 
         return "Pass"
 
@@ -364,6 +380,136 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return runtime_pool_route_from_service(MaaFWRuntimePoolService())
 
+    # ------------------------------------------------------------------
+    # 托管形态（第三层）：项目载荷与运行环境都由 Store / Gateway 那条链准备
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _describe_managed_prerequisite(script_config: MaaFWConfig) -> str:
+        """托管脚本得先知道「用哪个项目的哪个版本」才谈得上准备环境。"""
+
+        from app.task.MaaFW.tools.embedded.managed import managed_project_identity
+
+        project_id, version = managed_project_identity(
+            {
+                "ProjectId": script_config.get("Managed", "ProjectId"),
+                "Version": script_config.get("Managed", "Version"),
+                "ProjectManifest": script_config.get("Managed", "ProjectManifest"),
+            }
+        )
+        if project_id and version:
+            return ""
+        return "该托管脚本尚未导入项目，请先在脚本配置里导入一个 MFW 项目"
+
+    @staticmethod
+    def _resolve_managed_gateway():
+        """拼装 Managed 服务网关。
+
+        与 `_resolve_runtime_pool_route` 是同一个处境：插件形态下这些依赖由
+        `adapter.py` 查服务契约后注入，树内没有服务注册表，直接实例化。
+        `project_update` 暂不接入——远程下载属于后续里程碑，本地导入不需要。
+        """
+
+        from app.task.MaaFW.tools.core.automas_maafw_interface.service import (
+            MaaFWInterfaceService,
+        )
+        from app.task.MaaFW.tools.core.automas_maafw_project_store import (
+            MaaFWProjectStoreService,
+        )
+        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+            MaaFWRuntimePoolService,
+        )
+        from app.task.MaaFW.tools.embedded.managed import ManagedServiceGateway
+
+        return ManagedServiceGateway(
+            MaaFWProjectStoreService(),
+            MaaFWRuntimePoolService(),
+            None,
+            MaaFWInterfaceService(),
+        )
+
+    def _resolve_managed_environment_service(self):
+        """构造托管环境服务。宿主侧的两个契约见 `app/core/config.py`。"""
+
+        from app.task.MaaFW.tools.core.automas_maafw_runner import MaaFWRunnerService
+        from app.task.MaaFW.tools.embedded.managed import (
+            MaaFWManagedEnvironmentService,
+        )
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+
+        return MaaFWManagedEnvironmentService(
+            config=Config,
+            gateway_provider=self._resolve_managed_gateway,
+            runner_provider=MaaFWRunnerService,
+            reserve_project_path=try_reserve_project_path,
+            release_project_path=release_project_path,
+            import_paths_provider=lambda: [Path.cwd()],
+        )
+
+    async def _prepare_managed_environment(self) -> str:
+        """解析并预热托管环境。成功返回空串，失败返回用户可读原因。
+
+        与自选目录形态的 `_ensure_project_environment` 不同，这一步**不是可选的**：
+        没有它就没有 checkout 路径，inner task 无从跑起，所以失败必须中止而不是
+        记个日志继续。
+        """
+
+        from app.task.MaaFW.tools.embedded.managed import ManagedServiceError
+        from app.task.MaaFW.tools.embedded.runtime_route import (
+            MaaFWRuntimeRouteError,
+            managed_execution_route,
+        )
+
+        assert self.script_config is not None
+        script_id = str(self.script_info.script_id)
+        requested = str(self.script_config.get("Info", "Path") or "").strip() or None
+
+        try:
+            resolution = await self._resolve_managed_environment_service().prepare_script_environment(
+                script_id,
+                requested,
+                send_log=self._threadsafe_update_log(),
+            )
+        except ManagedServiceError as exc:
+            return f"托管项目环境准备失败：{exc}"
+        except Exception as exc:  # noqa: BLE001 - 兜底成可读原因，不让栈冒到调度层
+            logger.exception("MFW 托管环境准备出现未预期错误")
+            return f"托管项目环境准备失败：{exc}"
+
+        if not resolution:
+            return "该脚本不是托管脚本，无法按托管形态准备环境"
+
+        project_path = str(resolution.get("projectPath") or "").strip()
+        if not project_path:
+            return "托管项目环境准备未返回 checkout 路径"
+
+        # route 要的两个 DTO 在准备过程中已被写回脚本配置（manifest 是绑定后的），
+        # 这里重新读一次而不是自己拼，避免与 Store 的真相分叉。
+        records = await Config.get_script_records(script_id)
+        if not records:
+            return "托管项目环境准备后读不到脚本配置"
+        config_body = records[0].get("config") or {}
+        managed = config_body.get("Managed") or {}
+        managed_runtime = config_body.get("ManagedRuntime") or {}
+        self._managed_project = {"manifest": managed.get("ProjectManifest") or {}}
+        self._managed_runtime_binding = managed_runtime.get("RuntimeBinding") or {}
+
+        try:
+            self._managed_route = managed_execution_route(
+                managed_execution=True,
+                project=self._managed_project,
+                runtime_binding=self._managed_runtime_binding,
+                expected_pool_id=self._resolve_runtime_pool_route().pool_id,
+            )
+        except MaaFWRuntimeRouteError as exc:
+            return f"托管运行时校验失败：{exc}"
+
+        logger.info(f"MFW 托管环境就绪: {project_path}")
+        return ""
+
     def _build_inner_task(self) -> "MaaFWPluginAutoProxyTask":
         # 延迟导入：runner_task 经 runner 包 import maa，导入即打开 DLL。
         from app.task.MaaFW.tools.embedded.runner_task import (
@@ -383,6 +529,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         route = self._resolve_runtime_pool_route()
         task.maafw_runtime_pool_root = route.root
         task.maafw_runtime_pool_id = route.pool_id
+        if self._is_managed:
+            # 已在 _prepare_managed_environment 里校验过的可信 route。runner_task
+            # 在 managed_execution 为真时直接用它，不再自己算；两个 DTO 一并带上，
+            # 是为了让降级路径（标记缺失却带着 DTO）仍然能被它拒掉。
+            task.maafw_managed_execution = True
+            task.maafw_managed_project = self._managed_project
+            task.maafw_managed_runtime_binding = self._managed_runtime_binding
+            task.maafw_managed_route = self._managed_route
         return task
 
     # ------------------------------------------------------------------
@@ -691,6 +845,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"MFW 内置运行用户列表加载完成，已筛选用户数: "
             f"{len(self.script_info.user_list)}"
         )
+
+        # 托管形态：项目载荷与运行环境都由 Store / Gateway 那条链准备，产出的
+        # checkout 路径会写回 Info.Path，后面的 inner task 才有路径可用。这一步
+        # 与自选目录形态的环境确认不同，**失败必须中止**——没有 checkout 就没有
+        # 可跑的东西，继续下去只会在 worker 里炸得更难懂。
+        if self._is_managed:
+            managed_problem = await self._prepare_managed_environment()
+            if managed_problem:
+                self.check_result = managed_problem
+                self.script_info.status = "异常"
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=managed_problem),
+                )
+                return
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备

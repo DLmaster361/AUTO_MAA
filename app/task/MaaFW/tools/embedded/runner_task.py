@@ -19,7 +19,7 @@ import psutil
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
@@ -747,9 +747,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if emulator_index in ("", "-"):
             raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
 
-        self._append_log(f"正在启动模拟器: {emulator_index}")
-        self.opened_emulator = True
+        # 只对「本来没开」的模拟器负责生命周期：用户自己开着的实例，跑完不该被
+        # MAS 关掉——那会打断他手头别的事。查状态失败时按「不是我开的」处理，
+        # 宁可少关一次，也不误关别人的。
+        already_running = False
+        with suppress(Exception):
+            already_running = (
+                await self.emulator_manager.getStatus(emulator_index)
+                == DeviceStatus.ONLINE
+            )
+
+        if already_running:
+            self._append_log(f"模拟器 {emulator_index} 已在运行，直接连接")
+        else:
+            self._append_log(f"正在启动模拟器: {emulator_index}")
         device_info = await self.emulator_manager.open(emulator_index)
+        self.opened_emulator = not already_running
         if Config.get("Function", "IfSilence"):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)

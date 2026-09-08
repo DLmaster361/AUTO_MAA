@@ -40,7 +40,11 @@ from .tools import (
     one_dragon_bridge,
     push_notification,
 )
-from .tools.one_dragon_plan import build_combat_steps, parse_one_dragon_plan
+from .tools.one_dragon_plan import (
+    build_combat_steps,
+    parse_one_dragon_plan,
+    resolve_base_name,
+)
 from .tools.one_dragon_report import parse_one_dragon_report
 
 logger = get_logger("BetterGI 自动代理")
@@ -334,7 +338,12 @@ class AutoProxyTask(TaskExecuteBase):
         # 路径 B：只把「本次确实被执行层接管」的战斗组从副本过滤；未接管的组（Plan 无配置
         # 或队列中已停用）继续留在一条龙，避免任务静默消失或关不掉。
         _exclude = exclude_task_names or (
-            sorted({str(s.get("name", "")) for s in self.plan_combat_steps})
+            sorted(
+                {
+                    resolve_base_name(str(s.get("name", "")))
+                    for s in self.plan_combat_steps
+                }
+            )
             if self.plan_mode
             else None
         )

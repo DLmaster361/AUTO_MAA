@@ -13,6 +13,14 @@
 const COMBAT_STEPS = ["自动秘境", "自动地脉花", "自动幽境危战", "自动首领讨伐"];
 const DAILY_STEPS = ["领取邮件", "合成树脂", "领取每日奖励", "领取尘歌壶奖励"];
 
+// 执行层步骤命名约定：同一战斗类型可配多个独立实例，名字形如 "自动秘境-副本A"
+// （基名 + "-" 后缀）。归一到基名以复用分发 / 每周逻辑。基名本身不含 "-"。
+function baseStepName(name) {
+  if (COMBAT_STEPS.includes(name) || DAILY_STEPS.includes(name)) return name;
+  const idx = name.indexOf("-");
+  return idx > 0 ? name.slice(0, idx) : name;
+}
+
 // 日志：优先 BGI 注入的 log（写入 BGI 日志文件，供 MAS 监控解析 MAS_STEP_* 标记），
 // console.log 仅作兜底（不进日志文件）。不可命名回 log，避免遮蔽注入对象。
 function masLog(line) {
@@ -50,7 +58,7 @@ function shouldRunToday(step) {
   const s = step.settings || {};
   // 秘境特殊处理：每周秘境开启时按当天的「执行」开关（开启才执行）；全关=不执行。
   // 每日秘境（关闭每周）不受星期限制，每天都跑。
-  if (step.name === "自动秘境") {
+  if (baseStepName(step.name) === "自动秘境") {
     const useWeekly = s.weeklyDomainEnabled !== false;
     if (useWeekly) {
       const wd = s.weeklyDomain || {};
@@ -66,7 +74,7 @@ function shouldRunToday(step) {
 
 async function dispatchCombat(step) {
   const s = step.settings || {};
-  switch (step.name) {
+  switch (baseStepName(step.name)) {
     case "自动秘境": {
       // 每周配置由 MAS 托管：按今天星期从 settings.weeklyDomain 取对应行（回退 default）。
       // 关闭「每周秘境」时只走每日行；奖励档位同理，每周走 default.reward（每周表默认行），
@@ -265,11 +273,11 @@ async function main() {
       masLog("MAS_STEP_SKIP: " + (step ? step.uid : "?"));
       continue;
     }
-    if (DAILY_STEPS.includes(step.name)) {
+    if (DAILY_STEPS.includes(baseStepName(step.name))) {
       masLog("MAS_STEP_DAILY: " + step.uid + " " + step.name); // 由随后的一条龙承接
       continue;
     }
-    if (!COMBAT_STEPS.includes(step.name)) {
+    if (!COMBAT_STEPS.includes(baseStepName(step.name))) {
       masLog("MAS_STEP_UNKNOWN: " + step.uid + " " + step.name);
       continue;
     }

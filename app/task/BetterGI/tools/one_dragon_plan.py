@@ -77,6 +77,30 @@ BUILTIN_COMBAT_STEP_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# 执行层步骤命名约定：同一战斗类型可配置多个独立实例，名字形如 ``自动秘境``（默认）
+# 或 ``自动秘境-副本A``（基名 + "-" 后缀）。解析时一律归一到基名，以复用设置白名单 /
+# 右栏翻译 / 每周结构 / 执行层分发的既有逻辑。基名本身不含 "-" 分隔符，故按前缀匹配即可。
+_BUILTIN_STEP_NAME_LIST: list[str] = list(BUILTIN_STEP_NAMES)
+
+
+def _resolve_base_name(name: str) -> str | None:
+    """把可能带后缀的执行层步骤名归一到基名；非内置步骤返回 ``None``。
+
+    - ``自动秘境`` -> ``自动秘境``
+    - ``自动秘境-副本A`` -> ``自动秘境``
+    """
+    name = str(name or "").strip()
+    if name in BUILTIN_STEP_NAMES:
+        return name
+    for base in _BUILTIN_STEP_NAME_LIST:
+        if name.startswith(base + "-"):
+            return base
+    return None
+
+
+# 公开别名，供外部（如 AutoProxy 计算 _exclude）按基名归一
+resolve_base_name = _resolve_base_name
+
 # 各内置步骤在执行层（BetterGI 原生任务 Param）的可传参白名单，键名采用
 # ``bettergi.d.ts`` 的 Param 字段名（camelCase）。路径 B 下：
 #   - 战斗 4 项（秘境/地脉花/幽境危战/首领讨伐）可由 JS 桥接直传执行层；
@@ -299,7 +323,8 @@ def validate_step_settings(step: dict[str, Any]) -> dict[str, Any]:
     settings = step.get("settings") or {}
     if not isinstance(settings, dict):
         return {}
-    allowed = BUILTIN_STEP_SETTING_KEYS.get(name)
+    base = _resolve_base_name(name)
+    allowed = BUILTIN_STEP_SETTING_KEYS.get(base) if base else None
     if allowed is None:
         return dict(settings)
     cleaned: dict[str, Any] = {}
@@ -470,7 +495,8 @@ def _leyline_weekly_plan_key(field_key: str):
 def extract_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any]:
     """从右栏 settings 提取 weekly 嵌套结构；无则返空 dict。"""
     result: dict[str, Any] = {}
-    if group == "自动秘境":
+    base = _resolve_base_name(group)
+    if base == "自动秘境":
         struct: dict[str, Any] = {}
         for k, v in settings.items():
             parsed = _secret_weekly_plan_key(k)
@@ -479,7 +505,7 @@ def extract_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
                 struct.setdefault(day, {})[field] = v
         if struct:
             result["weeklyDomain"] = struct
-    elif group == "自动地脉花":
+    elif base == "自动地脉花":
         struct = {}
         for k, v in settings.items():
             parsed = _leyline_weekly_plan_key(k)
@@ -494,7 +520,8 @@ def extract_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
 def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any]:
     """把 Plan settings 里的 weeklyDomain/weeklyLeyLine 还原为平铺右栏键（回显）。"""
     out: dict[str, Any] = {}
-    if group == "自动秘境" and isinstance(settings.get("weeklyDomain"), dict):
+    base = _resolve_base_name(group)
+    if base == "自动秘境" and isinstance(settings.get("weeklyDomain"), dict):
         for day, vals in settings["weeklyDomain"].items():
             if not isinstance(vals, dict):
                 continue
@@ -518,7 +545,7 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
                     out[f"{day}SelectedValue"] = vals["reward"]
                 if "run" in vals:
                     out[f"DomainRun{day}"] = vals["run"]
-    if group == "自动地脉花" and isinstance(settings.get("weeklyLeyLine"), dict):
+    if base == "自动地脉花" and isinstance(settings.get("weeklyLeyLine"), dict):
         for day, vals in settings["weeklyLeyLine"].items():
             if not isinstance(vals, dict):
                 continue
@@ -546,8 +573,9 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
 
 
 def is_combat_group(group: str) -> bool:
-    """是否为带执行层 Plan 的战斗 4 项组名。"""
-    return group in RIGHTBAR_TO_PLAN
+    """是否为带执行层 Plan 的战斗 4 项组名（支持 ``自动秘境-副本A`` 形式的后缀名）。"""
+    base = _resolve_base_name(group)
+    return base in RIGHTBAR_TO_PLAN
 
 
 def build_combat_steps(
@@ -555,57 +583,84 @@ def build_combat_steps(
     queue: list[dict[str, Any]] | None = None,
     enabled_groups: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """按队列顺序挑出「由执行层接管」的战斗 4 项步骤。
+    """按 Plan 顺序挑出「由执行层接管」的战斗步骤，支持同类型多实例。
 
-    接管需同时满足三条，缺一则留在原生一条龙，避免「关不掉」或「静默消失」：
+    命名约定：同一战斗类型可配置多个独立实例，名字形如 ``自动秘境``（默认）或
+    ``自动秘境-副本A``（基名 + 后缀），各实例持有独立 uid 与 settings。
 
-    1. Plan 中存在该组的步骤（用户在右栏配置过该组）；
-    2. 该组在 ``enabled_groups``（``OneDragon.Groups``）中处于启用状态——组开关是
-       启停的权威源，可视化队列只决定顺序，其条目本身不携带启停；
-    3. 队列中存在该条目。
+    接管需同时满足：
+    1. 步骤基名属于战斗 4 项（``BUILTIN_COMBAT_STEP_NAMES``）；
+    2. 该基名在 ``enabled_groups``（``OneDragon.Groups``）中启用——组开关是启停权威源；
+    3. 该步骤自身 ``enabled`` 为真。
 
-    ``queue`` 为空（用户未保存过队列）时按 Plan 自身顺序回退。队列里同一组的重复
-    实例共用该组在 Plan 中的同一份参数，但各自持独立 uid，保证步骤级报告可区分。
+    不再按 name 去重：每个带后缀/同名的战斗步骤都是独立实例，各自带参。顺序以 Plan
+    步骤为准；``queue`` 仅在非空时作为排序/启用过滤器（精确名匹配优先，同基名 FIFO 兜底），
+    以兼容桥接期旧队列。
     """
     enabled = {str(name) for name in (enabled_groups or [])}
-    plan_by_name: dict[str, dict[str, Any]] = {}
+
+    # 1) 收集 Plan 中全部战斗步骤（按 uid 去重防重复），保留原顺序
+    plan_combat: list[dict[str, Any]] = []
+    seen_uid: set[str] = set()
     for step in plan_steps:
         name = str(step.get("name", ""))
-        if name not in BUILTIN_COMBAT_STEP_NAMES or name in plan_by_name:
+        base = _resolve_base_name(name)
+        if base not in BUILTIN_COMBAT_STEP_NAMES:
             continue
-        if enabled and name not in enabled:
+        if enabled and base not in enabled:
             continue
-        plan_by_name[name] = step
-    if not plan_by_name:
+        if not step.get("enabled", True):
+            continue
+        uid = step.get("uid")
+        if uid in seen_uid:
+            continue
+        seen_uid.add(uid)
+        plan_combat.append(dict(step))
+    if not plan_combat:
         return []
 
-    if queue:
-        ordered = [
-            item
-            for item in queue
-            if isinstance(item, dict)
-            and str(item.get("name", "")) in plan_by_name
-            and bool(item.get("enabled", True))
-        ]
-    else:
-        ordered = [
-            {"name": name, "enabled": bool(step.get("enabled", True))}
-            for name, step in plan_by_name.items()
-        ]
+    if not queue:
+        return plan_combat
 
-    steps: list[dict[str, Any]] = []
-    seen: dict[str, int] = {}
-    for item in ordered:
-        name = str(item.get("name", ""))
-        src = plan_by_name[name]
-        seq = seen.get(name, 0)
-        seen[name] = seq + 1
-        step = dict(src)
-        step["settings"] = dict(src.get("settings") or {})
-        if seq:
-            step["uid"] = f"{step.get('uid') or _gen_uid()}#{seq}"
-        steps.append(step)
-    return steps
+    # 2) queue 作为排序/启用过滤器：精确名优先，同基名 FIFO 兜底（兼容旧队列同名项）
+    by_base: dict[str, list[int]] = {}
+    for i, s in enumerate(plan_combat):
+        by_base.setdefault(_resolve_base_name(s["name"]), []).append(i)
+    out: list[dict[str, Any]] = []
+    consumed: set[int] = set()
+    for item in queue:
+        if not isinstance(item, dict):
+            continue
+        if not bool(item.get("enabled", True)):
+            continue
+        qname = str(item.get("name", ""))
+        exact = next(
+            (
+                i
+                for i in range(len(plan_combat))
+                if i not in consumed and plan_combat[i].get("name") == qname
+            ),
+            None,
+        )
+        if exact is not None:
+            consumed.add(exact)
+            out.append(plan_combat[exact])
+            continue
+        base = _resolve_base_name(qname)
+        bucket = by_base.get(base)
+        if bucket:
+            while bucket:
+                idx = bucket.pop(0)
+                if idx not in consumed:
+                    break
+            else:
+                idx = None
+            if idx is not None:
+                consumed.add(idx)
+                out.append(plan_combat[idx])
+    # 3) 未被 queue 消费的 Plan 步骤追加到末尾，保证不丢
+    remaining = [s for i, s in enumerate(plan_combat) if i not in consumed]
+    return out + remaining
 
 
 def merge_rightbar_into_plan(
@@ -619,7 +674,8 @@ def merge_rightbar_into_plan(
     找不到该步骤则新建（kind=builtin, enabled=True）。合并后仅保留白名单键。
     非战斗组或无可映射键时原样返回 ``plan_json``。
     """
-    mapping = RIGHTBAR_TO_PLAN.get(group)
+    base = _resolve_base_name(group)
+    mapping = RIGHTBAR_TO_PLAN.get(base)
     if not mapping or not settings:
         return plan_json
     transl: dict[str, Any] = {
@@ -647,7 +703,8 @@ def merge_rightbar_into_plan(
 
 def extract_rightbar_from_plan(plan_json: str, group: str) -> dict[str, Any]:
     """从 Plan 中名为 ``group`` 的步骤 settings 反查回右栏 frontend 键。"""
-    mapping = RIGHTBAR_TO_PLAN.get(group)
+    base = _resolve_base_name(group)
+    mapping = RIGHTBAR_TO_PLAN.get(base)
     if not mapping:
         return {}
     steps = parse_one_dragon_plan(plan_json) if plan_json else []

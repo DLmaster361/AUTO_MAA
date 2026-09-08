@@ -1464,6 +1464,21 @@ export default {
     updateAutomaticallyAfterQueue: 'Update automatically after the queue finishes',
     useNightmareNestDaily: 'Use Nightmare Nest for daily echoes when needed',
     projectUpdate: 'Project update',
+    migrate: {
+      title: 'Switch to managed',
+      pitch: 'This script can be handed over to AUTO-MAS',
+      desc: 'Once managed, AUTO-MAS imports and slims the project: the GUI shell, bundled Python and MaaFramework are dropped, the runtime is shared with other scripts, and you can switch between versions of the same project at any time. The script itself is unchanged — users, schedules, queues and notifications all stay.',
+      action: 'Switch to managed',
+      needPath: 'Set the MFW project path first.',
+      confirmTitle: 'Switch this script to managed?',
+      confirmBody:
+        'This imports {path} and turns the script into a managed one. User config and queue membership are untouched.',
+      deleteSource: 'Also delete the original project folder',
+      deleteWarning:
+        '{path} will be deleted. This cannot be undone. The project contents are already stored in full in the AUTO-MAS project store.',
+      failed: 'Could not switch to managed',
+      partial: 'Switched to managed, but the original folder was kept',
+    },
     managed: {
       title: 'Managed project',
       notImportedTitle: 'No project imported yet',

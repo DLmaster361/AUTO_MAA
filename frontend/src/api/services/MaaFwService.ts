@@ -11,6 +11,8 @@ import type { MaaFWManagedGcOut } from '../models/MaaFWManagedGcOut';
 import type { MaaFWManagedImportIn } from '../models/MaaFWManagedImportIn';
 import type { MaaFWManagedImportOut } from '../models/MaaFWManagedImportOut';
 import type { MaaFWManagedInventoryOut } from '../models/MaaFWManagedInventoryOut';
+import type { MaaFWManagedMigrateIn } from '../models/MaaFWManagedMigrateIn';
+import type { MaaFWManagedMigrateOut } from '../models/MaaFWManagedMigrateOut';
 import type { MaaFWManagedSwitchIn } from '../models/MaaFWManagedSwitchIn';
 import type { MaaFWManagedVersionDeleteIn } from '../models/MaaFWManagedVersionDeleteIn';
 import type { MaaFWManagedVersionsIn } from '../models/MaaFWManagedVersionsIn';
@@ -38,6 +40,33 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/managed/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把自选目录的 MFW 脚本转为托管
+     * 导入现有项目目录、原地把脚本换成托管类型，可选地删掉原目录。
+     *
+     * 转换是**原地**的：脚本 ID 不变，队列成员、计划表、通知绑定和 ``data/<uid>/``
+     * 下的用户数据全都留着。新建一个托管脚本再删旧的会把这些一并丢掉。
+     *
+     * 删原目录是不可撤销的，只在 ``deleteSource`` 为真时做，并且一定排在导入与
+     * 转换都成功之后；删除失败不回滚迁移——项目已经在 Store 里了，把它撤回去反而
+     * 更糟，如实报告让用户自己删。
+     * @param requestBody
+     * @returns MaaFWManagedMigrateOut Successful Response
+     * @throws ApiError
+     */
+    public static migrateMaafwScriptToManagedApiScriptsMaafwManagedMigratePost(
+        requestBody: MaaFWManagedMigrateIn,
+    ): CancelablePromise<MaaFWManagedMigrateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/migrate',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

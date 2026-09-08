@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { MaaFwService } from '@/api'
 import type {
   MaaFWManagedImportData,
+  MaaFWManagedMigrateData,
   MaaFWManagedProjection,
   MaaFWManagedVersionItem,
 } from '@/api'
@@ -17,8 +18,31 @@ export function useMaaFWManagedApi() {
   const importing = ref(false)
   const loadingVersions = ref(false)
   const busy = ref(false)
+  const migrating = ref(false)
 
   const fail = (message: string) => ({ ok: false as const, message })
+
+  async function migrateToManaged(payload: { scriptId: string; deleteSource: boolean }) {
+    migrating.value = true
+    try {
+      const res = await MaaFwService.migrateMaafwScriptToManagedApiScriptsMaafwManagedMigratePost({
+        scriptId: payload.scriptId,
+        deleteSource: payload.deleteSource,
+      })
+      if (res.code !== 200 || !res.data) return fail(res.message ?? '')
+      // 删原目录失败时后端仍然回 200：迁移本身已经完成，撤回去只会更糟。
+      // sourceDeleteError 留给调用方决定要不要提醒。
+      return {
+        ok: true as const,
+        data: res.data as MaaFWManagedMigrateData,
+        message: res.message ?? '',
+      }
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error))
+    } finally {
+      migrating.value = false
+    }
+  }
 
   async function importProject(payload: {
     sourcePath: string
@@ -64,11 +88,7 @@ export function useMaaFWManagedApi() {
     }
   }
 
-  async function switchVersion(payload: {
-    projectId: string
-    version: string
-    scriptId?: string
-  }) {
+  async function switchVersion(payload: { projectId: string; version: string; scriptId?: string }) {
     busy.value = true
     try {
       const res = await MaaFwService.switchManagedMaafwVersionApiScriptsMaafwManagedSwitchPost({
@@ -129,6 +149,8 @@ export function useMaaFWManagedApi() {
     importing,
     loadingVersions,
     busy,
+    migrating,
+    migrateToManaged,
     importProject,
     listVersions,
     switchVersion,

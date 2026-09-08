@@ -114,6 +114,14 @@
           />
         </div>
 
+        <div v-if="!isManagedScript && !isWizard">
+          <MigrateToManagedSection
+            :script-id="scriptId"
+            :source-path="maafwConfig.Info.Path"
+            @migrated="reloadAfterManagedChange"
+          />
+        </div>
+
         <div v-if="isManagedScript" v-show="!isWizard || currentStep === 0">
           <ManagedProjectSection
             :script-id="scriptId"
@@ -203,6 +211,7 @@ import type {
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import ManagedProjectSection from './MaaFWScriptEdit/ManagedProjectSection.vue'
+import MigrateToManagedSection from './MaaFWScriptEdit/MigrateToManagedSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 

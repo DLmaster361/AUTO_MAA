@@ -3403,6 +3403,33 @@ class MaaFWManagedImportOut(OutBase):
     data: Optional[MaaFWManagedImportData] = Field(default=None, description="导入结果")
 
 
+class MaaFWManagedMigrateIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="要迁移的 MFW 脚本 ID")
+    deleteSource: bool = Field(
+        default=False,
+        description="迁移成功后删除原项目目录；不可撤销，必须由用户显式确认",
+    )
+
+
+class MaaFWManagedMigrateData(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    version: str = Field(..., description="版本号")
+    storeId: str = Field(..., description="Project Store 实例身份")
+    dataPath: str = Field(..., description="不可变版本载荷目录")
+    sourcePath: str = Field(..., description="迁移前的原项目目录")
+    sourceDeleted: bool = Field(default=False, description="原目录是否已删除")
+    sourceDeleteError: Optional[str] = Field(
+        default=None, description="删除原目录失败的原因；迁移本身已经完成"
+    )
+    projection: MaaFWManagedProjection = Field(..., description="脱壳报告")
+
+
+class MaaFWManagedMigrateOut(OutBase):
+    data: Optional[MaaFWManagedMigrateData] = Field(
+        default=None, description="迁移结果"
+    )
+
+
 class MaaFWManagedVersionItem(BaseModel):
     version: str = Field(..., description="版本号")
     createdAt: Optional[str] = Field(default=None, description="导入时间")

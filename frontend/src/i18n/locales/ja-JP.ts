@@ -1408,6 +1408,21 @@ export default {
     updateAutomaticallyAfterQueue: 'キュー終了後に自動更新',
     useNightmareNestDaily: '必要に応じてナイトメアネストで日課の音骸を消化する',
     projectUpdate: 'プロジェクトの更新',
+    migrate: {
+      title: '管理形式に変更',
+      pitch: 'このスクリプトは AUTO-MAS に任せられます',
+      desc: '管理形式にすると、AUTO-MAS がプロジェクトを取り込んで軽量化します。GUI シェル・同梱 Python・MaaFramework を外し、実行環境は他のスクリプトと共有、同じプロジェクトの複数バージョンをいつでも切り替えられます。スクリプト自体は変わりません——ユーザー・スケジュール・キュー・通知はそのままです。',
+      action: '管理形式に変更',
+      needPath: '先に MFW プロジェクトのパスを設定してください。',
+      confirmTitle: 'このスクリプトを管理形式にしますか？',
+      confirmBody:
+        '{path} を取り込み、このスクリプトを管理形式に変更します。ユーザー設定とキューへの登録はそのままです。',
+      deleteSource: '元のプロジェクトフォルダも削除する',
+      deleteWarning:
+        '{path} を削除します。取り消せません。プロジェクトの内容は AUTO-MAS のプロジェクトストアに完全に保存済みです。',
+      failed: '管理形式への変更に失敗しました',
+      partial: '管理形式に変更しましたが、元のフォルダは残っています',
+    },
     managed: {
       title: '管理プロジェクト',
       notImportedTitle: 'まだプロジェクトを取り込んでいません',

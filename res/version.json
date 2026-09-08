@@ -17,7 +17,7 @@
                 "通知系统支持扫码绑定微信 Claw 与 QQ 官方机器人接收任务通知 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "新增": [
-                "MFW 新增「托管」脚本类型：由 AUTO-MAS 导入并精简项目，去掉界面程序、自带 Python 与 MaaFramework，多个脚本共用同一套运行环境；导入后可查看精简报告（省下多少、移除了哪些外壳、逐条排除原因），并在项目配置页切换与删除版本",
+                "MFW 新增「托管」脚本类型：由 AUTO-MAS 导入并精简项目，去掉界面程序、自带 Python 与 MaaFramework，多个脚本共用同一套运行环境；导入后可查看精简报告（省下多少、移除了哪些外壳、逐条排除原因）并随时切换或删除版本，更新时下载整包作为新版本导入、旧版本仍可切回，现有的 MFW 脚本也能一键转为托管（可选删除原项目目录）",
                 "模拟器管理 新增「Emulator 2.0」配置类型：一条配置可纳管多个雷电 14 / MuMu 6 安装路径，两家的实例合并成一张设备表统一编号；支持新建与删除实例，分辨率（含 DPI）、CPU、内存、帧率的单台与批量设置，以及一键「稳定模式」关掉高帧率、后台保活等会干扰截图识别的功能；另有「配置守卫」，把你定的设置记成基准，启动前与关闭后各核验一次，被模拟器改掉就还原回来 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 新增脚本直控模式，抢委托送货与自动采集独立为可单独配置的阶段，用户配置页改为锚点导航加分区卡片布局 by [@HarcoChen](https://github.com/HarcoChen) by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen) by [@qiyinxi](https://github.com/qiyinxi)",

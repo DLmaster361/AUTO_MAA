@@ -794,6 +794,26 @@ class AppConfig(GlobalConfig):
         )
         return is_latest or supervised, commit_hash, commit_time
 
+    async def convert_script(
+        self,
+        script_id: str,
+        script: Literal["MaaFW", "MaaFWManaged"],
+    ) -> Any:
+        """原地转换脚本类型，保留脚本 ID 与全部用户数据。
+
+        目前只用于 MFW 自选目录形态与托管形态之间的迁移：两者共用同一个
+        manager 与同一份用户配置，差别只在项目载荷从哪来。限制在这一对之间是
+        故意的——跨脚本类型转换会丢掉大半配置项，那不是"迁移"而是"清空"。
+        """
+
+        logger.info(f"转换脚本类型: {script_id} -> {script}")
+
+        script_uid = uuid.UUID(script_id)
+        if not isinstance(self.ScriptConfig[script_uid], MaaFWConfig):
+            raise TypeError(f"脚本配置类型不支持转换: {script_id}")
+
+        return await self.ScriptConfig.convert(script_uid, CLASS_BOOK[script])
+
     async def add_script(
         self,
         script: Literal[
@@ -924,9 +944,7 @@ class AppConfig(GlobalConfig):
 
         lock = self._script_config_locks.setdefault(script_id, asyncio.Lock())
         async with lock:
-            logger.debug(
-                f"进入脚本配置事务: {script_id} (持有者: {owner or '未署名'})"
-            )
+            logger.debug(f"进入脚本配置事务: {script_id} (持有者: {owner or '未署名'})")
             try:
                 yield
             finally:

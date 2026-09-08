@@ -440,7 +440,6 @@ class FolderValidator(ValidatorBase):
         return resolved.as_posix()
 
 
-
 class ManagedFolderValidator(FolderValidator):
     """托管形态的项目目录验证器。
 
@@ -452,6 +451,7 @@ class ManagedFolderValidator(FolderValidator):
 
     def _forbidden_paths(self) -> tuple[Path, ...]:
         return tuple(FORBIDDEN_PATH_PREFIXES)
+
 
 class EmulatorPathValidator(FileValidator):
     """模拟器管理器路径验证器"""
@@ -1440,6 +1440,57 @@ class MultipleConfig(Generic[T]):
         await self._commit_changes()
 
         return uid, self.data[uid]
+
+    async def convert(self, uid: uuid.UUID, config_type: Type[T]) -> T:
+        """把一个已存在的配置项原地换成另一种类型，uid 与顺序都不变。
+
+        类型不是单独存的字段，而是 ``type(self.data[uid]).__name__``（见
+        :meth:`toDict`），所以换类型就是换掉这个对象本身。
+
+        **保住 uid 是这个方法存在的理由**：队列成员、计划表、通知绑定，以及
+        ``data/<uid>/`` 下的用户数据全都按它索引。走「新建一个再删旧的」那条路
+        会把这些一并丢掉，而用户看到的只是「转换后脚本从队列里消失了」。
+
+        Parameters
+        ----------
+        uid: uuid.UUID
+            要转换的配置项
+        config_type: type
+            目标类型, 必须是初始化时已声明的 ConfigBase 子类
+
+        Returns
+        -------
+        ConfigBase
+            转换后的新实例
+        """
+
+        if config_type not in self.sub_config_type.values():
+            raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
+
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法修改")
+
+        if uid not in self.data:
+            raise ValueError(f"配置项 '{uid}' 不存在")
+
+        if self.data[uid].is_locked:
+            raise ValueError(f"配置项 '{uid}' 已锁定, 无法转换")
+
+        converted = config_type()
+        # 不重新生成用户 uuid：data/<script>/<user> 目录按它命名，换了就对不上。
+        # 目标类型没有的键在 load 里被忽略，多出来的键保持默认值。
+        await converted.load(await self.data[uid].toDict())
+
+        for save_method in self._save_methods:
+            await converted.add_save_method(save_method)
+
+        if self.file:
+            await converted.add_save_method(self.save)
+
+        self.data[uid] = converted
+        await self._commit_changes()
+
+        return converted
 
     async def remove(self, uid: uuid.UUID):
         """

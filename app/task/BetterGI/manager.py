@@ -22,8 +22,10 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.tools.game_sign_notify import (
@@ -142,10 +144,10 @@ class BetterGIManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -180,8 +182,10 @@ class BetterGIManager(TaskExecuteBase):
                 ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id, type="Info", data={"Error": sub_check}
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=sub_check),
                 )
                 continue
 
@@ -262,10 +266,13 @@ class BetterGIManager(TaskExecuteBase):
                         mark_task_game_sign_summary_consumed(self.task_info)
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
+                        ),
                     )
         finally:
             if script_cfg.is_locked:
@@ -297,8 +304,8 @@ class BetterGIManager(TaskExecuteBase):
                 )
 
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"BetterGI任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"BetterGI任务出现异常: {e}"),
             )

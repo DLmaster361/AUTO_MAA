@@ -175,6 +175,12 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
+        if not self.script_config_path.exists():
+            logger.warning(
+                f"脚本配置不存在，跳过回写用户独立配置: {self.script_config_path}"
+            )
+            return
+
         shutil.rmtree(
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",

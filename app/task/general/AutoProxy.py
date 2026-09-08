@@ -567,24 +567,28 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("脚本直控配置：跳过回写用户独立配置")
             return
 
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            shutil.rmtree(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
-                ignore_errors=True,
+        if not self.script_config_path.exists():
+            logger.warning(
+                f"脚本配置不存在，跳过回写用户独立配置: {self.script_config_path}"
             )
+            return
+
+        user_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+        )
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.rmtree(user_config_dir, ignore_errors=True)
             shutil.copytree(
                 self.script_config_path,
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
+                user_config_dir,
                 dirs_exist_ok=True,
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            user_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(
                 self.script_config_path,
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name,
+                user_config_dir / self.script_config_path.name,
             )
         logger.success("通用脚本配置文件已更新")
 
@@ -625,24 +629,33 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         # 导入配置文件
+        user_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+        )
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if self.script_config_path.is_dir():
-                shutil.rmtree(self.script_config_path)
-            elif self.script_config_path.exists():
-                self.script_config_path.unlink()
-            shutil.copytree(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile",
-                self.script_config_path,
-                dirs_exist_ok=True,
-            )
+            if user_config_dir.exists():
+                if self.script_config_path.is_dir():
+                    shutil.rmtree(self.script_config_path)
+                elif self.script_config_path.exists():
+                    self.script_config_path.unlink()
+                shutil.copytree(
+                    user_config_dir,
+                    self.script_config_path,
+                    dirs_exist_ok=True,
+                )
+            else:
+                logger.warning(
+                    f"用户独立配置尚不存在，本次沿用脚本自身配置: {user_config_dir}"
+                )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            shutil.copy(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                / self.script_config_path.name,
-                self.script_config_path,
-            )
+            user_config_file = user_config_dir / self.script_config_path.name
+            if user_config_file.exists():
+                shutil.copy(user_config_file, self.script_config_path)
+            else:
+                logger.warning(
+                    f"用户独立配置尚不存在，本次沿用脚本自身配置: {user_config_file}"
+                )
 
         logger.info("脚本运行参数配置完成: 自动代理")
 

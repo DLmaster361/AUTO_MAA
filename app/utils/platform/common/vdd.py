@@ -21,4 +21,5 @@ class VddError(RuntimeError):
 VddProbeResult = None
 VirtualDisplay = _unsupported
 probe = _unsupported
+remove_display_index = _unsupported
 VDD_SETTLE_SECONDS = 1.5

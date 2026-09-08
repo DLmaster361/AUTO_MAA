@@ -172,3 +172,88 @@ def test_attached_but_ineffective_display_is_removed(
 
     assert _run(desktop_guard.ensure_desktop_available()) is None
     assert closed, "重验不过必须拆掉，不能把一块没生效的屏留在桌面上"
+
+
+def test_orphan_from_a_dead_process_is_cleaned_up(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """上次进程被强杀留下的虚拟屏，下次进入时要拆掉。
+
+    上游文档称停止心跳约 1 秒后虚拟屏会自动拔掉，**实测不成立**（杀掉进程 6 秒后屏仍在）。
+    所以不能把保活当成清理机制，必须靠记账主动拆。
+    """
+
+    import app.utils.platform.vdd as vdd
+
+    state = tmp_path / "virtual_display.json"
+    state.write_text('{"index": 3, "pid": 999999}', encoding="utf-8")
+    monkeypatch.setattr(desktop_guard, "STATE_FILE", state)
+    monkeypatch.setattr(desktop_guard, "_pid_alive", lambda pid: False)
+
+    removed: list[int] = []
+    monkeypatch.setattr(
+        vdd, "remove_display_index", lambda index: (removed.append(index), True)[1]
+    )
+
+    desktop_guard.cleanup_orphan_display()
+    assert removed == [3], "应当按记账里的 index 拆掉那块孤儿"
+    assert not state.exists(), "拆完要清掉记账"
+
+
+def test_display_of_a_live_process_is_not_touched(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """记录里的进程还活着就不能拆——同一台机器可能跑着另一个实例。"""
+
+    import app.utils.platform.vdd as vdd
+
+    state = tmp_path / "virtual_display.json"
+    state.write_text('{"index": 1, "pid": 4242}', encoding="utf-8")
+    monkeypatch.setattr(desktop_guard, "STATE_FILE", state)
+    monkeypatch.setattr(desktop_guard, "_pid_alive", lambda pid: True)
+
+    def _boom(index):
+        raise AssertionError("进程还活着不该拆屏")
+
+    monkeypatch.setattr(vdd, "remove_display_index", _boom)
+
+    desktop_guard.cleanup_orphan_display()
+    assert state.exists(), "还活着就不该清掉记账"
+
+
+def test_unreadable_state_file_removes_nothing(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """记账坏了就丢弃，绝不按猜测去拆屏——驱动只认 index，拆错就是别人的屏。"""
+
+    import app.utils.platform.vdd as vdd
+
+    state = tmp_path / "virtual_display.json"
+    state.write_text("{ 这不是 json", encoding="utf-8")
+    monkeypatch.setattr(desktop_guard, "STATE_FILE", state)
+
+    def _boom(index):
+        raise AssertionError("记账坏了不该拆任何屏")
+
+    monkeypatch.setattr(vdd, "remove_display_index", _boom)
+
+    desktop_guard.cleanup_orphan_display()
+    assert not state.exists()
+
+
+def test_pid_alive_defaults_to_true_when_undecidable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """判断不了进程死活时按「活着」处理：宁可留下孤儿，也不要误拆别人的屏。"""
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _no_psutil(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("模拟 psutil 不可用")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_psutil)
+    assert desktop_guard._pid_alive(999999) is True

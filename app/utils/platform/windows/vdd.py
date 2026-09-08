@@ -9,8 +9,12 @@
 零附加文件驱动的：一次 `CreateFile` 加四个 IOCTL，纯 ctypes；而且默认模式恰好就是
 1920x1080@60，连自定义分辨率都不用配。
 
-保活是设计要点而非缺点：停止心跳约 1 秒后驱动会自动拔掉所有虚拟屏。这意味着 MAS 崩溃
-或被强杀时不会给用户留下一块拆不掉的幽灵屏，也就不需要任何跨进程的清理逻辑。
+**保活不能当作清理机制。** 上游文档称停止心跳约 1 秒后虚拟屏会被自动拔掉，实测**不成立**：
+杀掉持有进程后等待 6 秒，屏仍然在，`has_real_display()` 依旧为真，最后是显式发
+`VDD_IOCTL_REMOVE` 才拆掉的。所以进程被强杀会留下孤儿屏，必须由下一次启动主动清理。
+
+还有一点实测得来的机制：**心跳是按驱动计的，不是按屏计的**。任何一个进程在 ping，就会把
+该驱动下**所有**虚拟屏一起续命，包括别的进程遗留的孤儿。
 
 协议取自 https://github.com/nomi-san/parsec-vdd 。
 """
@@ -431,6 +435,30 @@ def apply_mode(device: str, width: int, height: int, refresh: int) -> bool:
     )
 
 
+def remove_display_index(index: int) -> bool:
+    """按 index 拆掉一块虚拟屏。用于清理上一次进程留下的孤儿。
+
+    驱动只认 index，不认「谁创建的」，所以调用方必须自己确保这个 index 确实是自己留下的
+    ——同一个驱动可能同时被 Parsec 本体或别的程序使用，乱拆会拆掉别人的屏。
+    """
+
+    path = _find_device_path()
+    if path is None:
+        return False
+    try:
+        handle = _open_device(path)
+    except OSError:
+        return False
+    try:
+        _ioctl(handle, VDD_IOCTL_REMOVE, bytes(((index >> 8) & 0xFF, index & 0xFF)))
+        _ioctl(handle, VDD_IOCTL_UPDATE)
+        return True
+    except OSError:
+        return False
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
 class VirtualDisplay:
     """一块虚拟显示器的生命周期。用作上下文管理器。
 
@@ -450,6 +478,12 @@ class VirtualDisplay:
     @property
     def active(self) -> bool:
         return self._index is not None
+
+    @property
+    def index(self) -> int | None:
+        """驱动内部的屏编号。进程异常退出后要靠它清理孤儿。"""
+
+        return self._index
 
     def __enter__(self) -> "VirtualDisplay":
         from .display import real_display_devices
@@ -558,5 +592,6 @@ __all__ = [
     "VddError",
     "VirtualDisplay",
     "probe",
+    "remove_display_index",
     "VDD_SETTLE_SECONDS",
 ]

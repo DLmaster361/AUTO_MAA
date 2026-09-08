@@ -17,6 +17,10 @@
 
 - **整轮开一次、结束拆一次**，不是每个脚本或每个用户一次：每次插拔都是一次桌面拓扑
   变更，本身就是风险源（会移动窗口）。
+- **进程被强杀会留下孤儿屏，必须主动清理。** 上游文档称停止心跳约 1 秒后虚拟屏会自动
+  拔掉，实测不成立（杀掉进程 6 秒后屏仍在）。因此挂屏时把 index 记进状态文件，下次进入
+  时若记录还在、而记录里的进程已经死了，就先把那块孤儿拆掉。只拆自己记过的 index——
+  同一个驱动可能同时被 Parsec 本体或别的程序使用。
 - **只在没有任何真实输出时才插**，显示器正常时绝不凭空多挂一块。实测无头时挂上虚拟屏，
   幻影屏是**被替换**而不是并存，所以桌面上仍然只有一块屏，没有多屏歧义。
 - **插完立刻重验**，不满足就拆掉——驱动可能因为被显卡驱动更新搞坏、或与其它虚拟显示
@@ -26,7 +30,10 @@
 """
 
 import asyncio
-from contextlib import asynccontextmanager
+import json
+import os
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 from app.core import Config
 from app.utils import get_logger
@@ -34,8 +41,71 @@ from app.utils.platform import IS_WINDOWS
 
 logger = get_logger("桌面保障")
 
-# 目标客户区。取脚本侧常见的最低要求：够放下一个 1280x720 的窗口就不插屏。
+# 目标客户区。取脚本侧常见的最低要求：够放下一个 1280x720 的窗口就算够用。
 DESKTOP_MIN_CLIENT = (1280, 720)
+# 记账文件。落在受保护的 data/ 下，和 MaaFW job 文件同级。
+STATE_FILE = Path("data") / "virtual_display.json"
+
+
+def _write_state(index: int) -> None:
+    """记下「本进程挂了哪块屏」。进程被强杀时靠它清理孤儿。"""
+
+    with suppress(Exception):
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(
+            json.dumps({"index": index, "pid": os.getpid()}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+
+def _clear_state() -> None:
+    with suppress(Exception):
+        STATE_FILE.unlink(missing_ok=True)
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except Exception:
+        # 判断不了就当它还活着：宁可留下孤儿，也不要误拆别人的屏。
+        return True
+
+
+def cleanup_orphan_display() -> None:
+    """清理上一次进程留下的虚拟屏。
+
+    只拆自己记过的 index，且只在记录里的进程确实已经死了的时候拆——同一个驱动可能同时
+    被 Parsec 本体或别的程序使用，按 index 乱拆会拆掉别人的屏。
+    """
+
+    try:
+        raw = STATE_FILE.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return
+    except Exception as exc:
+        logger.warning(f"读取虚拟显示器记账文件失败: {exc}")
+        return
+
+    try:
+        state = json.loads(raw)
+        index = int(state["index"])
+        pid = int(state["pid"])
+    except Exception:
+        logger.warning("虚拟显示器记账文件无法解析，已丢弃")
+        _clear_state()
+        return
+
+    if pid == os.getpid() or _pid_alive(pid):
+        # 还活着说明不是孤儿——可能是同一台机器上另一个 MAS 实例正在用。
+        return
+
+    from app.utils.platform.vdd import remove_display_index
+
+    if remove_display_index(index):
+        logger.info(f"已清理上次遗留的虚拟显示器（index={index}, pid={pid}）")
+    _clear_state()
 
 
 def _has_real_output() -> bool:
@@ -100,6 +170,10 @@ async def ensure_desktop_available():
         yield None
         return
 
+    # 先清掉上次强杀留下的孤儿，再判断——否则孤儿本身就是「真实输出」，判据会一路放行，
+    # 那块没人管的屏就永远留在用户桌面上了。
+    await asyncio.to_thread(cleanup_orphan_display)
+
     if await asyncio.to_thread(_has_real_output):
         yield None
         return
@@ -138,6 +212,7 @@ async def ensure_desktop_available():
                 f"虚拟显示器已挂载但桌面仍不满足要求，已拆除: {await asyncio.to_thread(_describe)}"
             )
             await asyncio.to_thread(display.close)
+            _clear_state()
             yield None
             return
         logger.info(f"已挂载虚拟显示器: {await asyncio.to_thread(_describe)}")
@@ -146,6 +221,7 @@ async def ensure_desktop_available():
         if display.active:
             await asyncio.to_thread(display.close)
             logger.info("已拆除虚拟显示器")
+        _clear_state()
 
 
 def _probe_hint(result) -> str:

@@ -301,6 +301,11 @@ class AutoProxyTask(TaskExecuteBase):
                 paths=[self.script_log_path],
                 sink=self._append_push_log,
                 start_from_end=True,
+                # ok-script 框架跨零点把 ok-script.log 滚动为
+                # ok-script.YYYY-MM-DD.log（日期在中段），声明模板让轮转补偿命中旧文件
+                rotated_name=(
+                    f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
+                ),
             )
             # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
             self.log_translator = (

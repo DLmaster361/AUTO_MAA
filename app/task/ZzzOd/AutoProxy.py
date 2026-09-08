@@ -780,6 +780,9 @@ class AutoProxyTask(TaskExecuteBase):
                 paths=[self.script_log_path],
                 sink=self._route_push_log,
                 start_from_end=True,
+                # zzz-od 跨零点把 log.txt 滚动为 log.txt.YYYY-MM-DD（内容日期
+                # 式命名）：声明模板让轮转补偿在 inode 不可用的文件系统上也命中
+                rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
             )
             self.log_collect.open()
             for rule in ZZZOD_PUSH_RULES:

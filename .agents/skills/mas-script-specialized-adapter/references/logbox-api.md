@@ -11,6 +11,7 @@
 
 - [进程与推送边界](#进程与推送边界关键)
 - [get_collect 工厂](#get_collect-工厂)
+- [日志轮转补偿](#日志轮转补偿跨零点必读)
 - [LogCollect 采集会话](#logcollect-采集会话)
 - [与通用脚本 web 配置推送日志的分工](#与通用脚本-web-配置推送日志的分工重要)
 - [日志类型与推送时机语义](#日志类型与推送时机语义)
@@ -71,6 +72,7 @@ col = log_box.get_collect(
     paths=["workdir/logs/ok-script.log"],  # str | Path | 可迭代；None → 环境变量 MAS_SCRIPT_LOG_PATH
     sink=None,                             # MAS 宿主注入 push_log 回调；缺省走 @@LOGBOX@@ 回传
     start_from_end=True,                   # 从文件末尾起始采集，仅采会话内新增
+    rotated_name=None,                     # 轮转文件名 strftime 模板（见下节「日志轮转补偿」）
 )
 ```
 
@@ -78,15 +80,53 @@ col = log_box.get_collect(
 
 单个被采集文件按 **offset 增量读取**，`close()` 收尾时一次性读完会话剩余内容：
 
-- **轮转补偿**：检测到文件身份变化（inode/Windows 创建时间任一变化）时，先读被轮换的
-  旧日志（`.bak` 备份，按 `x.log.bak` / `x.bak` 惯例探测）中**尚未读过**的部分，再从头
-  读新文件，避免轮转前内容静默丢失。
+- **轮转补偿**：检测到文件身份变化（inode/Windows 创建时间任一变化）时，先找回被
+  轮换的旧日志中**尚未读过**的部分，再从头读新文件，避免轮转前内容静默丢失。缺省
+  按 inode 在同目录找回被重命名的旧文件（与运行日志监控 LogMonitor 同逻辑，见下节）；
+  inode 不可用时按 `rotated_name` 模板或 `.bak` 约定探测（日期式命名需声明模板）。
 - **截断**：文件变小但身份未变时，重置到文件头重读。
 - **会话外内容**：`start_from_end=True` 时只采会话内新增，会话开始（`open()`）前的
   历史内容不进入结果。
 
 > 单次任务日志量大时，结果是一次性入内存的（`close()` 时整体采集）。专项若运行极长、
 > 日志极大，需自行评估该内存占用（当前 okww 单会话日志量在可接受范围）。
+
+## 日志轮转补偿（跨零点必读）
+
+脚本日志在任务运行期间被脚本自身滚动（最典型：跨零点按天滚动，如
+`log.txt` → `log.txt.YYYY-MM-DD`）时，LogSource 靠「轮转补偿」把旧文件里尚未
+读过的部分接回来。各脚本滚动命名各不相同，但缺省逻辑与命名无关：
+
+**缺省找回（与运行日志监控 LogMonitor 同一逻辑）**：脚本**重命名式滚动**
+（把正在写的日志改名后新建）时，重命名不改变 inode，缺省即按离开时的 inode
+在同目录找回旧文件并从未读 offset 续读——不依赖命名猜测、不会误读同名旧
+残留。`.bak` 改名式滚动（``xxx.log`` → ``xxx.log.bak``）同样命中。
+
+**rotated_name 显式模板**：**日期式滚动命名必须声明**——完整轮转文件名的
+strftime 模板（相对日志所在目录，log_box 按昨天/今天生成候选，声明后只按
+模板探测）。文件系统不提供 inode（`st_ino` 为 0，如 FAT32 / exFAT / 部分
+网络盘）时 inode 找回不可用，声明模板是唯一兜底；缺省仅回退 `.bak` 约定
+猜测，日期式命名不在通用组件里猜测。
+
+| 脚本 | 轮转命名 | rotated_name |
+|---|---|---|
+| ZZZ-OD | `log.txt` → `log.txt.2026-09-07`（日期在名字末尾） | `f"{path.name}.%Y-%m-%d"` |
+| OK 系（ok-script 家族） | `ok-script.log` → `ok-script.2026-09-04.log`（日期在中段） | `f"{path.stem}.%Y-%m-%d{path.suffix}"` |
+| BetterGI | `better-genshin-impact20260822.log`（紧凑日期嵌 stem） | `better-genshin-impact%Y%m%d.log` |
+
+**接入前必须确认的事**：
+
+1. 脚本滚动是**重命名式**还是**删除重建 / 原地截断式**（查脚本源码的
+   `TimedRotatingFileHandler`/自定义 namer 配置，或实测跨零点）。重命名式
+   缺省即覆盖；删除重建式旧文件已不存在、截断式内容被销毁，均无法自动找回，
+   需专项另行评估。
+2. 滚动命名是否为日期式：是则传 `rotated_name`（无 inode 文件系统上的唯一
+   兜底）；`.bak` 式无需声明。
+3. offset 续读语义不变：找回的旧文件与 open 时是同一文件，从记录的 offset
+   续读恰好是未读内容；比 offset 还小时回退从头读（既有行为）。
+
+参考实现：ZzzOd / Okww / OkNte 的 `AutoProxy` 中 `get_collect(rotated_name=...)`
+（日期式命名声明）。
 
 ## LogCollect 采集会话
 
@@ -228,6 +268,7 @@ self.log_collect = log_box.get_collect(
     paths=[self.script_log_path],  # 相对 RootPath 派生，不硬编码绝对路径
     sink=self._append_push_log,    # 注入到 cur_user_item.push_log
     start_from_end=True,
+    rotated_name=...,              # 日期式滚动命名必须声明（无 inode 文件系统唯一兜底）
 )
 self.log_collect.open(translator.translate)          # 前置翻译
 for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态标记规则）
@@ -339,3 +380,8 @@ col.close()   # 脚本正常退出时 atexit 也会自动收尾
 7. **`MAS_SCRIPT_LOG_PATH` 与脚本宿主**：脚本宿主尚属能力预留（见「进程与推送边界」），
    MAS 未把脚本 stdout 接入 `check_log` 且未注入该环境变量。专项（MAS 宿主）请始终
    显式传 `paths`，不要依赖该 env（它只在脚本宿主接通后生效）。
+
+8. **脚本滚动不是重命名式**：缺省找回按 inode 定位被重命名的旧文件，只对
+   「改名旧文件后新建」式滚动生效；脚本若删除重建或原地截断日志，旧内容无从
+   找回。日期式滚动命名必须声明 `rotated_name`（无 inode 文件系统上的唯一
+   兜底），接入前按「日志轮转补偿」确认滚动方式。

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Optional, Union
 
@@ -35,8 +36,10 @@ class LogSource:
 
     - 起始位置：open() 记录；默认从当前文件末尾开始（仅采集会话内新增内容）。
     - 增量读取：read_new() 返回自上次位置以来的完整新行（未闭合行留待下次）。
-    - 轮转补偿：检测到文件身份变化时，先读取被轮换的旧日志（.bak 备份），
-      再从头重读新文件，避免轮转前内容静默丢失。
+    - 轮转补偿：检测到文件身份变化时，先找回被轮换的旧日志（缺省按 inode
+      在同目录定位被重命名的旧文件，与 LogMonitor 同逻辑；声明模板按模板
+      探测，inode 不可用且未声明时回退 .bak 约定），再从头重读新文件，
+      避免轮转前内容静默丢失。
     - 截断：文件变小（身份未变）时重置到文件头重读。
     """
 
@@ -45,9 +48,15 @@ class LogSource:
         path: PathLike,
         *,
         start_from_end: bool = True,
+        rotated_name: Optional[str] = None,
     ):
         self.path = Path(path)
         self.start_from_end = start_from_end
+        # 轮转文件名模板（完整文件名的 strftime 格式串，相对本目录）：
+        # 缺省按 inode 在同目录找回被重命名的旧文件（与 LogMonitor 同逻辑），
+        # 不依赖命名猜测；日期式滚动命名应声明模板（inode 不可用文件系统上
+        # 的唯一兜底），声明后只按模板探测
+        self.rotated_name = rotated_name
         self._offset = 0
         # 文件身份：轮转/替换检测用。Windows 下 st_ino 不可靠，追加 st_ctime_ns
         # （Windows 为创建时间，文件被替换时变化），两者任一变化即视为轮转。
@@ -66,7 +75,7 @@ class LogSource:
         self._opened = True
 
     def read_new(self) -> list[str]:
-        """读取自上次位置以来的完整新行（含轮转 .bak 补偿 / 截断重读）
+        """读取自上次位置以来的完整新行（含轮转补偿 / 截断重读）
 
         Returns:
             新增的完整行列表；无新增或文件不存在时返回空列表
@@ -79,7 +88,7 @@ class LogSource:
             return []
         current_id = (stat.st_ino, stat.st_ctime_ns)
         if self._file_id is not None and current_id != self._file_id:
-            # 轮转（文件身份变化）：先读被轮换的旧日志（.bak 补偿），再从头读新文件
+            # 轮转（文件身份变化）：先读被轮换的旧日志，再从头读新文件
             lines = self._read_rotated()
             self._offset = 0
             lines.extend(self._read_tail())
@@ -101,20 +110,59 @@ class LogSource:
         if stat.st_size <= self._offset:
             return []
         try:
-            with open(self.path, "rb") as f:
-                f.seek(self._offset)
-                raw = f.read()
+            return self._read_from(self.path, self._offset)
         except OSError:
             return []
-        return self._decode_lines(raw)
 
     def _read_rotated(self) -> list[str]:
-        """读取被轮换的旧日志（.bak 备份），避免轮转前内容静默丢失
+        """读取被轮换的旧日志，避免轮转前内容静默丢失
 
-        备份常见命名约定：``xxx.log`` → ``xxx.log.bak``（兼查 ``xxx.bak``）。
-        备份被截断时从头读，避免遗漏尚未读过的内容；无备份则返回空列表。
+        缺省与运行日志监控（LogMonitor）同一逻辑：重命名不改变 inode，按
+        离开时的 inode 在同目录找回被重命名的旧文件，从原 offset 续读恰好
+        是未读内容——不依赖命名猜测，也不会误读同名旧残留。inode 可用但未
+        命中（旧文件已被删除等非重命名式轮转）时不猜名字，宁缺勿错；文件
+        系统不提供 inode（st_ino 为 0）时回退 ``.bak`` 通用约定猜测（日期式
+        命名一律由专项声明 ``rotated_name``，不在通用组件里猜测）。显式声明
+        ``rotated_name`` 时只按模板探测。
         """
-        for bak in self._bak_candidates():
+        old_ino = self._file_id[0] if self._file_id is not None else 0
+        if self.rotated_name:
+            # 宿主声明即视为了解自己的滚动命名，只按模板探测
+            return self._read_candidates()
+        if old_ino:
+            rotated = self._find_rotated_file(old_ino)
+            if rotated is not None:
+                try:
+                    return self._read_from(rotated, self._offset)
+                except OSError:
+                    return []
+            return []
+        return self._read_candidates()
+
+    def _find_rotated_file(self, old_ino: int) -> Path | None:
+        """在同目录里按 inode 找回被重命名的旧日志文件（与 LogMonitor 同逻辑）
+
+        重命名前后是同一文件，离开时记录的 offset 逐字节对应。st_ino 为 0
+        （文件系统不提供 inode）或未找到（旧文件已被删除）时返回 None。
+        """
+        if not old_ino:
+            return None
+        try:
+            for candidate in self.path.parent.iterdir():
+                if candidate == self.path or not candidate.is_file():
+                    continue
+                try:
+                    if candidate.stat().st_ino == old_ino:
+                        return candidate
+                except OSError:
+                    continue
+        except OSError:
+            return None
+        return None
+
+    def _read_candidates(self) -> list[str]:
+        """按候选路径探测旧日志，命中第一个存在且有未读内容的"""
+        for bak in self._rotation_candidates():
             if not bak.is_file():
                 continue
             try:
@@ -125,16 +173,36 @@ class LogSource:
             if stat.st_size <= offset:
                 continue
             try:
-                with open(bak, "rb") as f:
-                    f.seek(offset)
-                    raw = f.read()
+                return self._read_from(bak, offset)
             except OSError:
                 continue
-            return self._decode_lines(raw)
         return []
 
-    def _bak_candidates(self) -> list[Path]:
-        """轮转备份候选路径（按常见命名约定猜测，命中第一个存在的）"""
+    def _read_from(self, path: Path, offset: int) -> list[str]:
+        """从 path 的 offset 起读取字节并按行解码；文件访问错误向上抛出"""
+        with open(path, "rb") as f:
+            f.seek(offset)
+            raw = f.read()
+        return self._decode_lines(raw)
+
+    def _rotation_candidates(self) -> list[Path]:
+        """轮转候选路径（按优先级，命中第一个存在且有未读内容的）
+
+        显式声明 ``rotated_name``（完整轮转文件名的 strftime 模板，如
+        ``ok-script.%Y-%m-%d.log``、``log.txt.%Y-%m-%d``）时按昨天/今天生成，
+        昨天后缀是内容日期式命名的正主，今天后缀兜轮转时刻恰在零点边界的
+        命名。缺省候选仅 ``.bak`` 通用约定（``xxx.log`` → ``xxx.log.bak``，
+        兼查 ``xxx.bak``），且仅作 inode 找回不可用时的兜底——日期式命名
+        一律由专项声明，不在通用组件里猜测。offset 是在重命名前的同一文件
+        上记录的，候选文件与它逐字节对应，从该位置续读即恰好是未读的旧内容。
+        """
+        if self.rotated_name:
+            today = datetime.now().date()
+            yesterday = today - timedelta(days=1)
+            return [
+                self.path.with_name(yesterday.strftime(self.rotated_name)),
+                self.path.with_name(today.strftime(self.rotated_name)),
+            ]
         return [
             Path(str(self.path) + ".bak"),
             self.path.with_suffix(".bak"),

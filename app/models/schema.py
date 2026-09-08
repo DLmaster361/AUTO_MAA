@@ -103,6 +103,407 @@ class BetterGICustomGroupsOut(OutBase):
     )
 
 
+class ZzzOdInstanceOut(BaseModel):
+    """zzz-od 实例（账号）信息"""
+
+    idx: int = Field(..., description="实例下标（config/{idx:02d} 目录）")
+    name: str = Field(..., description="实例名称")
+    active: bool = Field(..., description="是否为当前活跃实例")
+    active_in_od: bool = Field(..., description="是否参与「全部实例」模式的一条龙")
+    force_login_before_run: bool = Field(
+        default=False,
+        description="运行前切换账号（一条龙原生能力：运行到该实例前强制登录其账号）",
+    )
+
+
+class ZzzOdInstancesOut(OutBase):
+    data: List[ZzzOdInstanceOut] = Field(..., description="实例列表")
+
+
+class ZzzOdInstanceAddIn(BaseModel):
+    """直控：新建一条龙实例（分配最小空闲槽并注册）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    name: str = Field(..., description="实例名称（必填，创建后可在重命名中修改）")
+
+
+class ZzzOdInstanceRenameIn(BaseModel):
+    """直控：重命名实例（只改注册表 name，实例目录不变）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    name: str = Field(..., description="新实例名称")
+
+
+class ZzzOdInstanceFlagIn(BaseModel):
+    """直控：切换实例是否参与「全部实例」运行模式（active_in_od）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    activeInOd: bool = Field(..., description="是否参与「全部实例」模式")
+
+
+class ZzzOdInstanceActiveIn(BaseModel):
+    """直控：把所选实例设为当前活跃（「仅运行当前」运行的就是它）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+
+
+class ZzzOdInstanceForceLoginIn(BaseModel):
+    """直控：切换实例「运行前切换账号」（一条龙原生能力，MAS 不干涉）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+    forceLogin: bool = Field(..., description="是否开启运行前切换账号")
+
+
+class ZzzOdInstanceRunModeIn(BaseModel):
+    """直控：设置运行实例（one_dragon.yml 全局 instance_run，与编辑所选实例无关）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceRun: str = Field(
+        ...,
+        description="运行实例取值（仅运行当前/全部实例；后端白名单校验，非法取值拒绝）",
+    )
+
+
+class ZzzOdInstanceDeleteIn(BaseModel):
+    """直控：删除实例（注册表条目 + 实例目录，受 MAS 绑定槽保护）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标")
+
+
+class ZzzOdCatalogItemOut(BaseModel):
+    """一条龙任务目录项（静态解析应用注册信息）"""
+
+    app_id: str = Field(..., description="应用ID")
+    app_name: str = Field(..., description="应用中文名")
+    default_group: bool = Field(..., description="是否为 zzz-od 默认一条龙任务")
+    configurable: bool = Field(
+        default=False, description="是否支持在 MAS 侧直接配置（任务卡片 ⚙ 弹出设置）"
+    )
+    jump: bool = Field(
+        default=False, description="是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）"
+    )
+    priority: int = Field(..., description="原生排序权重（小者在前）")
+
+
+class ZzzOdCatalogOut(OutBase):
+    data: List[ZzzOdCatalogItemOut] = Field(..., description="任务目录")
+
+
+class ZzzOdAppConfigFieldOut(BaseModel):
+    """任务级配置字段（元数据 + 当前值）
+
+    type 决定前端渲染方式：select 下拉 / bool 开关 / number 数字 /
+    plan_list 计划列表（columns 行内字段元数据 + newItem 新增行默认值）。
+    """
+
+    field: str = Field(..., description="配置字段名（app yml 中的键）")
+    title: str = Field(..., description="展示标题")
+    type: str = Field(
+        default="select", description="字段类型：select/bool/number/team/plan_list"
+    )
+    value: Optional[Any] = Field(default=None, description="当前值（plan_list 为计划列表）")
+    options: List[ComboBoxItem] = Field(default_factory=list, description="可选项列表")
+    columns: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="plan_list 行内字段元数据（field/title/type/options/showWhen；showWhen 为条件 dict 或条件列表，条件含 not 取反）",
+    )
+    newItem: Optional[Dict[str, Any]] = Field(
+        default=None, description="plan_list 新增行的默认值"
+    )
+
+
+class ZzzOdAppConfigOut(OutBase):
+    appId: str = Field(..., description="应用ID")
+    fields: List[ZzzOdAppConfigFieldOut] = Field(..., description="配置字段列表")
+
+
+class ZzzOdMissionNameOut(BaseModel):
+    """副本字典关卡项"""
+
+    name: str = Field(..., description="关卡名（配置取值）")
+    display: str = Field(..., description="关卡展示名")
+
+
+class ZzzOdMissionTypeOut(BaseModel):
+    """副本字典类型项"""
+
+    name: str = Field(..., description="类型名（配置取值）")
+    display: str = Field(..., description="类型展示名")
+    missions: List[ZzzOdMissionNameOut] = Field(default_factory=list, description="关卡列表")
+
+
+class ZzzOdTrainCategoryOut(BaseModel):
+    """「训练」tab 副本分类（体力刷本/恶名狩猎级联选项）"""
+
+    name: str = Field(..., description="分类名（配置取值）")
+    label: str = Field(..., description="分类展示名")
+    mission_types: List[ZzzOdMissionTypeOut] = Field(default_factory=list, description="类型列表")
+
+
+class ZzzOdTaskOptionsOut(OutBase):
+    """任务计划的动态选项（静态读取安装目录，与一条龙原生 GUI 同源）"""
+
+    appId: str = Field(..., description="应用ID")
+    trainCategories: List[ZzzOdTrainCategoryOut] = Field(
+        default_factory=list, description="「训练」tab 副本级联树"
+    )
+    lostVoidMissions: List[str] = Field(default_factory=list, description="迷失之地图层列表")
+    autoBattle: List[ComboBoxItem] = Field(default_factory=list, description="配队方案选项")
+    challenge: List[ComboBoxItem] = Field(default_factory=list, description="迷失之地挑战配置选项")
+
+
+class ZzzOdAppConfigSaveIn(BaseModel):
+    """保存任务级配置（字段白名单校验后写入绑定槽；直控可指定原生实例）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    appId: str = Field(..., description="应用ID")
+    values: Dict[str, Any] = Field(..., description="字段名 → 值（plan_list 为计划列表）")
+    instanceIdx: Optional[int] = Field(
+        default=None,
+        description="直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）",
+    )
+
+
+class ZzzOdTeamItemOut(BaseModel):
+    """预备编队条目（team.yml；成员为游戏内识别结果，MAS 不编辑）"""
+
+    idx: int = Field(..., description="编队在列表中的下标")
+    name: str = Field(..., description="编队名称（与游戏内编队名一致）")
+    autoBattle: str = Field(..., description="绑定的配队方案（自动战斗配置名）")
+    agents: List[str] = Field(default_factory=list, description="成员代理人ID列表")
+
+
+class ZzzOdTeamsOut(OutBase):
+    """预备编队列表 + 配队方案/代理人选项"""
+
+    teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表（固定 20 个）")
+    autoBattle: List[ComboBoxItem] = Field(..., description="配队方案选项")
+    agentOptions: List[ComboBoxItem] = Field(
+        default_factory=list, description="代理人选项（label=名称，value=agent_id）"
+    )
+
+
+class ZzzOdTeamsSaveIn(BaseModel):
+    """整表保存预备编队（名称 + 绑定配队方案 + 成员 agent_id_list）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    teams: List[Dict[str, Any]] = Field(
+        ..., description="编队列表（name/autoBattle/agent_id_list）"
+    )
+    instanceIdx: Optional[int] = Field(
+        default=None,
+        description="直控模式：直接写入的原生实例下标（缺省写入用户绑定槽）",
+    )
+
+
+class ZzzOdTeamsSaveOut(OutBase):
+    """保存后的编队列表"""
+
+    teams: List[ZzzOdTeamItemOut] = Field(..., description="编队列表")
+
+
+class ZzzOdBackupItemOut(BaseModel):
+    """配置备份条目"""
+
+    time: str = Field(..., description="备份时间戳（目录名，如 20260903-104500）")
+
+
+class ZzzOdBackupListOut(OutBase):
+    data: List[ZzzOdBackupItemOut] = Field(..., description="备份列表（时间倒序）")
+
+
+class ZzzOdBackupRestoreIn(BaseModel):
+    """把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    time: str = Field(..., description="备份时间戳")
+    target: Literal["onedragon", "mas"] = Field(
+        default="onedragon",
+        description="恢复目标：onedragon=把一条龙原生配置备份恢复到一条龙本身（one_dragon.yml + 原生实例目录，MAS 槽不触碰，恢复前自动归档当前）；mas=把 MAS 用户槽备份恢复到绑定槽并全量回填本页字段（配队等随槽回到该时点）",
+    )
+
+
+class ZzzOdBackupEnsureIn(BaseModel):
+    """按需归档目标池当前配置（编辑界面三时机：进入/退出/运行前）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID")
+    target: Literal["onedragon", "mas"] = Field(
+        default="onedragon",
+        description="归档目标：onedragon=一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；mas=MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）",
+    )
+
+
+class ZzzOdBackupEnsureOut(OutBase):
+    created: bool = Field(..., description="本次是否新建了归档（False=指纹无变化跳过或无槽可归档）")
+    time: str = Field(..., description="最新备份时间戳（无任何备份为空串）")
+
+
+class ZzzOdBackupRestoreOut(OutBase):
+    slot: int = Field(..., description="关联槽 idx（onedragon 恢复为 -1，失败为 -1）")
+    target: Literal["onedragon", "mas"] = Field(
+        default="onedragon", description="实际执行的恢复目标"
+    )
+
+
+class ZzzOdNativeAccountField(BaseModel):
+    """直控编辑的账号字段（强绑定 zzz-od 原生 game_account.yml）。"""
+
+    key: str = Field(..., description="game_account.yml 字段名")
+    title: str = Field(..., description="展示标题")
+    value: Optional[str] = Field(default=None, description="当前值（读自实例原生配置）")
+    options: List[ComboBoxItem] = Field(
+        default_factory=list, description="可选项列表（空=自由输入）"
+    )
+
+
+class ZzzOdNativeTaskOut(BaseModel):
+    """直控任务编排条目（原生 app_list 与目录合并后的可选项）。"""
+
+    app_id: str = Field(..., description="应用ID")
+    app_name: str = Field(..., description="应用中文名")
+    enabled: bool = Field(..., description="是否启用（原生编排状态）")
+    default_group: bool = Field(..., description="是否为 zzz-od 默认一条龙任务")
+    configurable: bool = Field(
+        default=False, description="是否支持在 MAS 侧直接配置（任务卡片 ⚙ 弹出设置）"
+    )
+    jump: bool = Field(
+        default=False, description="是否提供跳转一条龙主界面配置（复杂配置引导进原生 GUI）"
+    )
+    priority: int = Field(..., description="原生排序权重（小者在前）")
+
+
+class ZzzOdNativeConfigOut(OutBase):
+    """直控模式：所选实例的完整原生配置（账号字段 + 任务编排 + 运行实例）。"""
+
+    instanceIdx: int = Field(..., description="当前选择的实例下标")
+    instanceName: str = Field(..., description="实例名称")
+    account: List[ZzzOdNativeAccountField] = Field(
+        ..., description="账号配置字段（game_account.yml）"
+    )
+    tasks: List[ZzzOdNativeTaskOut] = Field(
+        ..., description="任务编排（app_id/enabled/顺序，与目录合并后的可选项）"
+    )
+    instanceRun: str = Field(
+        ..., description="运行实例（one_dragon.yml instance_run 原值：仅运行当前/全部实例）"
+    )
+
+
+class ZzzOdNativeTaskIn(BaseModel):
+    """直控任务编排条目（保存用：app_id + 启用状态）。"""
+
+    app_id: str = Field(..., description="应用ID")
+    enabled: bool = Field(..., description="是否启用")
+
+
+class ZzzOdNativeConfigIn(BaseModel):
+    """直控模式：保存所选实例的原生配置（可选增量，缺省字段不写回）。"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    instanceIdx: int = Field(..., description="目标实例下标（写入其原生配置）")
+    account: Optional[Dict[str, str]] = Field(
+        default=None, description="账号字段名 → 值（白名单过滤；缺省不写回）"
+    )
+    tasks: Optional[List[ZzzOdNativeTaskIn]] = Field(
+        default=None,
+        description="任务编排（顺序即执行顺序；缺省不写回）",
+    )
+    instanceRun: Optional[str] = Field(
+        default=None,
+        description="运行实例（仅运行当前/全部实例，白名单校验后写回 one_dragon.yml；缺省不写回）",
+    )
+
+
+class ZzzOdLauncherOut(OutBase):
+    """ZZZ-OD 启动器可用性（独立配置侧切换原始/集成启动器用）"""
+
+    original_available: bool = Field(
+        ..., description="原始启动器（OneDragon-Launcher.exe）是否已安装"
+    )
+    integrated_available: bool = Field(
+        ..., description="集成启动器（OneDragon-RuntimeLauncher.exe）是否已安装"
+    )
+
+
+class ZzzOdImportIn(BaseModel):
+    """基于一条龙已有实例快速生成当前用户配置（覆盖本用户账号与任务编排）。"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="目标用户ID（独立的用户级配置）")
+    instanceIdx: int = Field(
+        ..., description="来源母版实例下标（读取该实例的账号信息与已启用任务编排）"
+    )
+
+
+class ZzzOdImportOut(OutBase):
+    """导入结果：来源实例的账号字段与已启用任务编排已写入本用户，前端随后重新拉取用户数据。"""
+
+    instanceIdx: int = Field(..., description="来源实例下标（失败为 -1）")
+    instanceName: str = Field(..., description="来源实例名称")
+    importedAccountCount: int = Field(..., description="本次回填的账号字段数（仅非空值）")
+    importedTaskCount: int = Field(..., description="本次导入的已启用任务数")
+    slot: int = Field(
+        ..., description="用户绑定槽 idx（未绑定时 -1，此时无槽内容可备份）"
+    )
+
+
+class ZzzOdPreviewField(BaseModel):
+    """配置摘要中的账号字段"""
+
+    key: str = Field(..., description="game_account.yml 字段名")
+    value: str = Field(..., description="字段值（缺失合并默认值）")
+
+
+class ZzzOdPreviewTask(BaseModel):
+    """配置摘要中的任务编排条目"""
+
+    app_id: str = Field(..., description="应用ID")
+    app_name: str = Field(..., description="应用中文名")
+    enabled: bool = Field(..., description="是否启用")
+
+
+class ZzzOdPreviewInstance(BaseModel):
+    """一条龙备份摘要中的实例条目（可展开查看账号/任务明细）"""
+
+    idx: int = Field(..., description="实例下标")
+    name: str = Field(..., description="实例名称")
+    active: bool = Field(..., description="是否为当前活跃实例")
+    active_in_od: bool = Field(..., description="是否参与「全部实例」模式的一条龙")
+    account: List[ZzzOdPreviewField] = Field(
+        ..., description="该实例的账号字段（来自备份目录内 game_account.yml）"
+    )
+    tasks: List[ZzzOdPreviewTask] = Field(
+        ..., description="该实例的任务编排（来自备份目录内 _group.yml）"
+    )
+
+
+class ZzzOdBackupPreviewOut(OutBase):
+    """备份配置摘要（预览用，纯读不恢复）"""
+
+    time: str = Field(..., description="备份时间戳")
+    target: Literal["onedragon", "mas"] = Field(..., description="备份类别")
+    info: List[ZzzOdPreviewField] = Field(
+        ..., description="基本信息卡信息字段（mas 类备份；旧备份或 onedragon 为空）"
+    )
+    account: List[ZzzOdPreviewField] = Field(
+        ..., description="账号字段（mas 类备份；onedragon 为空）"
+    )
+    tasks: List[ZzzOdPreviewTask] = Field(
+        ..., description="任务编排（mas 类备份；onedragon 为空）"
+    )
+    instances: List[ZzzOdPreviewInstance] = Field(
+        ..., description="实例列表（onedragon 类备份，带可展开明细；mas 为空）"
+    )
+
+
 class MaaEndOptionsOut(OutBase):
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
@@ -598,6 +999,7 @@ class ScriptIndexItem(BaseModel):
         "MaaFWConfig",
         "HSRConfig",
         "BetterGIConfig",
+        "ZzzOdConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -614,6 +1016,7 @@ class UserIndexItem(BaseModel):
         "MaaFWUserConfig",
         "HSRUserConfig",
         "BetterGIUserConfig",
+        "ZzzOdUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1024,6 +1427,114 @@ class BetterGIUserConfig(BaseModel):
     )
 
 
+class ZzzOdUserConfig_Info(BaseModel):
+    """ZZZ-OD 用户信息
+
+    配置主体是本模型的 Game / OneDragon 字段（MAS ConfigItem 体系，web
+    界面直接编辑）；运行时由字段生成配置注入 zzz-od 实例槽。
+    """
+
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    Mode: Optional[Literal["用户", "直控"]] = Field(
+        default=None,
+        description="配置来源（用户=本配置字段，直控=zzz-od 原生配置）",
+    )
+    SlotIdx: Optional[int] = Field(
+        default=None,
+        description="绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配并持久注册 MAS-{用户名} 实例）",
+    )
+    LauncherMode: Optional[Literal["自动", "原始", "集成"]] = Field(
+        default=None,
+        description="一条龙启动器（直控/用户两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）",
+    )
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class ZzzOdUserConfig_Game(BaseModel):
+    """ZZZ-OD 用户游戏账号配置（运行时生成 game_account.yml 注入）"""
+
+    GameRegion: Optional[Literal["cn", "cn_b", "us", "eu", "asia", "twhkmo"]] = Field(
+        default=None, description="游戏区服"
+    )
+    GamePath: Optional[str] = Field(
+        default=None, description="游戏 exe 完整路径（ZenlessZoneZero.exe）"
+    )
+    GameLanguage: Optional[Literal["cn", "en"]] = Field(
+        default=None, description="游戏界面语言"
+    )
+    Account: Optional[str] = Field(
+        default=None, description="登录账号（留空沿用 zzz-od 已保存的登录态）"
+    )
+    Password: Optional[str] = Field(
+        default=None, description="登录密码（与 zzz-od 一致明文存储）"
+    )
+    BilibiliAccountName: Optional[str] = Field(
+        default=None, description="B服登录账号名"
+    )
+    Platform: Optional[Literal["PC"]] = Field(
+        default=None, description="游戏平台（上游 GamePlatformEnum.PC 真实值为大写）"
+    )
+    UseCustomWinTitle: Optional[bool] = Field(
+        default=None, description="是否使用自定义窗口标题"
+    )
+    CustomWinTitle: Optional[str] = Field(
+        default=None, description="自定义窗口标题"
+    )
+
+
+class ZzzOdUserConfig_OneDragon(BaseModel):
+    """ZZZ-OD 用户一条龙任务编排"""
+
+    AppList: Optional[str] = Field(
+        default=None,
+        description='任务编排 JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，顺序即执行顺序',
+    )
+
+
+class ZzzOdUserConfig_Data(GeneralUserConfig_Data):
+    """ZZZ-OD 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+
+
+class ZzzOdUserConfig_Notify(GeneralUserConfig_Notify):
+    """ZZZ-OD 用户通知（复用通用字段）"""
+
+    PushLogMode: Optional[Literal["关闭", "逐条", "汇总"]] = Field(
+        default=None,
+        description="任务报告节点详情的推送模式：关闭=不采集；逐条=采集并逐条带回时间戳；汇总=采集并按状态聚合",
+    )
+
+
+class ZzzOdUserConfig(BaseModel):
+    Info: Optional[ZzzOdUserConfig_Info] = Field(default=None, description="用户信息")
+    Game: Optional[ZzzOdUserConfig_Game] = Field(
+        default=None, description="游戏账号配置"
+    )
+    OneDragon: Optional[ZzzOdUserConfig_OneDragon] = Field(
+        default=None, description="一条龙任务编排"
+    )
+    Data: Optional[ZzzOdUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[ZzzOdUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -1234,6 +1745,44 @@ class BetterGIConfig(BaseModel):
     Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
+
+
+class ZzzOdConfig_Info(GeneralConfig_Info):
+    """ZZZ-OD 脚本基础信息（复用通用字段）"""
+
+
+class ZzzOdConfig_Game(BaseModel):
+    """ZZZ-OD 游戏配置"""
+
+    Enabled: Optional[bool] = Field(
+        default=None, description="是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）"
+    )
+    LaunchBeforeTask: Optional[bool] = Field(
+        default=None,
+        description="任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）",
+    )
+    Path: Optional[str] = Field(default=None, description="游戏路径（游戏本体 exe）")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(
+        default=None, description="启动游戏后的等待时间（秒）"
+    )
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否由 MAS 关闭游戏"
+    )
+    AccountSwitch: Optional[Literal["单实例切换", "多实例切换", "MAS切换"]] = Field(
+        default=None,
+        description="多用户账号切换方式：单实例切换=逐用户独立会话（默认，推荐）；多实例切换=全部用户合并一轮多账号运行（不推荐）；MAS切换=MAS侧切换账号后交一条龙（暂未开放）",
+    )
+
+
+class ZzzOdConfig_Run(GeneralConfig_Run):
+    """ZZZ-OD 运行配置（复用通用字段）"""
+
+
+class ZzzOdConfig(BaseModel):
+    Info: Optional[ZzzOdConfig_Info] = Field(default=None, description="脚本基础信息")
+    Game: Optional[ZzzOdConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[ZzzOdConfig_Run] = Field(default=None, description="运行配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -2857,9 +3406,10 @@ class ScriptCreateIn(BaseModel):
         "MaaFW",
         "HSR",
         "BetterGI",
+        "ZzzOd",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -2879,6 +3429,7 @@ class ScriptCreateOut(OutBase):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
+        ZzzOdConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -2903,6 +3454,7 @@ class ScriptGetOut(OutBase):
             MaaFWConfig,
             HSRConfig,
             BetterGIConfig,
+            ZzzOdConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -2920,6 +3472,7 @@ class ScriptUpdateIn(BaseModel):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
+        ZzzOdConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -2979,6 +3532,7 @@ class UserGetOut(OutBase):
             MaaFWUserConfig,
             HSRUserConfig,
             BetterGIUserConfig,
+            ZzzOdUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -2996,6 +3550,7 @@ class UserCreateOut(OutBase):
         MaaFWUserConfig,
         HSRUserConfig,
         BetterGIUserConfig,
+        ZzzOdUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -3012,6 +3567,7 @@ class UserUpdateIn(UserInBase):
         MaaFWUserConfig,
         HSRUserConfig,
         BetterGIUserConfig,
+        ZzzOdUserConfig,
     ] = Field(..., description="用户更新数据")
 
 
@@ -3550,6 +4106,14 @@ class TaskCreateIn(DispatchIn):
     userId: str | None = Field(
         default=None,
         description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
+    )
+    viewOnly: bool = Field(
+        default=False,
+        description="可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份",
+    )
+    instanceIdx: int | None = Field(
+        default=None,
+        description="可选：仅 ScriptConfig 生效；直控指定会话窗口打开的原生实例（临时切换活跃，会话结束还原）",
     )
 
 

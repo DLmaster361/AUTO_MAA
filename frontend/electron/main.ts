@@ -40,6 +40,7 @@ import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
+import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import {
   captureMainRendererCrash,
   configureMainSentry,
@@ -1262,6 +1263,12 @@ registerIssueReportExporter(
   '导出 OK-NTE 问题包',
   'OK-NTE-logs',
   createOkNteIssueReport
+)
+registerIssueReportExporter(
+  'zzzod:exportIssueReport',
+  '导出 ZZZ-OD 问题包',
+  'ZZZ-OD-logs',
+  createZzzOdIssueReport
 )
 
 ipcMain.handle('data:backup', async () => {

@@ -113,6 +113,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: SCRIPT_LOGOS.BetterGI,
   },
+  {
+    value: 'ZzzOd',
+    titleKey: 'scripts.type.ZzzOd',
+    descriptionKey: 'scripts.create.typeDesc.ZzzOd',
+    keywords: ['zzz-od', 'zzz', '绝区零', 'zenless', '一条龙'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.ZzzOd,
+  },
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
@@ -161,6 +169,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   OkNte: 'oknte',
   HSR: 'hsr',
   BetterGI: 'bettergi',
+  ZzzOd: 'zzzod',
   General: 'general',
 }
 

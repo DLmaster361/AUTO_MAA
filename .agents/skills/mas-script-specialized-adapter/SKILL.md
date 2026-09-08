@@ -43,7 +43,8 @@ description: >-
    [M9A/MFAA](references/examples-m9a.md) ·
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
-   [HSR](references/examples-hsr.md)
+   [HSR](references/examples-hsr.md) ·
+   [ZzzOd](references/examples-zzzod.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
@@ -59,8 +60,9 @@ description: >-
 - 配置与 schema：`app/models/config.py`、`app/models/schema.py`
 - 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
 - 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
-- 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogEnabled`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合与追加统一复用通用工具 `app/tools/push_log.py`（`build_user_result_text` 按用户交错组装「用户结果行+节点」并入 result / `append_push_log`），专项不要自行拼接实现。具体注入端点（管理器汇总 / 通知正文追加）现场反查参考实现。
+- 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogMode`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合统一复用通用工具 `app/tools/push_log.py` 的 `build_user_result_text`（按用户交错组装「用户结果行+节点」并入 result），专项不要自行拼接实现。具体注入端点现场反查参考实现。
 - 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
+- 配置备份恢复：专项需要把运行/会话前会被 MAS 触碰的配置做跨会话持久快照与一键恢复时，**文件级原语用 `app/utils/config_archive.py`**（用法见 [config-archive.md](references/config-archive.md)），专项只提供备份对象（目录/文件集）与恢复后语义钩子；**恢复功能（列表/预览/详情/一键恢复）用通用服务 `app/utils/config_restore.py` + 前端组件 `ConfigRestoreSection.vue`**（用法见 [config-restore.md](references/config-restore.md)），专项只传目标池回调/API/专项统一名，会话遮罩用 `GuiSessionMask.vue`；不要给公共原语或通用组件加专项分支。**归档三时机**（`ConfigRestoreTarget.snapshot` + `service.ensure`）：① 编辑界面进入时归档 MAS 会触碰的原生配置（捕捉「MAS 操作前原始态」——配置在 MAS 之外就可能已被修改）；② 编辑界面退出时归档 MAS 侧配置终态（MAS 侧修改一定发生在 MAS 内，退出即备份）；③ 运行前归档（原生配置可能在 MAS 之外被改）。所有归档走指纹去重（内容无变化自动跳过），覆盖性操作（导入/恢复）前另做强制归档。
 - 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
 - Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
 - 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
@@ -86,6 +88,7 @@ description: >-
 | General | 用户 / 直控 两态 |
 | MaaEnd | 脚本 / 用户 两态 |
 | OkNte | 两态（`Info.Mode` 脚本 / 用户） |
+| ZzzOd | 用户 / 直控 两态（用户=字段化注入绑定槽，直控=页面直编所选实例原生配置、运行原生裸跑；**每脚本限一个直控用户**，多账号在直控页实例管理里配，见 examples-zzzod） |
 | M9A | 不使用这套模式 |
 
 采用三态时：**脚本**=脚本级共享配置；**用户**=当前用户独立配置；**直控**=直接使用脚本原有配置、由原生 GUI 维护、不回写 MAS 独立配置。三态只决定 owner。

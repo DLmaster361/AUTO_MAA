@@ -3307,6 +3307,7 @@ class BetterGIUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
+
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -3694,6 +3695,258 @@ class BetterGIConfig(ConfigBase):
         )
 
         self.UserData = MultipleConfig([BetterGIUserConfig])
+
+        super().__init__()
+
+
+class ZzzOdUserConfig(ConfigBase):
+    """绝区零一条龙用户配置（zzz-od 线，MaaEnd 式字段化用户配置）
+
+    用户配置的事实源是本类的 ConfigItem 字段（web 界面直接编辑，走通用
+    updateUser 链路）：Game 区为账号/区服/游戏路径，OneDragon 区为一条龙
+    任务编排（JSON，顺序即执行顺序）。运行时由这些字段生成 game_account.yml
+    与 one_dragon/_group.yml 注入当前活跃实例槽、结束恢复原状（MAS 不留
+    痕迹）。「直控」模式不使用字段配置，直接以 zzz-od 原生配置运行。
+    """
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 配置来源两态（对齐 MaaEnd 简洁/详细）：用户=本配置字段；直控=zzz-od 原生配置
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", OptionsValidator(["用户", "直控"])
+        )
+        ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
+        ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
+        ## 此后配置会话与运行时注入都固定使用该槽
+        self.Info_SlotIdx = ConfigItem(
+            "Info", "SlotIdx", -1, RangeValidator(-1, 999)
+        )
+        ## 一条龙启动器选择（直控/用户两态通用）：
+        ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
+        ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
+        self.Info_LauncherMode = ConfigItem(
+            "Info",
+            "LauncherMode",
+            "自动",
+            OptionsValidator(["自动", "原始", "集成"]),
+        )
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 游戏区服（zzz-od game_account.yml 的 game_region 取值）
+        self.Game_GameRegion = ConfigItem(
+            "Game",
+            "GameRegion",
+            "cn",
+            OptionsValidator(["cn", "cn_b", "us", "eu", "asia", "twhkmo"]),
+        )
+        ## 游戏 exe 完整路径（ZenlessZoneZero.exe）
+        self.Game_GamePath = ConfigItem("Game", "GamePath", "", FileValidator())
+        ## 游戏界面语言
+        self.Game_GameLanguage = ConfigItem(
+            "Game", "GameLanguage", "cn", OptionsValidator(["cn", "en"])
+        )
+        ## 登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）
+        self.Game_Account = ConfigItem("Game", "Account", "")
+        ## 登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）
+        self.Game_Password = ConfigItem("Game", "Password", "", EncryptValidator())
+        ## B服登录账号名
+        self.Game_BilibiliAccountName = ConfigItem("Game", "BilibiliAccountName", "")
+        ## 游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）
+        self.Game_Platform = ConfigItem(
+            "Game", "Platform", "PC", OptionsValidator(["PC"])
+        )
+        ## 是否使用自定义窗口标题
+        self.Game_UseCustomWinTitle = ConfigItem(
+            "Game", "UseCustomWinTitle", False, BoolValidator()
+        )
+        ## 自定义窗口标题
+        self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
+        ## 数组顺序即执行顺序；enabled=false 的任务由 zzz-od 跳过）
+        self.OneDragon_AppList = ConfigItem("OneDragon", "AppList", "[]")
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+        ## 智能启动器模式最近一次成功运行的启动器（""=尚未记录；下次智能优先用它）
+        self.Data_LauncherLastGood = ConfigItem(
+            "Data",
+            "LauncherLastGood",
+            "",
+            OptionsValidator(["", "原始", "集成"]),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（运行记录 diff 出的各任务结果）：
+        ## 关闭 = 不采集；逐条 = 逐条带回时间戳；汇总 = 按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
+        ## 是否发送用户统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append({"text": f"上次：{last_status}", "color": "green"})
+
+        mode = str(self.get("Info", "Mode") or "用户")
+        tags.append({"text": f"来源：{mode}", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class ZzzOdConfig(ConfigBase):
+    """绝区零一条龙配置（zzz-od 线）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新绝区零一条龙脚本")
+        ## zzz-od 安装根目录（含 OneDragon 启动器、src 与 config）
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FolderValidator())
+
+        ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）
+        self.Game_LaunchBeforeTask = ConfigItem(
+            "Game", "LaunchBeforeTask", False, BoolValidator()
+        )
+        ## 游戏路径（游戏本体 ZenlessZoneZero.exe）
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 启动游戏后的等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体，
+        ## 不再委托一条龙 --close-game）
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 多用户账号切换方式（脚本级下拉，value 对应 manager 的分派分支）：
+        ## 单实例切换（默认，推荐）= 逐用户独立会话：注入该用户配置 → 单实例
+        ##   运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。失败域
+        ##   隔离最好，重试只重启失败用户；
+        ## 多实例切换（不推荐）= 全部启用用户合并为一轮多账号运行，一条龙内部
+        ##   依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随
+        ##   用户数线性增长；
+        ## MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。
+        self.Game_AccountSwitch = ConfigItem(
+            "Game",
+            "AccountSwitch",
+            "单实例切换",
+            OptionsValidator(["单实例切换", "多实例切换", "MAS切换"]),
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 单次任务重试次数
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 单次运行超时时间（分钟）；一条龙含游戏内全流程，默认放宽
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 180, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([ZzzOdUserConfig])
 
         super().__init__()
 
@@ -4123,6 +4376,7 @@ class GlobalConfig(ConfigBase):
                 OkNteConfig,
                 HSRConfig,
                 BetterGIConfig,
+                ZzzOdConfig,
             ]
         )
         ## 队列配置列表
@@ -4231,6 +4485,7 @@ CLASS_BOOK = {
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
     "BetterGI": BetterGIConfig,
+    "ZzzOd": ZzzOdConfig,
 }
 """配置类映射表"""
 

@@ -15,6 +15,12 @@ from dataclasses import dataclass
 
 DEFAULT_DPI = 96
 MONITORINFOF_PRIMARY = 0x00000001
+QDC_ONLY_ACTIVE_PATHS = 0x00000002
+# 「系统强行让这个输出可用」——Windows 在没有任何真实输出时保留的占位屏会带上它。
+# 实测：物理显示器关闭后活动路径 flags=0x11(IN_USE|FORCED_SYSTEM)，挂上真实的虚拟屏
+# 之后变成 0x01(IN_USE)，拆掉又回到 0x11。
+DISPLAYCONFIG_TARGET_FORCED_AVAILABILITY_SYSTEM = 0x00000010
+DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x00000001
 MONITOR_DEFAULTTONEAREST = 0x00000002
 MDT_EFFECTIVE_DPI = 0
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
@@ -38,6 +44,54 @@ class _MONITORINFOEXW(ctypes.Structure):
         ("rcWork", _RECT),
         ("dwFlags", wintypes.DWORD),
         ("szDevice", ctypes.c_wchar * 32),
+    ]
+
+
+class _DISPLAY_DEVICEW(ctypes.Structure):
+    _fields_ = [
+        ("cb", wintypes.DWORD),
+        ("DeviceName", ctypes.c_wchar * 32),
+        ("DeviceString", ctypes.c_wchar * 128),
+        ("StateFlags", wintypes.DWORD),
+        ("DeviceID", ctypes.c_wchar * 128),
+        ("DeviceKey", ctypes.c_wchar * 128),
+    ]
+
+
+class _LUID(ctypes.Structure):
+    _fields_ = [("LowPart", wintypes.DWORD), ("HighPart", ctypes.c_long)]
+
+
+class _PATH_SOURCE_INFO(ctypes.Structure):
+    _fields_ = [
+        ("adapterId", _LUID),
+        ("id", wintypes.UINT),
+        ("modeInfoIdx", wintypes.UINT),
+        ("statusFlags", wintypes.UINT),
+    ]
+
+
+class _PATH_TARGET_INFO(ctypes.Structure):
+    _fields_ = [
+        ("adapterId", _LUID),
+        ("id", wintypes.UINT),
+        ("modeInfoIdx", wintypes.UINT),
+        ("outputTechnology", wintypes.UINT),
+        ("rotation", wintypes.UINT),
+        ("scaling", wintypes.UINT),
+        ("refreshNumerator", wintypes.UINT),
+        ("refreshDenominator", wintypes.UINT),
+        ("scanLineOrdering", wintypes.UINT),
+        ("targetAvailable", wintypes.BOOL),
+        ("statusFlags", wintypes.UINT),
+    ]
+
+
+class _PATH_INFO(ctypes.Structure):
+    _fields_ = [
+        ("sourceInfo", _PATH_SOURCE_INFO),
+        ("targetInfo", _PATH_TARGET_INFO),
+        ("flags", wintypes.UINT),
     ]
 
 
@@ -111,6 +165,9 @@ def _declare_prototypes() -> None:
             [wintypes.HWND, wintypes.DWORD],
         ),
         (_user32, "GetMonitorInfoW", wintypes.BOOL, None),
+        (_user32, "EnumDisplayDevicesW", wintypes.BOOL, None),
+        (_user32, "GetDisplayConfigBufferSizes", ctypes.c_long, None),
+        (_user32, "QueryDisplayConfig", ctypes.c_long, None),
         (_user32, "EnumDisplayMonitors", wintypes.BOOL, None),
         (_user32, "AdjustWindowRectExForDpi", wintypes.BOOL, None),
         (_user32, "AdjustWindowRectEx", wintypes.BOOL, None),
@@ -276,6 +333,124 @@ def find_host_monitor(client_width: int, client_height: int) -> MonitorInfo | No
     return max(candidates, key=lambda item: item.work_size[0] * item.work_size[1])
 
 
+def has_real_display() -> bool:
+    """桌面上是不是至少有一块**真实输出**（物理显示器或虚拟显示器）。
+
+    这是虚拟屏的触发判据，比「有没有一块屏够大」可靠：所有真实输出都没有时，Windows
+    并不会让桌面消失，而是保留一块占位的「幻影屏」——它**照旧上报原来的分辨率**，
+    `EnumDisplayMonitors` 看起来一切正常，但那块屏背后没有任何输出，游戏渲染与截图链路
+    是否可靠没有保证（DXGI 桌面复制在这种屏上尤其容易出问题）。
+
+    实测有两个完全一致的判据，这里用其一、另一个兜底：
+
+    - `QueryDisplayConfig` 的活动路径带 `FORCED_AVAILABILITY_SYSTEM`（系统强行让它可用）
+    - 该适配器下没有 monitor 子设备
+
+    取不到信息时返回 True（按「有真实输出」处理）：这一层是尽力而为的改善项，
+    宁可不插屏，也不要因为查询失败去改用户的桌面拓扑。
+    """
+
+    forced = _paths_are_all_forced()
+    if forced is not None:
+        return not forced
+    children = _adapters_have_monitor_child()
+    if children is not None:
+        return children
+    return True
+
+
+def _paths_are_all_forced() -> bool | None:
+    """活动显示路径是否**全部**是系统强行造出来的。查询失败返回 None。"""
+
+    path_count = wintypes.UINT()
+    mode_count = wintypes.UINT()
+    try:
+        if _user32.GetDisplayConfigBufferSizes(
+            QDC_ONLY_ACTIVE_PATHS, ctypes.byref(path_count), ctypes.byref(mode_count)
+        ):
+            return None
+        if not path_count.value:
+            return True
+        paths = (_PATH_INFO * path_count.value)()
+        modes = (ctypes.c_byte * (mode_count.value * 64))()
+        if _user32.QueryDisplayConfig(
+            QDC_ONLY_ACTIVE_PATHS,
+            ctypes.byref(path_count),
+            paths,
+            ctypes.byref(mode_count),
+            modes,
+            None,
+        ):
+            return None
+    except (AttributeError, OSError):
+        return None
+
+    return all(
+        paths[i].targetInfo.statusFlags
+        & DISPLAYCONFIG_TARGET_FORCED_AVAILABILITY_SYSTEM
+        for i in range(path_count.value)
+    )
+
+
+def _adapters_have_monitor_child() -> bool | None:
+    """挂在桌面上的适配器下有没有 monitor 子设备。查询失败返回 None。
+
+    幻影屏没有子设备；真实输出（含 IDD 虚拟屏）会有一个 `Generic PnP Monitor`。
+    """
+
+    try:
+        index = 0
+        seen_adapter = False
+        while True:
+            adapter = _DISPLAY_DEVICEW()
+            adapter.cb = ctypes.sizeof(_DISPLAY_DEVICEW)
+            if not _user32.EnumDisplayDevicesW(None, index, ctypes.byref(adapter), 0):
+                break
+            index += 1
+            if not adapter.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP:
+                continue
+            seen_adapter = True
+            child = _DISPLAY_DEVICEW()
+            child.cb = ctypes.sizeof(_DISPLAY_DEVICEW)
+            if _user32.EnumDisplayDevicesW(
+                adapter.DeviceName, 0, ctypes.byref(child), 0
+            ):
+                return True
+    except (AttributeError, OSError):
+        return None
+    return False if seen_adapter else None
+
+
+def real_display_devices() -> set[str]:
+    """当前**有真实输出**的显示设备名集合（`\\.\DISPLAYn`）。
+
+    幻影屏不算：它同样挂在桌面上、同样有设备名，但没有 monitor 子设备。这个区别很重要
+    ——无头时挂上虚拟屏，Windows 会**复用同一个设备名**（幻影屏是被替换而不是并存），
+    对「所有显示设备」做差集会得到空集，认不出新挂的那块屏。对「真实输出」做差集才行。
+    """
+
+    devices: set[str] = set()
+    try:
+        index = 0
+        while True:
+            adapter = _DISPLAY_DEVICEW()
+            adapter.cb = ctypes.sizeof(_DISPLAY_DEVICEW)
+            if not _user32.EnumDisplayDevicesW(None, index, ctypes.byref(adapter), 0):
+                break
+            index += 1
+            if not adapter.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP:
+                continue
+            child = _DISPLAY_DEVICEW()
+            child.cb = ctypes.sizeof(_DISPLAY_DEVICEW)
+            if _user32.EnumDisplayDevicesW(
+                adapter.DeviceName, 0, ctypes.byref(child), 0
+            ):
+                devices.add(adapter.DeviceName)
+    except (AttributeError, OSError):
+        return devices
+    return devices
+
+
 def describe_monitors() -> str:
     """一行式的显示器概况，供诊断日志使用。"""
 
@@ -294,5 +469,7 @@ __all__ = [
     "frame_size_for_client",
     "can_host_client",
     "find_host_monitor",
+    "has_real_display",
+    "real_display_devices",
     "describe_monitors",
 ]

@@ -452,15 +452,19 @@ class VirtualDisplay:
         return self._index is not None
 
     def __enter__(self) -> "VirtualDisplay":
-        from .display import list_monitors
+        from .display import real_display_devices
 
         path = _find_device_path()
         if path is None:
             raise VddError("未找到 Parsec 虚拟显示驱动")
 
-        # 先记下现有的屏，插完靠差集认出哪块是新的——IOCTL 只回一个内部 index，
-        # 不告诉我们 Windows 给它起了什么设备名。
-        before = {monitor.device for monitor in list_monitors()}
+        # 先记下现有的**真实输出**，插完靠差集认出哪块是新的——IOCTL 只回一个内部
+        # index，不告诉我们 Windows 给它起了什么设备名。
+        #
+        # 差集必须对「真实输出」做，不能对「所有显示设备」做：无头时桌面上只剩一块系统
+        # 占位的幻影屏，挂上虚拟屏之后 Windows 会**复用同一个设备名**，对所有设备做差集
+        # 得到空集，认不出新屏，模式也就无从应用。
+        before = real_display_devices()
 
         self._handle = _open_device(path)
         try:
@@ -475,7 +479,7 @@ class VirtualDisplay:
 
         # 拓扑变更是异步的，等它落定再去认新屏。
         time.sleep(VDD_SETTLE_SECONDS)
-        new = [m.device for m in list_monitors() if m.device not in before]
+        new = sorted(real_display_devices() - before)
         if new:
             self.device = new[0]
             if apply_mode(self.device, *self.mode):

@@ -1,15 +1,24 @@
 """无人值守时保证桌面上有一块够大的显示区域。
 
-物理显示器断开或关闭时，Windows 会把桌面回落到很小的兜底分辨率。被托管的 PC 端游戏
-窗口随之被压小，脚本侧的分辨率闸门把整轮任务打掉；更麻烦的是游戏会把这个坏尺寸记进
-自己的配置，而自动运行每轮只活几十秒，游戏来不及纠正自己，于是坏值一直留着，之后每天
-都在同一处失败。给桌面临时挂一块虚拟显示器，这条链子从起点就断了。
+所有真实输出都断开时，Windows 不会让桌面消失，而是保留一块占位的**幻影屏**。它照旧
+上报一个分辨率（实测甚至会继承上一块屏的模式），`EnumDisplayMonitors` 看起来一切正常，
+但那块屏背后没有任何输出：游戏能否正常渲染、截图链路是否可靠都没有保证，DXGI 桌面复制
+在这种屏上尤其容易出问题。
+
+冷启动时更糟——没有输出的情况下 Windows 会以一个很小的安全分辨率起来，被托管的 PC 端
+游戏窗口跟着被压小，脚本侧的分辨率闸门把整轮任务打掉；游戏还会把这个坏尺寸记进自己的
+配置，而自动运行每轮只活几十秒，游戏来不及纠正自己，于是坏值一直留着，之后每天都在
+同一处失败。
+
+所以判据不是「桌面够不够大」而是「有没有真实输出」：前者要挑阈值，而且幻影屏报的尺寸
+本来就不可信；后者是个二值事实。
 
 设计取舍：
 
 - **整轮开一次、结束拆一次**，不是每个脚本或每个用户一次：每次插拔都是一次桌面拓扑
   变更，本身就是风险源（会移动窗口）。
-- **只在没有任何一块屏够用时才插**，绝不在显示器正常时凭空多挂一块。
+- **只在没有任何真实输出时才插**，显示器正常时绝不凭空多挂一块。实测无头时挂上虚拟屏，
+  幻影屏是**被替换**而不是并存，所以桌面上仍然只有一块屏，没有多屏歧义。
 - **插完立刻重验**，不满足就拆掉——驱动可能因为被显卡驱动更新搞坏、或与其它虚拟显示
   驱动冲突而「插上了但没生效」。
 - 任何一步失败都只记日志、照常往下跑：这一层是尽力而为的改善项，不该反过来把本来
@@ -29,15 +38,27 @@ logger = get_logger("桌面保障")
 DESKTOP_MIN_CLIENT = (1280, 720)
 
 
+def _has_real_output() -> bool:
+    """桌面上有没有真实输出。查不到信息时按「有」处理，宁可不插屏也不乱动拓扑。"""
+
+    from app.utils.platform.display import has_real_display
+
+    try:
+        return has_real_display()
+    except Exception as exc:
+        logger.warning(f"查询显示输出失败，按有真实输出处理: {exc}")
+        return True
+
+
 def _desktop_has_room() -> bool:
-    """桌面上有没有一块屏放得下目标窗口。查不到显示器信息时按「够用」处理。"""
+    """插屏之后用：新挂的屏放不放得下目标窗口。"""
 
     from app.utils.platform.display import find_host_monitor
 
     try:
         return find_host_monitor(*DESKTOP_MIN_CLIENT) is not None
     except Exception as exc:
-        logger.warning(f"查询显示器失败，按桌面可用处理: {exc}")
+        logger.warning(f"查询显示器失败，按可用处理: {exc}")
         return True
 
 
@@ -79,23 +100,20 @@ async def ensure_desktop_available():
         yield None
         return
 
-    if await asyncio.to_thread(_desktop_has_room):
+    if await asyncio.to_thread(_has_real_output):
         yield None
         return
 
     from app.utils.platform.vdd import VddStatus, VirtualDisplay, probe
 
     detail = await asyncio.to_thread(_describe)
-    logger.warning(
-        f"桌面上没有一块显示器放得下 "
-        f"{DESKTOP_MIN_CLIENT[0]}x{DESKTOP_MIN_CLIENT[1]} 的游戏窗口: {detail}"
-    )
+    logger.warning(f"桌面上没有任何真实显示输出，当前只有系统占位的幻影屏: {detail}")
 
     result = await asyncio.to_thread(probe)
     if result.status is not VddStatus.OK:
         logger.warning(
             f"无法挂载虚拟显示器（{_probe_hint(result)}）。"
-            "显示器断开或关闭时 Windows 会回落到很小的分辨率，"
+            "没有真实显示输出时 Windows 只保留一块占位的幻影屏，游戏渲染与截图都可能不可靠；"
             "请接回显示器、使用显示器假负载，或安装 Parsec 虚拟显示驱动"
         )
         yield None
@@ -111,7 +129,10 @@ async def ensure_desktop_available():
         return
 
     try:
-        if not await asyncio.to_thread(_desktop_has_room):
+        effective = await asyncio.to_thread(
+            _has_real_output
+        ) and await asyncio.to_thread(_desktop_has_room)
+        if not effective:
             # 调得动不等于有效果：这一步才是「检测通过」的真正判据。
             logger.warning(
                 f"虚拟显示器已挂载但桌面仍不满足要求，已拆除: {await asyncio.to_thread(_describe)}"

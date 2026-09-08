@@ -140,18 +140,19 @@ class _SystemHandler:
         if mode in {"Shutdown", "Reboot", "Logoff"}:
             await self.kill_emulator_processes()
         logger.info(f"执行电源操作: {mode}")
-        await self._request_frontend_close()
+        # 系统电源动作必须先于前端关闭执行：请求前端退出会让 Electron 退出并连带结束后端进程，
+        # 若先等前端断开，关机/重启等命令将永远没有机会执行（issue #611）。
         await power.execute(mode)
 
     async def _request_frontend_close(self) -> None:
-        """请求前端退出，并等待主会话断开后才允许执行系统动作。"""
+        """请求前端退出，并等待主会话断开（仅用于后端自行退出的 KillSelf 场景）。"""
 
         sent = await Publisher.send(
             id=protocol.ID_MAIN, type=protocol.FRONTEND_CLOSE_REQUESTED
         )
         if not sent:
             # 当前没有前端会话，本身已满足“前端关闭”前置条件。
-            logger.info("当前无前端主连接，继续执行系统电源操作")
+            logger.info("当前无前端主连接，继续退出主程序")
             return
 
         disconnected = await MainConnection.wait_until_disconnected(

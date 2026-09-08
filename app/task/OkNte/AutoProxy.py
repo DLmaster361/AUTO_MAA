@@ -63,6 +63,7 @@ from .config_schema import (
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
 from .tools.account_switch import async_switch_account
+from .tools.config_swap import replace_config_dir
 from .tools.launcher_start import async_start_game_via_launcher
 
 logger = get_logger("OK-NTE 自动代理")
@@ -485,13 +486,7 @@ class AutoProxyTask(TaskExecuteBase):
         mas_config_dir = self._ensure_oknte_mas_config_dir()
         self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            tmp_dst = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
-            )
-            shutil.rmtree(tmp_dst, ignore_errors=True)
-            shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
-            tmp_dst.rename(self.script_config_path)
+            await replace_config_dir(mas_config_dir, self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(
                 mas_config_dir / self.script_config_path.name,

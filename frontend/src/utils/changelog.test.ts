@@ -28,19 +28,19 @@ describe('changelog 版本排序', () => {
 })
 
 describe('changelog 分类排序', () => {
-  it('重要变更、本次亮点被提前，其余分类保持原顺序，未知分类仍出现', () => {
+  it('破坏性变更、本次亮点被提前，其余分类保持原顺序，未知分类仍出现', () => {
     const ordered = orderCategories({
-      新增功能: ['a'],
-      修复BUG: ['b'],
+      新增: ['a'],
+      修复: ['b'],
       本次亮点: ['h'],
       未知的新分类: ['u'],
-      重要变更: ['c'],
+      破坏性变更: ['c'],
     })
     expect(ordered.map(c => c.name)).toEqual([
-      '重要变更',
+      '破坏性变更',
       '本次亮点',
-      '新增功能',
-      '修复BUG',
+      '新增',
+      '修复',
       '未知的新分类',
     ])
     expect(ordered.map(c => c.kind)).toEqual([
@@ -53,18 +53,18 @@ describe('changelog 分类排序', () => {
   })
 
   it('空分类被丢掉', () => {
-    expect(orderCategories({ 新增功能: [], 修复BUG: ['x'] }).map(c => c.name)).toEqual(['修复BUG'])
+    expect(orderCategories({ 新增: [], 修复: ['x'] }).map(c => c.name)).toEqual(['修复'])
   })
 })
 
 describe('buildChangelogSections', () => {
   it('按版本降序分区块，每个区块内分类置顶', () => {
     const sections = buildChangelogSections({
-      'v5.5.0-beta.2': { 修复BUG: ['old fix'] },
-      'v5.5.0-beta.10': { 新增功能: ['new'], 重要变更: ['breaking'] },
+      'v5.5.0-beta.2': { 修复: ['old fix'] },
+      'v5.5.0-beta.10': { 新增: ['new'], 破坏性变更: ['breaking'] },
     })
     expect(sections.map(s => s.version)).toEqual(['v5.5.0-beta.10', 'v5.5.0-beta.2'])
-    expect(sections[0].categories.map(c => c.name)).toEqual(['重要变更', '新增功能'])
+    expect(sections[0].categories.map(c => c.name)).toEqual(['破坏性变更', '新增'])
   })
 
   it('空输入与没有内容的版本段不会崩', () => {

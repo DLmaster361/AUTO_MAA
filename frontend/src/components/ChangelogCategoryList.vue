@@ -68,7 +68,7 @@ const renderInline = (text: string) => md.renderInline(text)
   color: var(--ant-color-primary);
 }
 
-/* 重要变更：警示色块，最醒目 */
+/* 破坏性变更：警示色块，最醒目 */
 .changelog-category--critical {
   padding: 8px 12px;
   border-radius: 6px;

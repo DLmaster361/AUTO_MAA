@@ -24,7 +24,7 @@ export interface ChangelogSection {
  * 需要置顶并特殊渲染的分类。只识别这两个名字，其余分类一律按后端给的顺序常规展示，
  * 所以这里不是分类白名单：新增的未知分类照常出现，只是排在这两类之后。
  */
-export const CRITICAL_CATEGORY = '重要变更'
+export const CRITICAL_CATEGORY = '破坏性变更'
 export const HIGHLIGHT_CATEGORY = '本次亮点'
 
 const PINNED_ORDER: Record<string, number> = {
@@ -98,7 +98,7 @@ export function sortVersionsDesc(versions: string[]): string[] {
 }
 
 /**
- * 把一个版本段的分类排成展示顺序：「重要变更」「本次亮点」置顶，其余保持原顺序。
+ * 把一个版本段的分类排成展示顺序：「破坏性变更」「本次亮点」置顶，其余保持原顺序。
  * 空分类会被丢掉。
  */
 export function orderCategories(entries: ChangelogEntries | null | undefined): ChangelogCategory[] {

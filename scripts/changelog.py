@@ -23,9 +23,9 @@
 # -*- coding: utf-8 -*-
 """更新日志与版本号的唯一入口。
 
-`CHANGELOG.md` 是**唯一由人手写**的来源：文件里第一个 `## vX.Y.Z` 标题就是当前
-（尚未发布的）版本号，它下面的条目就是这一版的更新日志。其余五处版本号与
-`res/version.json` 全部由本脚本从它生成，不要手改：
+`CHANGELOG.md` 遵循 Keep a Changelog 1.1.0，是**唯一由人手写**的来源：文件里第一个
+`## [vX.Y.Z] - 未发布` 标题就是当前尚未发布的版本号，它下面的条目就是这一版的更新日志。
+其余五处版本号与 `res/version.json` 全部由本脚本从它生成，不要手改：
 
 - `res/version.json`   —— 整份生成（前端编译期注入、发布 CI 生成 Release 正文都读它）
 - `frontend/package.json`
@@ -39,8 +39,8 @@
     python scripts/changelog.py check     # 校验各处已同步（CI 与本地打包脚本用）
     python scripts/changelog.py current   # 打印当前版本号
 
-`sync` 也会把 `CHANGELOG.md` 自身规范化（分类按固定顺序排列、空行统一），
-所以贡献者不必记住分类的先后。
+`sync` 也会把 `CHANGELOG.md` 自身规范化：重写文件头的说明、把分类按固定顺序排列、
+重新生成底部的版本对比链接。所以贡献者只要把条目写进对的分类下就行。
 """
 
 from __future__ import annotations
@@ -53,6 +53,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_URL = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
+# 未发布版本的对比链接指向开发分支
+DEVELOPMENT_BRANCH = "dev"
 
 CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
 VERSION_JSON_PATH = REPO_ROOT / "res" / "version.json"
@@ -61,43 +64,71 @@ APP_CONFIG_PATH = REPO_ROOT / "app" / "core" / "config.py"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 UV_LOCK_PATH = REPO_ROOT / "uv.lock"
 
-# 分类的固定顺序。写在前面的先展示；不在这张表里的分类照常保留，排在这些之后。
-# 这不是白名单——新分类不需要改代码，只是排在已知分类后面。
+UNRELEASED = "未发布"
+
+# 分类的固定顺序。中间六类是 Keep a Changelog 的标准分类（用中文标题，因为条目本身是
+# 中文、而且这些标题会直接显示在应用内的更新提示里）；首尾三类是本项目的扩展。
+# 这不是白名单——表外的新分类照常保留，只是排在这些之后。
 CATEGORY_ORDER = [
-    "重要变更",
-    "本次亮点",
-    "新增功能",
-    "程序优化",
-    "开发流程",
-    "修复BUG",
+    "破坏性变更",  # 本项目扩展：需要用户动手确认的改动，置顶最醒目
+    "本次亮点",  # 本项目扩展：这一版最值得看的三五条
+    "新增",  # Added
+    "变更",  # Changed
+    "弃用",  # Deprecated
+    "移除",  # Removed
+    "修复",  # Fixed
+    "安全",  # Security
+    "开发流程",  # 本项目扩展：只影响贡献者、不影响用户的改动
 ]
 
 VERSION_PATTERN = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$")
 PRE_RELEASE_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
 PRE_RELEASE_ABBR = {"alpha": "a", "beta": "b", "rc": "rc"}
 
-CHANGELOG_HEADER = """<!--
+RELEASE_HEADING = re.compile(
+    rf"^## \[(?P<version>[^\]]+)\] - (?P<date>{UNRELEASED}|\d{{4}}-\d{{2}}-\d{{2}})$"
+)
+# 底部的版本对比链接，由 render_changelog 重新生成，解析时跳过
+LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S+$")
+
+CHANGELOG_PREAMBLE = """# 更新日志
+
+本项目所有值得注意的变更都记录在此文件中。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
+
+<!--
   本文件是更新日志与版本号的唯一手写来源，请不要手改 res/version.json 等生成物。
 
-  - 文件里第一个 `## vX.Y.Z` 标题即当前（尚未发布的）版本号，新条目写进它下面。
+  - 文件顶部第一个 `## [vX.Y.Z] - 未发布` 标题即当前尚未发布的版本号，新条目写进它下面。
   - 每个 PR 都要在这里登记一条，写在最贴切的分类下；分类不存在就新建一个 `###`。
   - 条目写成一行，`- ` 开头，从用户视角描述这次改动带来了什么。
   - 不要手写 ` by [@用户](链接)` 署名，PR 合并后由机器人补。
-  - 改完运行 `python scripts/changelog.py sync` 同步各处版本号与生成物。
+  - 改完运行 `python scripts/changelog.py sync`，它会同步各处版本号、规范化本文件、
+    并重新生成底部的版本对比链接。
 
-  分类含义：
+  分类含义（中间六类来自 Keep a Changelog）：
 
-  - 重要变更：破坏性的、或需要用户动手确认的改动，会在更新提示里最醒目地展示。
+  - 破坏性变更：需要用户动手确认或会改变既有行为的改动，在更新提示里最醒目地展示。
   - 本次亮点：这一版最值得一看的三五条，正文仍写在下面对应的分类里。
-  - 新增功能 / 程序优化 / 开发流程 / 修复BUG：常规分类。
+  - 新增：新添加的功能。
+  - 变更：对现有功能的变更，含优化与调整。
+  - 弃用：已经不建议使用、即将移除的功能。
+  - 移除：已经移除的功能。
+  - 修复：对 bug 的修复。
+  - 安全：对安全性的改进。
+  - 开发流程：只影响贡献者、用户看不见的改动。
 -->
-
-# 更新日志
 """
 
 
 class ChangelogError(Exception):
     """CHANGELOG.md 不符合约定的格式。"""
+
+
+Sections = Dict[str, Dict[str, List[str]]]
+Dates = Dict[str, str]
 
 
 def read_text(path: Path) -> str:
@@ -112,51 +143,66 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8", newline="\n")
 
 
-def parse_changelog(text: str) -> Tuple[str, Dict[str, Dict[str, List[str]]]]:
-    """把 CHANGELOG.md 解析成 (当前版本号, {版本: {分类: [条目]}})。"""
+def parse_changelog(text: str) -> Tuple[str, Sections, Dates]:
+    """把 CHANGELOG.md 解析成 (当前版本号, {版本: {分类: [条目]}}, {版本: 日期})。
 
-    sections: Dict[str, Dict[str, List[str]]] = {}
+    第一个 `## [...]` 之前的内容是文件头说明，整段由 render_changelog 重新生成，
+    这里一律跳过，所以文件头里可以写任意散文与注释。
+    """
+
+    sections: Sections = {}
+    dates: Dates = {}
     current_version: str | None = None
     current_category: str | None = None
-    in_comment = False
+    seen_release = False
 
     for number, raw_line in enumerate(text.splitlines(), start=1):
         line = raw_line.rstrip()
         stripped = line.strip()
 
-        if in_comment:
-            if "-->" in stripped:
-                in_comment = False
+        is_release_heading = stripped.startswith("## ")
+        if not seen_release and not is_release_heading:
             continue
 
-        # 注释与一级标题只允许出现在第一个版本段之前（即文件头那段说明）。
-        # 版本段里出现它们没有意义，而且 render_changelog 不会保留，
-        # sync 一跑就会把它们连同被注释吞掉的条目一起删掉。
-        if stripped.startswith("<!--") or stripped.startswith("# "):
-            if current_version is not None:
+        if is_release_heading:
+            seen_release = True
+            matched = RELEASE_HEADING.match(stripped)
+            if matched is None:
                 raise ChangelogError(
-                    f"第 {number} 行：版本段里不能写注释或一级标题，"
-                    "它们不会被保留，sync 会把它们删掉"
+                    f"第 {number} 行：版本标题必须形如 "
+                    f"`## [v5.5.0-beta.3] - 2026-08-31` 或 `## [v5.5.0-beta.3] - {UNRELEASED}`，"
+                    f"实际是 {stripped!r}"
                 )
-            if stripped.startswith("<!--") and "-->" not in stripped:
-                in_comment = True
+            version = matched.group("version")
+            date = matched.group("date")
+            if not VERSION_PATTERN.match(version):
+                raise ChangelogError(
+                    f"第 {number} 行：版本号必须形如 `v5.5.0-beta.3`，实际是 {version!r}"
+                )
+            if version in sections:
+                raise ChangelogError(f"第 {number} 行：版本 {version} 重复出现")
+            if date == UNRELEASED and sections:
+                raise ChangelogError(
+                    f"第 {number} 行：只有文件顶部的第一个版本可以标 {UNRELEASED}"
+                )
+            sections[version] = {}
+            dates[version] = date
+            current_version = version
+            current_category = None
             continue
 
         if not stripped:
             continue
 
-        if stripped.startswith("## "):
-            version = stripped[3:].strip()
-            if not VERSION_PATTERN.match(version):
-                raise ChangelogError(
-                    f"第 {number} 行：版本标题必须形如 `## v5.5.0-beta.3`，实际是 {stripped!r}"
-                )
-            if version in sections:
-                raise ChangelogError(f"第 {number} 行：版本 {version} 重复出现")
-            sections[version] = {}
-            current_version = version
-            current_category = None
+        # 底部的版本对比链接由 render 重新生成，解析时忽略
+        if LINK_DEFINITION.match(stripped):
             continue
+
+        if stripped.startswith("<!--") or stripped.startswith("# "):
+            raise ChangelogError(
+                f"第 {number} 行：版本段里不能写注释或一级标题，"
+                "它们不会被保留，sync 会把它们删掉"
+            )
 
         if stripped.startswith("### "):
             if current_version is None:
@@ -195,16 +241,10 @@ def parse_changelog(text: str) -> Tuple[str, Dict[str, Dict[str, List[str]]]]:
             "条目必须写成单独一行、以 `- ` 开头。"
         )
 
-    if in_comment:
-        raise ChangelogError(
-            "文件末尾仍有未闭合的 `<!--` 注释，它后面的条目会被整段吞掉"
-        )
-
     if not sections:
-        raise ChangelogError("CHANGELOG.md 里没有任何 `## vX.Y.Z` 版本段")
+        raise ChangelogError("CHANGELOG.md 里没有任何 `## [vX.Y.Z] - 日期` 版本段")
 
-    current_version = next(iter(sections))
-    return current_version, sections
+    return next(iter(sections)), sections, dates
 
 
 def order_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -215,22 +255,47 @@ def order_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
     return {name: categories[name] for name in known + unknown}
 
 
-def render_changelog(sections: Dict[str, Dict[str, List[str]]]) -> str:
-    lines = [CHANGELOG_HEADER.rstrip("\n"), ""]
+def render_links(sections: Sections, dates: Dates) -> List[str]:
+    """按 Keep a Changelog 的做法，在文件底部给每个版本生成对比链接。
+
+    未发布版本对到开发分支；最老的那一版没有可比对象，指向它自己的 Release 页。
+    """
+
+    versions = list(sections)
+    lines: List[str] = []
+    for index, version in enumerate(versions):
+        previous = versions[index + 1] if index + 1 < len(versions) else None
+        if previous is None:
+            target = f"{REPO_URL}/releases/tag/{version}"
+        elif dates[version] == UNRELEASED:
+            target = f"{REPO_URL}/compare/{previous}...{DEVELOPMENT_BRANCH}"
+        else:
+            target = f"{REPO_URL}/compare/{previous}...{version}"
+        lines.append(f"[{version}]: {target}")
+    return lines
+
+
+def render_changelog(sections: Sections, dates: Dates) -> str:
+    lines = [CHANGELOG_PREAMBLE.rstrip("\n"), ""]
     for version, categories in sections.items():
-        lines.append(f"## {version}")
+        lines.append(f"## [{version}] - {dates[version]}")
         lines.append("")
         for category, items in order_categories(categories).items():
             lines.append(f"### {category}")
             lines.append("")
             lines.extend(f"- {item}" for item in items)
             lines.append("")
+    lines.extend(render_links(sections, dates))
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def render_version_json(
-    current_version: str, sections: Dict[str, Dict[str, List[str]]]
-) -> str:
+def render_version_json(current_version: str, sections: Sections) -> str:
+    """生成 res/version.json。
+
+    只写版本与分类条目，不写日期——这份 JSON 的结构是已发布客户端解析更新提示的契约，
+    发布 CI 会把它整个塞进 Release 正文首行的 HTML 注释里。
+    """
+
     payload = {
         "version": current_version,
         "version_info": {
@@ -279,11 +344,11 @@ UV_LOCK_VERSION = re.compile(
 def build_expected() -> Dict[Path, str]:
     """算出每个生成物应有的完整内容。"""
 
-    current_version, sections = parse_changelog(read_text(CHANGELOG_PATH))
+    current_version, sections, dates = parse_changelog(read_text(CHANGELOG_PATH))
     pep440_version = to_pep440(current_version)
 
     return {
-        CHANGELOG_PATH: render_changelog(sections),
+        CHANGELOG_PATH: render_changelog(sections, dates),
         VERSION_JSON_PATH: render_version_json(current_version, sections),
         PACKAGE_JSON_PATH: substitute_once(
             read_text(PACKAGE_JSON_PATH),
@@ -344,13 +409,13 @@ def command_check() -> int:
         )
         return 1
 
-    current_version, _ = parse_changelog(read_text(CHANGELOG_PATH))
+    current_version, _, _ = parse_changelog(read_text(CHANGELOG_PATH))
     print(f"版本号一致: {current_version}")
     return 0
 
 
 def command_current() -> int:
-    current_version, _ = parse_changelog(read_text(CHANGELOG_PATH))
+    current_version, _, _ = parse_changelog(read_text(CHANGELOG_PATH))
     print(current_version)
     return 0
 

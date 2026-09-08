@@ -9,7 +9,7 @@
     class="update-modal"
   >
     <div class="update-container">
-      <!-- 更新内容展示：按版本分区块，重要变更 / 本次亮点置顶 -->
+      <!-- 更新内容展示：按版本分区块，破坏性变更 / 本次亮点置顶 -->
       <div class="update-content">
         <ChangelogView :data="updateData" />
       </div>

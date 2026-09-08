@@ -1,4 +1,4 @@
-"""无人值守时保证桌面上有一块够大的显示区域。
+"""无人值守时保证桌面上有真实的显示输出。
 
 所有真实输出都断开时，Windows 不会让桌面消失，而是保留一块占位的**幻影屏**。它照旧
 上报一个分辨率（实测甚至会继承上一块屏的模式），`EnumDisplayMonitors` 看起来一切正常，
@@ -166,14 +166,15 @@ async def ensure_desktop_available():
         yield None
         return
 
+    # 清理孤儿放在开关判断**之前**：用户在崩溃之后把开关关掉，那块没人认领的屏同样
+    # 得能被清掉。清理只动自己记账过、且记录进程已死的 index，开关关着做这件事是安全的。
+    await asyncio.to_thread(cleanup_orphan_display)
+
     if not Config.get("Display", "IfEnableVirtualDisplay"):
         yield None
         return
 
-    # 先清掉上次强杀留下的孤儿，再判断——否则孤儿本身就是「真实输出」，判据会一路放行，
-    # 那块没人管的屏就永远留在用户桌面上了。
-    await asyncio.to_thread(cleanup_orphan_display)
-
+    # 孤儿清掉之后再判断——否则孤儿本身就是「真实输出」，判据会一路放行。
     if await asyncio.to_thread(_has_real_output):
         yield None
         return
@@ -202,6 +203,10 @@ async def ensure_desktop_available():
         yield None
         return
 
+    if display.index is not None:
+        # 记账必须在挂上之后立刻写：进程随时可能被强杀，写晚了这块屏就成了没人认领的孤儿。
+        await asyncio.to_thread(_write_state, display.index)
+
     try:
         effective = await asyncio.to_thread(
             _has_real_output
@@ -215,6 +220,13 @@ async def ensure_desktop_available():
             _clear_state()
             yield None
             return
+        if display.applied_mode != mode:
+            # 分辨率没切成不致命（默认模式本来就是 1920x1080@60），但必须说出来，
+            # 否则用户选了 30Hz 却静默跑在 60Hz 上。
+            logger.warning(
+                f"虚拟显示器未能切换到 {mode[0]}x{mode[1]}@{mode[2]}，"
+                f"实际为 {display.applied_mode}"
+            )
         logger.info(f"已挂载虚拟显示器: {await asyncio.to_thread(_describe)}")
         yield display
     finally:

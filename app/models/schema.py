@@ -298,7 +298,7 @@ class GlobalConfig_Function(BaseModel):
 class GlobalConfig_Display(BaseModel):
     IfEnableVirtualDisplay: Optional[bool] = Field(
         default=None,
-        description="无人值守时，桌面上没有一块屏够用则挂载虚拟显示器（需自行安装 Parsec 虚拟显示驱动）",
+        description="无人值守时，检测不到任何真实显示输出则临时挂载虚拟显示器（需自行安装 Parsec 虚拟显示驱动）",
     )
     VirtualDisplayMode: Optional[str] = Field(
         default=None, description="虚拟显示器的分辨率与刷新率，形如 1920x1080@60"

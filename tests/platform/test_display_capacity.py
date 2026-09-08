@@ -64,10 +64,14 @@ def test_taskbar_is_excluded_from_usable_area() -> None:
 
 
 def test_headless_fallback_resolution_cannot_host_720p_window() -> None:
-    """显示器断开后 Windows 的兜底分辨率放不下 1280x720 窗口。
+    """很小的安全分辨率放不下 1280x720 窗口。
 
-    这就是 2026-09-07 现场的成因：桌面被压小 -> 游戏窗口跟着变小 -> 脚本侧的
-    分辨率闸门把整轮任务打掉。
+    这是无输出**冷启动**时 Windows 起来的样子（运行中断开输出并不会改分辨率，
+    只会留下一块保持原分辨率的幻影屏）。桌面被压小 -> 游戏窗口跟着变小 ->
+    脚本侧的分辨率闸门把整轮任务打掉。
+
+    注意这只是插屏之后的次要尺寸校验；触发是否插屏的主判据是「有没有真实显示输出」，
+    见 tests/core/test_desktop_guard.py。
     """
 
     from app.utils.platform.display import can_host_client

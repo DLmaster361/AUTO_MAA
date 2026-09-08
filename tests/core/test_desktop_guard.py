@@ -10,11 +10,18 @@
 """
 
 import asyncio
+import json
+import os
 
 import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
 from app.core import desktop_guard
+from app.utils.platform import IS_WINDOWS
+
+pytestmark = pytest.mark.skipif(
+    not IS_WINDOWS, reason="虚拟显示器与显示输出判据仅 Windows 实现"
+)
 
 
 def _run(cm):
@@ -152,6 +159,7 @@ def test_attached_but_ineffective_display_is_removed(
 
     class _FakeDisplay:
         def __init__(self, mode):
+            self.index = 0
             self.applied_mode = None
             self.device = None
             self._active = False
@@ -257,3 +265,91 @@ def test_pid_alive_defaults_to_true_when_undecidable(
 
     monkeypatch.setattr(builtins, "__import__", _no_psutil)
     assert desktop_guard._pid_alive(999999) is True
+
+
+def test_attaching_records_state_for_crash_recovery(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """挂上虚拟屏之后必须立刻写记账，否则孤儿清理永远拿不到数据。
+
+    这条是补上来的：`_write_state` 曾经只有定义没有调用，读端的三条测试全绿，
+    但整个孤儿清理在生产路径上是死代码——进程被强杀后那块屏永远留在桌面上。
+    """
+
+    import app.utils.platform.vdd as vdd
+
+    state = tmp_path / "virtual_display.json"
+    monkeypatch.setattr(desktop_guard, "STATE_FILE", state)
+    monkeypatch.setattr(desktop_guard, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        desktop_guard.Config, "get", lambda group, name: True, raising=False
+    )
+    monkeypatch.setattr(desktop_guard, "cleanup_orphan_display", lambda: None)
+    monkeypatch.setattr(desktop_guard, "_describe", lambda: "仅有幻影屏")
+    monkeypatch.setattr(
+        vdd, "probe", lambda: vdd.VddProbeResult(vdd.VddStatus.OK, version=45)
+    )
+
+    # 第一次问（触发判据）说没有真实输出，之后（插屏后重验）说有。
+    answers = iter([False, True])
+    monkeypatch.setattr(desktop_guard, "_has_real_output", lambda: next(answers, True))
+    monkeypatch.setattr(desktop_guard, "_desktop_has_room", lambda: True)
+
+    class _FakeDisplay:
+        def __init__(self, mode):
+            self.index = 7
+            self.device = "DISPLAYTEST"
+            self.applied_mode = mode
+            self._active = False
+
+        @property
+        def active(self):
+            return self._active
+
+        def __enter__(self):
+            self._active = True
+            return self
+
+        def close(self):
+            self._active = False
+
+    monkeypatch.setattr(vdd, "VirtualDisplay", _FakeDisplay)
+
+    seen: list[dict] = []
+
+    async def main():
+        async with desktop_guard.ensure_desktop_available() as display:
+            assert display is not None
+            assert state.exists(), "挂上屏之后必须已经写好记账"
+            seen.append(json.loads(state.read_text(encoding="utf-8")))
+
+    asyncio.run(main())
+
+    assert seen and seen[0]["index"] == 7, f"记账里应当是挂上那块屏的 index: {seen}"
+    assert seen[0]["pid"] == os.getpid()
+    assert not state.exists(), "正常收尾要清掉记账"
+
+
+def test_orphan_cleanup_runs_even_when_switch_is_off(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """开关关掉之后，上次遗留的孤儿仍要能被清掉。
+
+    用户崩溃之后很可能顺手把开关关了；清理若排在开关判断之后，那块没人认领的屏
+    就永远留在桌面上。
+    """
+
+    state = tmp_path / "virtual_display.json"
+    monkeypatch.setattr(desktop_guard, "STATE_FILE", state)
+    monkeypatch.setattr(desktop_guard, "IS_WINDOWS", True)
+    monkeypatch.setattr(
+        desktop_guard.Config, "get", lambda group, name: False, raising=False
+    )
+
+    called: list[bool] = []
+    monkeypatch.setattr(
+        desktop_guard, "cleanup_orphan_display", lambda: called.append(True)
+    )
+
+    assert _run(desktop_guard.ensure_desktop_available()) is None
+    assert called, "开关关着也必须尝试清理孤儿"

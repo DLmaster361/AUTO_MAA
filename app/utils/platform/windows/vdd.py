@@ -1,8 +1,9 @@
 """Parsec 虚拟显示驱动（Parsec VDD）客户端。
 
-物理显示器断开或关闭时 Windows 会回落到很小的兜底分辨率，被托管的桌面游戏窗口随之
-被压小，脚本侧的分辨率闸门把整轮任务打掉；游戏还会把这个坏尺寸记进自己的配置，之后
-每轮自动运行都不达标。给桌面挂一块虚拟显示器就从源头断掉这条链子。
+所有真实显示输出都断开后，Windows 只保留一块占位的幻影屏，它照旧上报一个看着正常的
+分辨率但背后没有输出；冷启动时更会直接起在很小的安全分辨率上，被托管的桌面游戏窗口被
+压小、并被游戏写进自己的配置，之后每轮自动运行都不达标。给桌面挂一块真实的虚拟显示器
+就从源头断掉这条链子。
 
 **驱动不随 MAS 分发，由用户自行安装**，MAS 只探测并驱动它——姿态与模拟器一致
 （只调用用户已装的可执行文件，不释放任何文件）。选 Parsec VDD 是因为它是唯一能被
@@ -41,13 +42,17 @@ FILE_FLAG_OVERLAPPED = 0x40000000
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 ERROR_ACCESS_DENIED = 5
 ERROR_NO_MORE_ITEMS = 259
+ERROR_IO_PENDING = 997
 
 VDD_IOCTL_ADD = 0x0022E004
 VDD_IOCTL_REMOVE = 0x0022A008
 VDD_IOCTL_UPDATE = 0x0022A00C
 VDD_IOCTL_VERSION = 0x0022E010
 
-# 驱动要求心跳间隔小于 100ms；停约 1s 就会拔掉所有虚拟屏。取一半留足余量。
+# 驱动要求心跳间隔小于 100ms。取一半留足余量。
+# 注意：停止心跳**不会**让虚拟屏自己消失（实测杀掉进程 6s 后屏仍在），拆屏必须显式
+# 发 VDD_IOCTL_REMOVE；而且心跳是按驱动计的，任何进程在 ping 都会把该驱动下所有屏
+# 一起续命，包括别的进程遗留的孤儿。
 VDD_PING_INTERVAL = 0.05
 VDD_IOCTL_TIMEOUT_MS = 5000
 # 插屏后桌面拓扑变更是异步的，给系统一点时间再去重新枚举显示器。
@@ -332,7 +337,7 @@ def _ioctl(handle: int, code: int, data: bytes = b"") -> int:
     if not overlapped.hEvent:
         raise ctypes.WinError(ctypes.get_last_error())
     try:
-        _kernel32.DeviceIoControl(
+        ok = _kernel32.DeviceIoControl(
             handle,
             code,
             in_buf,
@@ -342,6 +347,15 @@ def _ioctl(handle: int, code: int, data: bytes = b"") -> int:
             None,
             ctypes.byref(overlapped),
         )
+        if not ok:
+            # 重叠 I/O 正常会返回 FALSE + ERROR_IO_PENDING，那种情况交给
+            # GetOverlappedResultEx 等；其它错误码说明 IRP 根本没发出去，必须当场报错。
+            # 不看返回值的话，OVERLAPPED.Internal 仍是 0，GetOverlappedResultEx 会返回
+            # 成功、_ioctl 返回 0——VDD_IOCTL_ADD 就会被当成「拿到了 index 0」，
+            # 随后 close() 去 REMOVE index 0，可能拆掉别的进程的屏。
+            err = ctypes.get_last_error()
+            if err != ERROR_IO_PENDING:
+                raise ctypes.WinError(err)
         transferred = wintypes.DWORD(0)
         ok = _kernel32.GetOverlappedResultEx(
             handle,
@@ -462,8 +476,9 @@ def remove_display_index(index: int) -> bool:
 class VirtualDisplay:
     """一块虚拟显示器的生命周期。用作上下文管理器。
 
-    心跳跑在独立的守护线程上，**不能用 asyncio 任务**：事件循环被任何同步操作卡住
-    超过 1 秒，驱动就会把屏拔掉，而后端里能卡住循环的地方并不少。
+    心跳跑在独立的守护线程上，**不能用 asyncio 任务**：事件循环被任何同步操作卡住就会
+    停止 ping，而后端里能卡住循环的地方并不少。停 ping 本身不会让屏消失，但驱动会认为
+    这块屏已经无人认领，后续行为不可预期。
     """
 
     def __init__(self, mode: tuple[int, int, int] = DEFAULT_VDD_MODE) -> None:
@@ -514,10 +529,13 @@ class VirtualDisplay:
         # 拓扑变更是异步的，等它落定再去认新屏。
         time.sleep(VDD_SETTLE_SECONDS)
         new = sorted(real_display_devices() - before)
-        if new:
-            self.device = new[0]
-            if apply_mode(self.device, *self.mode):
-                self.applied_mode = current_mode(self.device)
+        if not new:
+            # 认不出新屏就如实抛错。早先这里静默返回、applied_mode 保持 None，上层于是
+            # 报「驱动不支持所选的分辨率，请换一档」——换档根本无济于事，误导排查方向。
+            raise VddError("虚拟显示器已挂载，但未能在桌面上认出对应的显示设备")
+        self.device = new[0]
+        if apply_mode(self.device, *self.mode):
+            self.applied_mode = current_mode(self.device)
         return self
 
     def __exit__(self, *_exc) -> None:
@@ -531,8 +549,8 @@ class VirtualDisplay:
             try:
                 _ioctl(handle, VDD_IOCTL_UPDATE)
             except OSError:
-                # 保活断了屏会自己消失，这里不做重连：拓扑已经变了，
-                # 上层重新判定比在这里硬撑更安全。
+                # 这里不做重连：句柄已经出问题，上层重新判定比在这里硬撑更安全。
+                # 屏不会因为停 ping 自己消失，收尾仍由 close() 的显式 REMOVE 负责。
                 return
 
     def _add_with_retry(self) -> int:
@@ -555,7 +573,9 @@ class VirtualDisplay:
     def close(self) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=2)
+            # 超时必须大于单次 IOCTL 的超时：心跳若正卡在 GetOverlappedResultEx 里，
+            # join 提前返回会导致我们在它仍持有句柄时 CloseHandle。
+            self._thread.join(timeout=VDD_IOCTL_TIMEOUT_MS / 1000 + 2)
             self._thread = None
         handle, index = self._handle, self._index
         removed = False

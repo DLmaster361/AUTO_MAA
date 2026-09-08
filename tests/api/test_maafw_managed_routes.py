@@ -8,12 +8,14 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import app.api.scripts as scripts_api
+from app.models.config import MaaFWConfig, MaaFWManagedConfig
 from app.models.schema import (
     MaaFWManagedGcIn,
     MaaFWManagedImportIn,
     MaaFWManagedSwitchIn,
     MaaFWManagedVersionDeleteIn,
     MaaFWManagedVersionsIn,
+    MaaFWProjectUpdateIn,
 )
 
 MANIFEST = {
@@ -176,6 +178,81 @@ class InventoryAndGcRouteTest(unittest.IsolatedAsyncioTestCase):
         store.collect_garbage.assert_called_once_with(dry_run=True)
         self.assertIn("预览完成", out.message)
         self.assertIn("1 项", out.message)
+
+
+class ManagedUpdateDispatchTest(unittest.IsolatedAsyncioTestCase):
+    """/maafw/update 必须按形态分流。
+
+    托管脚本的 Info.Path 指向 Store 产出的 checkout，而 `_maafw_script_config`
+    只判 `isinstance(..., MaaFWConfig)`——托管是它的子类，拦不住。分流没接上，
+    这条路由就会拿 checkout 去做原地更新，把不可变版本的工作副本就地改写。
+    """
+
+    @staticmethod
+    async def _managed_config(project_id: str = "m9a", version: str = "v4.6.0"):
+        config = MaaFWManagedConfig()
+        await config.set("Managed", "ProjectId", project_id, commit=False)
+        await config.set("Managed", "Version", version, commit=False)
+        return config
+
+    async def test_managed_script_takes_the_store_path_not_the_in_place_one(
+        self,
+    ) -> None:
+        outcome = MagicMock()
+        outcome.updated = False
+        outcome.reason = "已是最新版本：v4.6.0"
+        outcome.as_dict.return_value = {"checked": True, "currentVersion": "v4.6.0"}
+
+        with (
+            patch.object(
+                scripts_api,
+                "_maafw_script_config",
+                return_value=await self._managed_config(),
+            ),
+            patch.object(scripts_api, "_managed_gateway", MagicMock()),
+            patch(
+                "app.task.MaaFW.tools.embedded.managed_update.update_managed_project",
+                AsyncMock(return_value=outcome),
+            ) as run,
+            patch.object(
+                scripts_api, "update_maafw_project_if_needed", AsyncMock()
+            ) as in_place,
+        ):
+            result = await scripts_api.update_maafw_project(
+                MaaFWProjectUpdateIn(scriptId="s1", action="check")
+            )
+
+        self.assertEqual(result.code, 200)
+        run.assert_awaited_once()
+        in_place.assert_not_awaited()
+        # check 只问有没有新版本，不去换下载地址。
+        self.assertIs(run.await_args.kwargs["check_only"], True)
+
+    async def test_unbound_managed_script_is_rejected_before_any_network_call(
+        self,
+    ) -> None:
+        with (
+            patch.object(
+                scripts_api,
+                "_maafw_script_config",
+                return_value=await self._managed_config(project_id="", version=""),
+            ),
+            patch(
+                "app.task.MaaFW.tools.embedded.managed_update.update_managed_project",
+                AsyncMock(),
+            ) as run,
+        ):
+            result = await scripts_api.update_maafw_project(
+                MaaFWProjectUpdateIn(scriptId="s1", action="apply")
+            )
+
+        self.assertEqual(result.code, 400)
+        self.assertIn("尚未导入项目", result.message)
+        run.assert_not_awaited()
+
+    async def test_plain_maafw_script_is_untouched_by_the_dispatch(self) -> None:
+        # 自选目录形态不能被误分流：它没有 Managed 绑定，会被当成「未导入」拒掉。
+        self.assertFalse(isinstance(MaaFWConfig(), MaaFWManagedConfig))
 
 
 if __name__ == "__main__":

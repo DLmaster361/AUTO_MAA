@@ -130,5 +130,47 @@ class ManagedLayerIsWiredTest(unittest.TestCase):
         self.assertTrue(hasattr(AppConfig, "script_config_transaction"))
 
 
+class ManagedRemoteUpdateIsWiredTest(unittest.TestCase):
+    """远程更新那条链路只有全接上才有效，缺一环都是静默降级。"""
+
+    def test_gateway_carries_the_project_update_service(self) -> None:
+        # 这一位曾经固定传 None（本地导入用不到）。仍是 None 的话，托管脚本
+        # 的自动更新会在「缺少服务」上失败，而失败是被吞掉只记日志的。
+        from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+
+        gateway = MaaFWEmbeddedManager._resolve_managed_gateway()
+        self.assertIsNotNone(gateway.project_update)
+        self.assertTrue(hasattr(gateway.project_update, "discover_update"))
+        self.assertTrue(hasattr(gateway.project_update, "download_package"))
+        self.assertTrue(hasattr(gateway.project_update, "release_download_package"))
+
+    def test_update_runs_before_the_environment_is_prepared(self) -> None:
+        """顺序反了不会报错，只是这一轮仍然跑旧版本。
+
+        准备环境会解析 Store 的当前版本并建 checkout；更新排在它后面，切过去的
+        新版本要等下一次运行才生效，日志却已经说「已更新」。
+        """
+
+        import inspect
+
+        from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+
+        source = inspect.getsource(MaaFWEmbeddedManager.main_task)
+        update_at = source.find("_run_managed_project_update")
+        prepare_at = source.find("_prepare_managed_environment")
+        self.assertGreater(update_at, -1)
+        self.assertGreater(prepare_at, -1)
+        self.assertLess(update_at, prepare_at)
+
+    def test_managed_scripts_skip_the_in_place_updater(self) -> None:
+        # 就地更新会把 Store 产出的 checkout 当用户目录改写。
+        import inspect
+
+        from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+
+        source = inspect.getsource(MaaFWEmbeddedManager.main_task)
+        self.assertIn("not self._is_managed", source)
+
+
 if __name__ == "__main__":
     unittest.main()

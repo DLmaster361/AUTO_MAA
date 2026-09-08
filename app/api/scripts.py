@@ -34,6 +34,7 @@ from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
+from app.models.config import MaaFWManagedConfig as RuntimeMaaFWManagedConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
@@ -53,6 +54,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _public_package_source,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
+    describe_cdk,
     resolve_update_credentials,
 )
 from app.utils import get_logger
@@ -799,6 +801,109 @@ def _managed_projection(manifest: dict) -> MaaFWManagedProjection:
     )
 
 
+def _managed_gateway():
+    """带 project_update 的托管服务网关；与运行时那条用的是同一个构造。"""
+
+    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+
+    return MaaFWEmbeddedManager._resolve_managed_gateway()
+
+
+async def _run_managed_project_update(
+    payload: "MaaFWProjectUpdateIn",
+    script_config: RuntimeMaaFWManagedConfig,
+) -> "MaaFWProjectUpdateOut":
+    """托管脚本的检查/更新。
+
+    托管脚本的 ``Info.Path`` 指向 Store 产出的 checkout，**绝不能走原地更新**：
+    那会把不可变版本的工作副本就地改写，Store 记的指纹与盘上内容当场分叉。
+    这里改成「下整包 → 导入为新版本 → 切过去」，旧版本仍留在 Store 里可回退。
+    """
+
+    from app.task.MaaFW.tools.embedded.managed import managed_project_identity
+    from app.task.MaaFW.tools.embedded.managed_update import (
+        build_managed_source_config,
+        managed_download_root,
+        update_managed_project,
+    )
+
+    manifest = script_config.get("Managed", "ProjectManifest")
+    if not isinstance(manifest, dict):
+        manifest = {}
+    project_id, current_version = managed_project_identity(
+        {
+            "ProjectId": script_config.get("Managed", "ProjectId"),
+            "Version": script_config.get("Managed", "Version"),
+            "ProjectManifest": manifest,
+        }
+    )
+    if not project_id:
+        return MaaFWProjectUpdateOut(
+            code=400,
+            status="error",
+            message="该托管脚本尚未导入项目，请先在项目配置里导入",
+        )
+
+    credentials = resolve_update_credentials(script_config)
+    _maafw_update_logger.info(
+        f"托管项目更新({payload.action}): script={payload.scriptId} "
+        f"project={project_id} channel={credentials.channel} "
+        f"cdk={describe_cdk(credentials)}"
+    )
+
+    try:
+        outcome = await update_managed_project(
+            _managed_gateway(),
+            script_id=payload.scriptId,
+            project_id=project_id,
+            current_version=current_version,
+            source_config=build_managed_source_config(
+                package_source=credentials.package_source,
+                mirror_cdk=credentials.cdk,
+                channel=credentials.channel,
+                manifest=manifest,
+            ),
+            download_root=managed_download_root(),
+            proxy=Config.proxy,
+            check_only=payload.action == "check",
+            send_log=_maafw_update_send_log,
+        )
+    except Exception as exc:
+        return MaaFWProjectUpdateOut(
+            code=400, status="error", message=f"托管项目更新失败: {exc}"
+        )
+
+    if outcome.updated:
+        # 版本已经切了，脚本配置里的绑定必须跟着换，否则下次准备环境仍按旧
+        # manifest 校验，会以「绑定与 Store 不一致」失败。
+        try:
+            store = _managed_store()
+            resolved = await asyncio.to_thread(
+                store.resolve_project, project_id, outcome.latest_version
+            )
+            await Config.update_script(
+                payload.scriptId,
+                {
+                    "Managed": {
+                        "Version": outcome.latest_version,
+                        "StoreId": resolved["storeId"],
+                        "ProjectManifest": resolved.get("manifest") or {},
+                    }
+                },
+            )
+        except Exception as exc:
+            return MaaFWProjectUpdateOut(
+                code=500,
+                status="error",
+                message=f"已更新到 {outcome.latest_version} 但更新脚本绑定失败: {exc}",
+            )
+
+    return MaaFWProjectUpdateOut(
+        message=outcome.reason,
+        data=MaaFWProjectUpdateData(**outcome.as_dict()),
+    )
+
+
 @router.post(
     "/maafw/managed/import",
     tags=["MaaFW"],
@@ -925,7 +1030,9 @@ async def switch_managed_maafw_version(
 ) -> OutBase:
     store = _managed_store()
     try:
-        await asyncio.to_thread(store.switch_version, payload.projectId, payload.version)
+        await asyncio.to_thread(
+            store.switch_version, payload.projectId, payload.version
+        )
     except Exception as exc:
         return OutBase(code=400, status="error", message=f"切换版本失败: {exc}")
 
@@ -968,7 +1075,9 @@ async def delete_managed_maafw_version(
 
     store = _managed_store()
     try:
-        await asyncio.to_thread(store.delete_version, payload.projectId, payload.version)
+        await asyncio.to_thread(
+            store.delete_version, payload.projectId, payload.version
+        )
     except Exception as exc:
         return OutBase(code=400, status="error", message=f"删除版本失败: {exc}")
     return OutBase(message=f"已删除 {payload.projectId}@{payload.version}")
@@ -1102,6 +1211,11 @@ async def update_maafw_project(
         return MaaFWProjectUpdateOut(
             code=400, status="error", message=f"MFW 脚本无效: {exc}"
         )
+
+    # 托管脚本是 MaaFWConfig 的子类，上面那个 isinstance 拦不住它；不在这里
+    # 分流，下面就会拿 checkout 路径去做原地更新。
+    if isinstance(script_config, RuntimeMaaFWManagedConfig):
+        return await _run_managed_project_update(payload, script_config)
 
     project_value = str(script_config.get("Info", "Path") or "").strip()
     if not project_value:

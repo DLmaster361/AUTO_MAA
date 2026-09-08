@@ -407,7 +407,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         与 `_resolve_runtime_pool_route` 是同一个处境：插件形态下这些依赖由
         `adapter.py` 查服务契约后注入，树内没有服务注册表，直接实例化。
-        `project_update` 暂不接入——远程下载属于后续里程碑，本地导入不需要。
         """
 
         from app.task.MaaFW.tools.core.automas_maafw_interface.service import (
@@ -415,6 +414,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         )
         from app.task.MaaFW.tools.core.automas_maafw_project_store import (
             MaaFWProjectStoreService,
+        )
+        from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+            MaaFWProjectUpdateService,
         )
         from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
             MaaFWRuntimePoolService,
@@ -424,7 +426,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         return ManagedServiceGateway(
             MaaFWProjectStoreService(),
             MaaFWRuntimePoolService(),
-            None,
+            MaaFWProjectUpdateService(),
             MaaFWInterfaceService(),
         )
 
@@ -692,6 +694,79 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 "；".join(text for _, text in lines),
             )
 
+    async def _run_managed_project_update(self, phase: AutoUpdateMode) -> None:
+        """托管形态的按时机更新。与自选目录那条一样，任何失败都不阻断运行。
+
+        运行前的调用**必须排在 `_prepare_managed_environment` 之前**：准备那步
+        会解析 Store 的当前版本并建 checkout，顺序反了这一轮仍然跑旧版本，
+        表现成「日志说更新成功、跑的还是旧的」。
+        """
+
+        from app.task.MaaFW.tools.embedded.managed import managed_project_identity
+        from app.task.MaaFW.tools.embedded.managed_update import (
+            build_managed_source_config,
+            managed_download_root,
+            update_managed_project,
+        )
+
+        assert self.script_config is not None
+        phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
+        manifest = self.script_config.get("Managed", "ProjectManifest")
+        if not isinstance(manifest, dict):
+            manifest = {}
+        project_id, current_version = managed_project_identity(
+            {
+                "ProjectId": self.script_config.get("Managed", "ProjectId"),
+                "Version": self.script_config.get("Managed", "Version"),
+                "ProjectManifest": manifest,
+            }
+        )
+        if not project_id:
+            self._append_update_log("托管脚本尚未绑定项目，跳过更新")
+            return
+
+        credentials = resolve_update_credentials(self.script_config)
+        self._append_update_log(
+            f"开始{phase_zh}检查托管项目更新：下载源 {credentials.source}，"
+            f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}"
+        )
+
+        try:
+            outcome = await update_managed_project(
+                self._resolve_managed_gateway(),
+                script_id=str(self.script_info.script_id),
+                project_id=project_id,
+                current_version=current_version,
+                source_config=build_managed_source_config(
+                    package_source=credentials.package_source,
+                    mirror_cdk=credentials.cdk,
+                    channel=credentials.channel,
+                    manifest=manifest,
+                ),
+                download_root=managed_download_root(),
+                proxy=Config.proxy,
+                send_log=self._append_update_log,
+            )
+        except Exception as exc:  # noqa: BLE001 - 更新失败不阻断运行
+            reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
+            logger.opt(exception=True).warning(
+                f"托管项目{phase_zh}更新失败，任务继续：{reason}"
+            )
+            self._append_update_log(f"托管项目更新失败，任务继续：{reason}")
+            await self._notify_update(
+                "error", f"托管项目{phase_zh}更新失败，任务继续：{reason}"
+            )
+            return
+
+        self._append_update_log(outcome.reason)
+        # 与自选目录形态同一口径：「已是最新」只留在日志里，真更新了或者发现
+        # 新版本却装不了才弹通知，免得每次运行都弹一条没信息量的提示。
+        if outcome.updated or outcome.level != "info":
+            await self._notify_update(
+                "warning" if outcome.level == "warning" else "info",
+                outcome.reason,
+            )
+
     def _prepare_project_environment_sync(
         self,
         project_path: Path,
@@ -850,7 +925,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # checkout 路径会写回 Info.Path，后面的 inner task 才有路径可用。这一步
         # 与自选目录形态的环境确认不同，**失败必须中止**——没有 checkout 就没有
         # 可跑的东西，继续下去只会在 worker 里炸得更难懂。
+        self._auto_update_mode = resolve_auto_update_mode(self.script_config)
         if self._is_managed:
+            if self._auto_update_mode == "BeforeRun":
+                await self._run_managed_project_update("BeforeRun")
             managed_problem = await self._prepare_managed_environment()
             if managed_problem:
                 self.check_result = managed_problem
@@ -865,7 +943,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
         # 还是得备。两步都在用户任务之外，不计入 ``Run.RunTimeLimit``。
-        self._auto_update_mode = resolve_auto_update_mode(self.script_config)
         # 托管项目的版本由 Project Store 管，原地更新没有意义；而按自选目录口径
         # 再做一次环境确认会**把托管链路刚准备好的结果覆盖掉**——实测里 agent 会
         # 从 shared_runtime 掉回 external，用的还是另一个 runtime。
@@ -958,14 +1035,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
         # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
-        if (
-            self._users_completed
-            and self._auto_update_mode == "AfterRun"
-            and not self._is_managed
-        ):
-            await self._run_project_update("AfterRun")
-            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
-            await self._ensure_project_environment("AfterRun")
+        if self._users_completed and self._auto_update_mode == "AfterRun":
+            if self._is_managed:
+                # 托管形态没有「顺手备环境」这一步：下一轮的 checkout 与运行时
+                # 由准备链路按那时的当前版本重新解析，现在备了也会被覆盖。
+                await self._run_managed_project_update("AfterRun")
+            else:
+                await self._run_project_update("AfterRun")
+                # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
+                await self._ensure_project_environment("AfterRun")
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")

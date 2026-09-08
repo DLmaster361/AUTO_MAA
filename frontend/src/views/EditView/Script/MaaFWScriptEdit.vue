@@ -593,8 +593,14 @@ const runUpdateApply = async () => {
   updateError.value = ''
   try {
     updateResult.value = await applyMaaFWUpdate(scriptId)
-    if (updateResult.value.updated && maafwConfig.Info.Path) {
-      await runPreview()
+    if (updateResult.value.updated) {
+      if (isManagedScript.value) {
+        // 托管形态换的是 Store 的当前版本，后端已经改过 Managed 段；只刷预览
+        // 会拿旧 checkout 去读，界面停在旧版本号和旧脱壳报告上。
+        await reloadAfterManagedChange()
+      } else if (maafwConfig.Info.Path) {
+        await runPreview()
+      }
     }
   } catch (error) {
     updateError.value = error instanceof Error ? error.message : String(error)

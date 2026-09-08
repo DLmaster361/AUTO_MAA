@@ -1112,6 +1112,7 @@ class ScriptIndexItem(BaseModel):
         "MaaEndConfig",
         "M9AConfig",
         "MaaFWConfig",
+        "MaaFWManagedConfig",
         "HSRConfig",
         "BetterGIConfig",
         "ZzzOdConfig",
@@ -2990,6 +2991,13 @@ class MaaFWConfig_Managed(BaseModel):
         default=None, description="待确认升级事务 JSON"
     )
     LastOperation: Optional[str] = Field(default=None, description="最近资源操作 JSON")
+    ImportProjectId: Optional[str] = Field(
+        default=None, description="导入来源的项目 ID"
+    )
+    RunRootId: Optional[str] = Field(
+        default=None, description="checkout 所属 run root 身份"
+    )
+    Status: Optional[str] = Field(default=None, description="最近一次环境解析状态")
 
 
 class MaaFWConfig_ManagedRuntime(BaseModel):
@@ -3519,12 +3527,13 @@ class ScriptCreateIn(BaseModel):
         "MaaEnd",
         "M9A",
         "MaaFW",
+        "MaaFWManaged",
         "HSR",
         "BetterGI",
         "ZzzOd",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, MaaFW托管脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"

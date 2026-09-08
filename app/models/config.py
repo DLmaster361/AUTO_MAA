@@ -2642,6 +2642,30 @@ class MaaFWConfig(ConfigBase):
         return await super().load(_migrate_maafw_auto_update_mode(data))
 
 
+class MaaFWManagedConfig(MaaFWConfig):
+    """MaaFW 托管形态配置（三层规划第三层）。
+
+    与自选目录形态的唯一区别是**项目载荷从哪来**：托管脚本的资源由 Project
+    Store 导入并脱壳，``Info.Path`` 指向该脚本自己的 checkout，而不是用户
+    手选的目录。运行链路两者共用 ``MaaFWEmbeddedManager`` —— 本类是
+    ``MaaFWConfig`` 的子类，正是为了让既有的 ``isinstance`` 分发继续命中。
+
+    这里只补父类没有、而托管解析结果需要落盘的三个键。
+    """
+
+    def __init__(self) -> None:
+
+        ## Managed（仅托管形态写入）----------------------------------------
+        ## 导入来源的项目 id：记录「从哪导入的」，与解析后的 ProjectId 分开
+        self.Managed_ImportProjectId = ConfigItem("Managed", "ImportProjectId", "")
+        ## 该脚本 checkout 所属 run root 的身份，用于校验绑定是否仍然有效
+        self.Managed_RunRootId = ConfigItem("Managed", "RunRootId", "")
+        ## 最近一次环境解析的状态标记
+        self.Managed_Status = ConfigItem("Managed", "Status", "")
+
+        super().__init__()
+
+
 class MaaPlanConfig(ConfigBase):
     """MAA计划表配置"""
 
@@ -4407,6 +4431,7 @@ class GlobalConfig(ConfigBase):
                 SrcConfig,
                 M9AConfig,
                 MaaFWConfig,
+                MaaFWManagedConfig,
                 GeneralConfig,
                 OkwwConfig,
                 OkNteConfig,
@@ -4516,6 +4541,7 @@ CLASS_BOOK = {
     "MaaEnd": MaaEndConfig,
     "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
+    "MaaFWManaged": MaaFWManagedConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,

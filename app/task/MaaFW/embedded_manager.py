@@ -866,7 +866,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
         # 还是得备。两步都在用户任务之外，不计入 ``Run.RunTimeLimit``。
         self._auto_update_mode = resolve_auto_update_mode(self.script_config)
-        if self._auto_update_mode == "BeforeRun":
+        # 托管项目的版本由 Project Store 管，原地更新没有意义；而按自选目录口径
+        # 再做一次环境确认会**把托管链路刚准备好的结果覆盖掉**——实测里 agent 会
+        # 从 shared_runtime 掉回 external，用的还是另一个 runtime。
+        if self._auto_update_mode == "BeforeRun" and not self._is_managed:
             await self._run_project_update("BeforeRun")
             await self._ensure_project_environment("BeforeRun")
 
@@ -955,7 +958,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
         # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
-        if self._users_completed and self._auto_update_mode == "AfterRun":
+        if (
+            self._users_completed
+            and self._auto_update_mode == "AfterRun"
+            and not self._is_managed
+        ):
             await self._run_project_update("AfterRun")
             # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
             await self._ensure_project_environment("AfterRun")

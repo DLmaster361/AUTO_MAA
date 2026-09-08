@@ -39,6 +39,7 @@ from app.utils.constants import TASK_MODE_ZH
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.config_swap import replace_config_dir
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -194,13 +195,7 @@ class OkNteManager(TaskExecuteBase):
                 shutil.rmtree(self.script_config_path, ignore_errors=True)
             else:
                 logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
-                tmp_dst = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
-                )
-                shutil.rmtree(tmp_dst, ignore_errors=True)
-                shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                tmp_dst.rename(self.script_config_path)
+                await replace_config_dir(self.temp_path, self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             if (self.temp_path / "config.temp").exists():
                 logger.info(

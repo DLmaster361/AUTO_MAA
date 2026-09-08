@@ -29,6 +29,8 @@ from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
 
+from .tools.config_swap import replace_config_dir
+
 logger = get_logger("OK-NTE 脚本设置")
 
 
@@ -98,13 +100,7 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            tmp_dst = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
-            )
-            shutil.rmtree(tmp_dst, ignore_errors=True)
-            shutil.copytree(self.mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
-            tmp_dst.rename(self.script_config_path)
+            await replace_config_dir(self.mas_config_dir, self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             src_file = self.mas_config_dir / self.script_config_path.name
             if src_file.exists():
@@ -127,11 +123,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     "未找到 OK-NTE 配置目录，请在 GUI 中保存后再点击保存配置"
                 )
 
-            tmp_dst = self.mas_config_dir.with_name(self.mas_config_dir.name + ".tmp")
-            shutil.rmtree(tmp_dst, ignore_errors=True)
-            shutil.copytree(self.script_config_path, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.mas_config_dir, ignore_errors=True)
-            tmp_dst.rename(self.mas_config_dir)
+            await replace_config_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-NTE 配置已保存到: {self.mas_config_dir}")
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             if not self.script_config_path.exists():

@@ -35,8 +35,11 @@ class CommunityNotificationTest(unittest.TestCase):
         self.assertEqual(
             detect_community_notification_format(content), "markdown"
         )
-        self.assertIn("### ❌米游社(1/2):", content)
+        # 分组标题改为「• 平台(成功/总数)：」，条目改为「状态 [游戏] 账号 结果」
+        self.assertIn("**• 米游社(1/2)：**", content)
         self.assertIn("签到失败-凭据失效", content)
+        # Markdown 输出会转义方括号，避免被渠道当成链接语法
+        self.assertIn(r"❌ \[原神\] 旅行者 签到失败-凭据失效", content)
 
     def test_plain_text_and_legacy_entry_share_structured_result(self) -> None:
         plain_text = format_community_notification(
@@ -46,7 +49,10 @@ class CommunityNotificationTest(unittest.TestCase):
 
         self.assertEqual(detect_community_notification_format(plain_text), "text")
         self.assertEqual(format_game_sign_notification(self.results), format_community_notification(self.results))
-        self.assertIn("米游社-旅行者 原神 签到失败-凭据失效", format_community_task_summary(self.results))
+        summary = format_community_task_summary(self.results)
+        self.assertIn("• 米游社(1/2)：", summary)
+        self.assertIn("❌ [原神] 旅行者 签到失败-凭据失效", summary)
+        self.assertIn("✅ [星穹铁道] 开拓者 签到成功", summary)
 
 
 if __name__ == "__main__":

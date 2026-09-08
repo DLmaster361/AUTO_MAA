@@ -256,7 +256,6 @@ onUnmounted(() => {
       <a-tabs
         :active-key="activeTab"
         type="card"
-        :loading="loading"
         class="community-tabs"
         @change="handleTabChange"
       >

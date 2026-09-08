@@ -46,7 +46,12 @@ class _Notify:
         self.calls.append("系统")
         self.sent.append(str(kwargs["message"]))
 
-    async def send_koishi(self, message: str) -> bool:
+    async def send_koishi(
+        self,
+        message: str,
+        msgtype: str = "text",
+        client_name: str = "Koishi",
+    ) -> bool:
         self.calls.append("Koishi")
         self.sent.append(message)
         self.koishi_attempts += 1
@@ -276,9 +281,7 @@ def test_dispatch_task_report_publishes_failure_notice() -> None:
 
     with (
         patch("app.core.notify.Notify", _FailingMailNotify()),
-        patch(
-            "app.tools.game_sign_notify.Publisher.send", new_callable=AsyncMock
-        ) as publish,
+        patch("app.core.ws.Publisher.send", new_callable=AsyncMock) as publish,
     ):
         result = _run(
             dispatch_task_report(

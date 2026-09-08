@@ -792,7 +792,9 @@ class CommunityActivityParserTest(unittest.TestCase):
         self.assertEqual(endfield_tasks["每周事务"]["completed"], 2)
         self.assertEqual(endfield_tasks["通行证等级"]["target"], 60)
         self.assertEqual(endfield_tasks["蚀像寻遗"]["completed"], 200000)
-        self.assertEqual(endfield_tasks["蚀像寻遗"]["period"], "weekly")
+        # 解析器在 0a857f15 把该项从 weekly 改为 periodic；两者对后端等价
+        #（都不计入每日进度分母），此处跟随实现。
+        self.assertEqual(endfield_tasks["蚀像寻遗"]["period"], "periodic")
 
     def test_endfield_keeps_confirmed_resources_without_daily_progress(self) -> None:
         snapshot = self.parse(

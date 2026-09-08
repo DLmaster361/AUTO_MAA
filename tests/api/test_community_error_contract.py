@@ -32,8 +32,10 @@ class CommunityErrorContractTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.code, 500)
         self.assertNotIn(secret, result.message)
-        self.assertNotIn(secret, str(warning.call_args))
-        self.assertIn("RuntimeError", str(warning.call_args))
+        # 社区侧会追加一条「调用位置」帧链警告，脱敏断言必须覆盖全部调用而不只是最后一条
+        logged = str(warning.call_args_list)
+        self.assertNotIn(secret, logged)
+        self.assertIn("RuntimeError", logged)
 
 
 if __name__ == "__main__":

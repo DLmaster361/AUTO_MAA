@@ -2075,6 +2075,7 @@ export default {
       drag: 'Drag to reorder',
       dailyProgress: 'Daily status',
       tasks: 'Daily tasks',
+      noteTasks: 'Tasks and recurring',
       weeklyTasks: 'Weekly and recurring',
       resources: 'Available resources',
       roleUid: 'UID {uid}',

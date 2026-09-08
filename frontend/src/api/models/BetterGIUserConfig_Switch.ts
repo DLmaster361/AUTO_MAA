@@ -15,3 +15,4 @@ export type BetterGIUserConfig_Switch = {
      */
     Uid?: (string | null);
 };
+

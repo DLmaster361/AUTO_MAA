@@ -1792,6 +1792,7 @@ export default {
       drag: 'ドラッグして並べ替え',
       dailyProgress: 'デイリー状況',
       tasks: 'デイリー任務',
+      noteTasks: '任務と定期項目',
       weeklyTasks: '週間・定期項目',
       resources: '利用可能なリソース',
       roleUid: 'UID {uid}',

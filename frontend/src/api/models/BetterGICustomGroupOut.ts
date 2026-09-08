@@ -15,3 +15,4 @@ export type BetterGICustomGroupOut = {
      */
     enabled: boolean;
 };
+

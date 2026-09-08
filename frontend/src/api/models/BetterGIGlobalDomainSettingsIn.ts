@@ -15,6 +15,10 @@ export type BetterGIGlobalDomainSettingsIn = {
      */
     userId?: (string | null);
     /**
+     * 右栏当前编辑的实例组名（形如 自动秘境-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）
+     */
+    groupName?: string;
+    /**
      * 要覆盖写入的秘境刷取配置键值（camelCase 扁平键）
      */
     settings?: Record<string, any>;

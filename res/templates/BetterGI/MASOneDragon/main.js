@@ -160,11 +160,8 @@ async function dispatchCombat(step) {
       // 前端「不使用冒险之证寻路」勾选=true 表示不通过冒险之证，与 BGI Param 的
       // useAdventurerHandbook 语义相反，此处取反后透传（原 TODO(#4) 已据 UI 语义落地）。
       if (s.useAdventurerHandbook != null) p.useAdventurerHandbook = !s.useAdventurerHandbook;
-      // 「跳过准备流程」(LeyLineOneDragonMode)：经查证（bettergi.d.ts + BGI main 分支源码）
-      // AutoLeyLineOutcropParam 无此字段、dispatcher.runAutoLeyLineOutcropTask 无附加参数，
-      // oneDragonMode 是 AutoLeyLineOutcropTask 构造参数（由 BGI 一条龙调度器注入，JS 不可达）；
-      // SoloTask 工厂也不会读取该任务键，故 MAS 接管路径暂无法透传，开关仅在
-      // BGI 原生一条龙（未被 Plan 接管）路径生效（原生副本已双写该键）。
+      // 「跳过准备流程」(LeyLineOneDragonMode) 因 BGI 未向 JS 暴露注入点，在 MAS 接管路径
+      // 下无效，已从右栏移除；此处不再消费该键（如将来 BGI 提供注入点可在此补回）。
       // 地脉花无原生超时，不兜底（前端默认 0=不限制）；仅当显式 >0 时透传。
       if (s.timeout != null && s.timeout > 0) p.timeout = s.timeout;
       if (s.useFragileResin != null) p.useFragileResin = !!s.useFragileResin;
@@ -229,7 +226,11 @@ async function dispatchCombat(step) {
           returnToStatueAfterEachRound: !!s.returnToStatueAfterEachRound,
           rewardRecognitionEnabled: !!s.rewardRecognitionEnabled,
         },
-        s.combatStrategyPath ? { strategyName: s.combatStrategyPath } : {}
+        // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
+        // 其余组策略走 s.combatStrategyPath。两者取其一注入 SoloTask 的 strategyName。
+        (s.strategyName || s.combatStrategyPath)
+          ? { strategyName: s.strategyName || s.combatStrategyPath }
+          : {}
       );
       await genshin.returnMainUi();
       try {

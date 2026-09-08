@@ -1525,7 +1525,6 @@ _ONE_DRAGON_SETTING_KEYS: tuple[str, ...] = (
     "SundayWeeklySelectedValue",
     "SereniteaPotTpType",
     "SecretTreasureObjects",
-    "LeyLineOneDragonMode",
     "LeyLineRunMonday",
     "LeyLineRunTuesday",
     "LeyLineRunWednesday",

@@ -69,11 +69,13 @@ export const saveOneDragonSettings = async (
  */
 export const fetchGlobalDomainSettings = async (
   scriptId: string,
-  userId?: string
+  userId?: string,
+  groupName = ''
 ): Promise<Record<string, unknown>> => {
   const resp = await BetterGiService.getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
     scriptId,
-    userId || undefined
+    userId || undefined,
+    groupName
   )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 秘境刷取配置请求失败')
@@ -87,11 +89,13 @@ export const fetchGlobalDomainSettings = async (
  */
 export const fetchGlobalStygianSettings = async (
   scriptId: string,
-  userId?: string
+  userId?: string,
+  groupName = ''
 ): Promise<Record<string, unknown>> => {
   const resp = await BetterGiService.getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
     scriptId,
-    userId || undefined
+    userId || undefined,
+    groupName
   )
   if (resp.code !== 200) {
     throw new Error(resp.message || 'BetterGI 幽境危战设置请求失败')
@@ -105,11 +109,13 @@ export const fetchGlobalStygianSettings = async (
 export const saveGlobalStygianSettings = async (
   scriptId: string,
   userId: string | undefined,
-  settings: Record<string, unknown>
+  settings: Record<string, unknown>,
+  groupName = ''
 ): Promise<void> => {
   const body: BetterGIGlobalStygianSettingsIn = {
     scriptId,
     userId: userId || '',
+    groupName,
     settings,
   }
   try {
@@ -155,11 +161,13 @@ export const fetchDomainCatalog = async (
 export const saveGlobalDomainSettings = async (
   scriptId: string,
   userId: string | undefined,
-  settings: Record<string, unknown>
+  settings: Record<string, unknown>,
+  groupName = ''
 ): Promise<void> => {
   const body: BetterGIGlobalDomainSettingsIn = {
     scriptId,
     userId: userId || '',
+    groupName,
     settings,
   }
   try {

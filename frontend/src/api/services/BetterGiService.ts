@@ -95,6 +95,36 @@ export class BetterGiService {
         });
     }
     /**
+     * 设置一条龙 Plan 某步骤的启用状态（按实例名，支持 基名-后缀）
+     * 按实例名（如 自动秘境-副本A）翻转 Plan 中某战斗步骤的启用状态，供执行层按 step.enabled 决定启停（同组多实例各自独立）。
+     * @param scriptId
+     * @param userId
+     * @param name
+     * @param enabled
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setBettergiOneDragonPlanStepEnabledApiApiScriptsBettergiOneDragonPlanStepEnabledPost(
+        scriptId: string,
+        userId: string,
+        name: string,
+        enabled: boolean = true,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/one-dragon/plan/step-enabled',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'name': name,
+                'enabled': enabled,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 BetterGI 全局 config.json 的秘境刷取配置段
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
@@ -109,6 +139,7 @@ export class BetterGiService {
     public static getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
         scriptId: string,
         userId: string = '',
+        groupName: string = '',
     ): CancelablePromise<BetterGIGlobalDomainSettingsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -116,6 +147,7 @@ export class BetterGiService {
             query: {
                 'scriptId': scriptId,
                 'userId': userId,
+                'groupName': groupName,
             },
             errors: {
                 422: `Validation Error`,
@@ -157,6 +189,7 @@ export class BetterGiService {
     public static getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
         scriptId: string,
         userId: string = '',
+        groupName: string = '',
     ): CancelablePromise<BetterGIGlobalStygianSettingsOut> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -164,6 +197,7 @@ export class BetterGiService {
             query: {
                 'scriptId': scriptId,
                 'userId': userId,
+                'groupName': groupName,
             },
             errors: {
                 422: `Validation Error`,

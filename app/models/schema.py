@@ -145,6 +145,10 @@ class BetterGIGlobalDomainSettingsIn(BaseModel):
 
     scriptId: str = Field(..., description="所属脚本ID")
     userId: Optional[str] = Field(default="", description="所属用户ID（空=写 BGI 全局实配）")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的实例组名（形如 自动秘境-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）",
+    )
     settings: Dict[str, Any] = Field(
         default_factory=dict, description="要覆盖写入的秘境刷取配置键值（camelCase 扁平键）"
     )
@@ -168,6 +172,10 @@ class BetterGIGlobalStygianSettingsIn(BaseModel):
 
     scriptId: str = Field(..., description="所属脚本ID")
     userId: Optional[str] = Field(default="", description="所属用户ID（空=写 BGI 全局实配）")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的实例组名（形如 自动幽境危战-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）",
+    )
     settings: Dict[str, Any] = Field(
         default_factory=dict, description="要覆盖写入的幽境危战设置键值（camelCase 扁平键）"
     )

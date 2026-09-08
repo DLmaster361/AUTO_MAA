@@ -1520,7 +1520,7 @@ export default {
     bettergiDuplicateOk: 'Save & add',
     bettergiDuplicateSource: 'Source: {name}',
     bettergiDuplicateNamePlaceholder: 'Enter a new group name',
-    bettergiDuplicateTip: 'Saves a copy of this group under a new name and adds it to the queue. To duplicate the exact same group instead, use the copy button on the right of the row. Names that collide with a group already in your current OneDragon must be changed.',
+    bettergiDuplicateTip: 'Only a display alias — the real config is not copied. Execution still uses the original (base) name. To add an identical copy of the group, use the copy button on the right of the row.',
     bettergiDuplicateSourceEmpty: 'Source group is empty or failed to load',
     bettergiDuplicateSameName: 'New name must differ from the original',
     bettergiGroupNamesIllegal: 'Name contains illegal characters (cannot contain /, \\ or ..)',

@@ -594,6 +594,18 @@
                             <template #icon><SaveOutlined /></template>
                           </a-button>
                         </a-tooltip>
+                        <a-tooltip :title="t('edit.bettergiRenameAsNew')">
+                          <a-button
+                            class="group-row-action-btn"
+                            type="text"
+                            size="small"
+                            :disabled="isGroupFrozen(item)"
+                            aria-label="修改配置组名称"
+                            @click.stop="openRenameModal(item)"
+                          >
+                            <template #icon><EditOutlined /></template>
+                          </a-button>
+                        </a-tooltip>
                         <a-tooltip :title="t('edit.bettergiCopySameAs')">
                           <a-button
                             class="group-row-action-btn"
@@ -731,7 +743,7 @@
             <p class="strategy-picker-tip">{{ t('edit.bettergiStrategyPickerTip') }}</p>
           </a-modal>
 
-          <!-- 复制为新配置组弹窗：以当前行内容为底稿，另存为一个新名字的配置组并自动加入队列末尾 -->
+          <!-- 另存为弹窗：以当前行为前名（基名），用户输入后名，生成「前名-后名」的新引用行（不复制真实配置组 JSON） -->
           <a-modal
             v-model:open="duplicateModal.open"
             :title="t('edit.bettergiDuplicateAsNew')"
@@ -749,7 +761,7 @@
                 {{ t('edit.bettergiDuplicateSource', { name: duplicateSourceLabel }) }}
               </p>
               <a-input
-                v-model:value="duplicateModal.name"
+                v-model:value="duplicateModal.suffix"
                 :placeholder="t('edit.bettergiDuplicateNamePlaceholder')"
                 :status="duplicateModal.error ? 'error' : ''"
                 size="large"
@@ -761,6 +773,39 @@
                 {{ duplicateModal.error }}
               </p>
               <p class="duplicate-group-tip">{{ t('edit.bettergiDuplicateTip') }}</p>
+            </div>
+          </a-modal>
+
+          <!-- 修改名称弹窗：编辑当前行的后名（仅显示别名，不复制真实配置组） -->
+          <a-modal
+            v-model:open="renameModal.open"
+            :title="t('edit.bettergiRenameTitle')"
+            :ok-text="t('edit.bettergiRenameOk')"
+            :cancel-text="t('edit.cancel')"
+            :confirm-loading="renameModal.saving"
+            :z-index="1500"
+            width="480px"
+            class="rename-group-modal"
+            @ok="confirmRename"
+            @cancel="renameModal.open = false"
+          >
+            <div class="rename-group-form">
+              <p v-if="renameModal.source" class="rename-group-source">
+                {{ t('edit.bettergiRenameSource', { name: renameModal.source.key }) }}
+              </p>
+              <a-input
+                v-model:value="renameModal.suffix"
+                :placeholder="t('edit.bettergiRenamePlaceholder')"
+                :status="renameModal.error ? 'error' : ''"
+                size="large"
+                :maxlength="40"
+                @input="renameModal.error = ''"
+                @press-enter="confirmRename"
+              />
+              <p v-if="renameModal.error" class="rename-group-error">
+                {{ renameModal.error }}
+              </p>
+              <p class="rename-group-tip">{{ t('edit.bettergiRenameTip') }}</p>
             </div>
           </a-modal>
 
@@ -1062,6 +1107,7 @@ import {
   ClearOutlined,
   CloseOutlined,
   CopyOutlined,
+  EditOutlined,
   DownOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
@@ -1384,8 +1430,12 @@ type ConfigGroupKind = 'builtin' | 'stamina' | 'custom' | 'js' | 'pathing' | 'sc
 type ConfigGroupIdentity = {
   kind: ConfigGroupKind
   key: string // builtin/custom/js/pathing: 组名字面量或相对路径；stamina: STAMINA_COMBAT_KEY
+  /** 后名（后缀别名）：仅作显示用，不进入 key；执行仍按 key（前名/基名）归一。留空即旧式「自动秘境」 */
+  suffix?: string
   /** 队列行唯一实例标识：允许同一配置组重复添加时，每行都有独立 uid（拖拽/删除按行实例） */
   uid?: number
+  /** 每实例独立启用状态：战斗 4 项走执行层 Plan，按此启停；其余组不使用此字段 */
+  enabled?: boolean
 }
 
 // 启用体力作战时自动关闭并冻结的官方内置组（专项接管刷取）
@@ -1503,11 +1553,94 @@ const isPathingName = (name: string): boolean =>
   pathingTreeDirs.value.length > 0 && pathingFileSet.value.has(name)
 
 const groupLabel = (item: ConfigGroupIdentity): string => {
-  if (item.kind === 'builtin') return builtinGroupLabels.value[item.key] ?? item.key
-  if (item.kind === 'stamina') return t('edit.bettergiGroupStamina')
-  if (item.kind === 'js') return jsDisplayName(item.key)
-  if (item.kind === 'pathing') return pathingDisplayName(item.key)
-  return item.key
+  let base: string
+  if (item.kind === 'builtin') base = builtinGroupLabels.value[item.key] ?? item.key
+  else if (item.kind === 'stamina') base = t('edit.bettergiGroupStamina')
+  else if (item.kind === 'js') base = jsDisplayName(item.key)
+  else if (item.kind === 'pathing') base = pathingDisplayName(item.key)
+  else base = item.key
+  // 后名（后缀）仅作显示别名，与旧式「自动秘境」并存：有后缀显示「前名-后名」，无则仅前名
+  return item.suffix ? `${base}-${item.suffix}` : base
+}
+
+// 战斗 4 项（秘境/地脉花/幽境危战/首领讨伐）支持「同组多实例」：每个实例独立开关与设置，
+// 运行时经执行层（Plan）逐实例生效。其余组仍走全局开关（Groups / 自定义表），不进入 Plan。
+const COMBAT_BUILTIN_SET = new Set<string>([
+  '自动秘境', '自动地脉花', '自动幽境危战', '自动首领讨伐',
+])
+
+// 某队列实例在执行层 Plan 中的步骤名。
+// 与「后名」彻底解耦：后名仅作前端展示区分，身份由**行实例 uid** 决定——
+//   1) 未设后名的重复实例同样各自独立（否则同名会落到同一 Plan 步骤而共享设置）；
+//   2) 改后名不会改变步骤名，已保存的每实例设置不会丢失。
+// uid 最小者沿用基名（兼容旧 Plan 中已存在的「自动秘境」步骤），其余为「基名-uid」。
+const stepNameIn = (row: ConfigGroupIdentity, rows: ConfigGroupIdentity[]): string => {
+  if (row.kind !== 'builtin' || !COMBAT_BUILTIN_SET.has(row.key)) return row.key
+  const uids = rows
+    .filter(i => i.kind === 'builtin' && i.key === row.key)
+    .map(i => i.uid ?? 0)
+  const firstUid = uids.length ? Math.min(...uids) : (row.uid ?? 0)
+  return row.uid === firstUid ? row.key : `${row.key}-${row.uid}`
+}
+const stepNameOf = (row: ConfigGroupIdentity): string => stepNameIn(row, dragonList.value)
+
+// 解析 OneDragon.Plan 中的步骤数组（兼容字符串 JSON / 对象 / 裸数组）
+const parsePlanSteps = (raw: unknown): Array<Record<string, any>> => {
+  if (!raw) return []
+  let obj: any = raw
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw)
+    } catch {
+      return []
+    }
+  }
+  if (Array.isArray(obj)) return obj
+  if (obj && Array.isArray(obj.steps)) return obj.steps
+  return []
+}
+
+// 读取 Plan 中各步骤的启用状态（按步骤名索引），用于初始化队列行的 per-instance 启停
+const readPlanEnabled = (): Map<string, boolean> => {
+  const m = new Map<string, boolean>()
+  for (const s of parsePlanSteps((formData.OneDragon as any)?.Plan)) {
+    if (s && typeof s.name === 'string') m.set(s.name, s.enabled !== false)
+  }
+  return m
+}
+
+// 乐观更新内存中的 Plan 步骤启用状态（下次读取/落库前保持界面一致）
+const updatePlanStepEnabled = (name: string, enabled: boolean) => {
+  const steps = parsePlanSteps((formData.OneDragon as any)?.Plan)
+  let changed = false
+  for (const s of steps) {
+    if (s && s.name === name) {
+      s.enabled = enabled
+      changed = true
+      break
+    }
+  }
+  if (changed) (formData.OneDragon as any).Plan = JSON.stringify({ version: 1, steps })
+}
+
+// 调用后端：按步骤名翻转 Plan 中某战斗实例的启用状态
+const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void> => {
+  if (!scriptId || !userId.value) return
+  try {
+    const resp =
+      await BetterGiService.setBettergiOneDragonPlanStepEnabledApiApiScriptsBettergiOneDragonPlanStepEnabledPost(
+        scriptId,
+        userId.value,
+        name,
+        enabled
+      )
+    // 后端以 HTTP 200 + body.code 表达失败，需显式判定，否则开关静默不落库
+    if (resp.code !== 200) {
+      logger.error(resp.message || '一条龙步骤启用状态保存失败')
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
 }
 
 // 是否被体力作战冻结（启用体力作战时三个刷取内置组冻结）
@@ -1517,6 +1650,10 @@ const isGroupFrozen = (item: ConfigGroupIdentity): boolean =>
   STAMINA_FROZEN_BUILTINS.includes(item.key)
 
 const groupEnabled = (item: ConfigGroupIdentity): boolean => {
+  // 战斗 4 项：每实例独立启停（来自 Plan step.enabled）
+  if (item.kind === 'builtin' && COMBAT_BUILTIN_SET.has(item.key)) {
+    return item.enabled !== false
+  }
   if (item.kind === 'builtin') return formData.OneDragon.Groups.includes(item.key)
   if (item.kind === 'stamina') return staminaCombatEnabled.value
   return Boolean(customGroupsTable.value.find(r => r.name === item.key)?.enabled)
@@ -1544,7 +1681,9 @@ const removeBuiltinsFromGroups = (keys: string[]) => {
 // 生成一条带唯一 uid 的队列行实例
 const makeDragonRow = (item: ConfigGroupIdentity): ConfigGroupIdentity => ({
   ...item,
-  uid: ++dragonRowSeq,
+  enabled: item.enabled ?? true,
+  // 持久化过的 uid 必须沿用：它是每实例设置/启停的身份，重开会撞号导致设置串台
+  uid: item.uid ?? ++dragonRowSeq,
 })
 
 // 队列行去重辅助（仅用于初始化；允许重复时不用此函数）
@@ -1583,7 +1722,20 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
     } else {
       kind = resolveStoredRowKind(name)
     }
-    rows.push(makeDragonRow({ kind, key: name }))
+    const suffix = typeof rec.suffix === 'string' ? rec.suffix : undefined
+    const uid = typeof rec.uid === 'number' ? rec.uid : undefined
+    rows.push(makeDragonRow({ kind, key: name, suffix, uid }))
+  }
+  // 第二遍：战斗组每实例启用状态来自 Plan，按「行实例 uid」定位步骤名（与后名解耦）
+  const planEnabled = readPlanEnabled()
+  for (const r of rows) {
+    if (r.kind === 'builtin' && COMBAT_BUILTIN_SET.has(r.key)) {
+      r.enabled = planEnabled.get(stepNameIn(r, rows)) ?? true
+    }
+  }
+  // uid 已持久化：让自增序号跳过已用值，避免新行与既有行 uid 撞号
+  for (const r of rows) {
+    if (typeof r.uid === 'number' && r.uid > dragonRowSeq) dragonRowSeq = r.uid
   }
   return rows
 }
@@ -1593,8 +1745,17 @@ const persistDragonQueue = () => {
   if (!dragonListReady || !groupsEditable.value) return
   const entries = dragonList.value
     .filter(i => i.kind !== 'stamina')
-    .map(i => ({ kind: i.kind, name: i.key }))
+    .map(i => ({ kind: i.kind, name: i.key, suffix: i.suffix, uid: i.uid }))
   void saveField('OneDragon.Queue', JSON.stringify(entries))
+  // 存在战斗实例时确保执行层开启：否则 Plan 中的 per-instance 设置/启停不会被运行时消费
+  const oneDragon = formData.OneDragon as unknown as Record<string, unknown>
+  const hasCombat = dragonList.value.some(
+    i => i.kind === 'builtin' && COMBAT_BUILTIN_SET.has(i.key)
+  )
+  if (hasCombat && oneDragon.UseExecutionLayer !== true) {
+    oneDragon.UseExecutionLayer = true
+    void saveField('OneDragon.UseExecutionLayer', true)
+  }
 }
 
 // 依据用户数据初始化一条龙队列（loadUser 后调用一次，随后由增删/拖拽维护）：
@@ -1719,6 +1880,14 @@ const clearDragon = () => {
 const toggleConfigGroup = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value) return
   if (isGroupFrozen(item)) return
+  // 战斗 4 项：每实例独立启停（写入 Plan step.enabled），基名仍保留在 Groups 供运行时纳入
+  if (item.kind === 'builtin' && COMBAT_BUILTIN_SET.has(item.key)) {
+    const next = !(item.enabled !== false)
+    item.enabled = next
+    updatePlanStepEnabled(stepNameOf(item), next)
+    void setPlanStepEnabled(stepNameOf(item), next)
+    return
+  }
   if (item.kind === 'builtin') {
     toggleGroup(item.key)
   } else if (item.kind === 'stamina') {
@@ -1862,12 +2031,14 @@ type WeeklyFieldTableRow = {
 type DragonSettingSection = {
   title: string
   fields: DragonSettingField[]
-  /** 每周秘境表格模式（开关 + 默认/周一~周日逐行表格）或地脉花「每周刷取」表格模式 */
-  kind?: 'weekly-table' | 'weekly-field-table'
+  /** 每周秘境表格模式、地脉花「每周刷取」表格模式、或地脉花「每日地脉花」单日统一配置模式 */
+  kind?: 'weekly-table' | 'weekly-field-table' | 'daily-leyline'
   enableField?: DragonSettingField
   weeklyRows?: WeeklyDomainTableRow[]
   /** 地脉花「每周刷取」表格模式（周一~周日，列=地区/任务类型/执行） */
   weeklyFieldRows?: WeeklyFieldTableRow[]
+  /** 地脉花「每日地脉花」模式：单行统一配置（队伍/策略/地区/任务类型） */
+  dailyFieldRow?: WeeklyFieldTableRow
 }
 
 // ---- 地区/国家候选（与 BGI 各任务各自的下拉一致，不再共用一份）----
@@ -2057,7 +2228,6 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
     {
       title: '刷取设置',
       fields: [
-        { key: 'LeyLineOneDragonMode', label: '跳过准备流程', type: 'bool', help: '跳过部分准备流程（例如传送回七天神像）。' },
         { key: 'useAdventurerHandbook', label: '不使用冒险之证寻路', type: 'bool', help: '勾选后改用内置路线，不通过冒险之证定位地脉花。' },
         { key: 'LeyLineTimeout', label: '战斗超时(秒)', type: 'number', min: 0, help: '单次执行最长等待时间（秒）；0 表示不限制（使用 BetterGI 默认）。' },
       ],
@@ -2117,8 +2287,8 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
           uid: key,
           label,
           fields: [
-            { key: `LeyLine${key}Team`, label: '队伍', type: 'text' },
-            { key: `LeyLine${key}Strategy`, label: '策略', type: 'strategy' },
+            { key: `LeyLine${key}Team`, label: '队伍', type: 'text' as const },
+            { key: `LeyLine${key}Strategy`, label: '策略', type: 'strategy' as const },
             { key: `LeyLine${key}Country`, label: '地区', type: 'select' as const, options: LEY_LINE_COUNTRY_OPTIONS, help: '留空时使用独立任务默认设置。' },
             { key: `LeyLine${key}Type`, label: '任务类型', type: 'select' as const, options: LEY_LINE_TYPE_OPTIONS, help: '留空时使用独立任务默认设置。' },
             { key: `LeyLineRun${key}`, label: '执行', type: 'bool' as const, help: '仅勾选的星期执行；未勾选则不执行。' },
@@ -2303,7 +2473,8 @@ const hasGroupSettingFields = computed<boolean>(
       s =>
         s.fields.length > 0 ||
         s.kind === 'weekly-table' ||
-        s.kind === 'weekly-field-table'
+        s.kind === 'weekly-field-table' ||
+        s.kind === 'daily-leyline'
     )
 )
 
@@ -2363,13 +2534,14 @@ const loadDragonGroupSettings = async () => {
       scriptId,
       userId.value,
       dragonConfigName.value,
-      sel.key
+      stepNameOf(sel)
     )
     dragonSettingsDirty.value = false
     if (needGlobalDomainSettings.value) {
       globalDomainSettings.value = await fetchGlobalDomainSettings(
         scriptId,
-        formData.Info.IfUseMasConfig ? userId.value : undefined
+        formData.Info.IfUseMasConfig ? userId.value : undefined,
+        stepNameOf(sel)
       )
     } else {
       globalDomainSettings.value = {}
@@ -2378,7 +2550,8 @@ const loadDragonGroupSettings = async () => {
     if (needGlobalStygianSettings.value) {
       globalStygianSettings.value = await fetchGlobalStygianSettings(
         scriptId,
-        formData.Info.IfUseMasConfig ? userId.value : undefined
+        formData.Info.IfUseMasConfig ? userId.value : undefined,
+        stepNameOf(sel)
       )
     } else {
       globalStygianSettings.value = {}
@@ -2410,7 +2583,7 @@ const saveDragonGroupSettings = async () => {
         userId.value,
         dragonConfigName.value,
         dragonSettings.value,
-        sel.key
+        stepNameOf(sel)
       )
       dragonSettingsDirty.value = false
     }
@@ -2418,7 +2591,8 @@ const saveDragonGroupSettings = async () => {
       await saveGlobalDomainSettings(
         scriptId,
         formData.Info.IfUseMasConfig ? userId.value : undefined,
-        globalDomainSettings.value
+        globalDomainSettings.value,
+        stepNameOf(sel)
       )
       globalDomainSettingsDirty.value = false
     }
@@ -2426,7 +2600,8 @@ const saveDragonGroupSettings = async () => {
       await saveGlobalStygianSettings(
         scriptId,
         formData.Info.IfUseMasConfig ? userId.value : undefined,
-        globalStygianSettings.value
+        globalStygianSettings.value,
+        stepNameOf(sel)
       )
       globalStygianSettingsDirty.value = false
     }
@@ -3248,7 +3423,8 @@ const confirmAddToDragon = async () => {
 // 右图标=复制相同（所有可编辑行直接复制一份相同配置组入队，无弹窗；内置 8 组与体力作战同此）。
 const canDuplicateGroup = (item: ConfigGroupIdentity): boolean => {
   if (!item) return false
-  return item.kind === 'scriptgroup' || item.kind === 'js' || item.kind === 'pathing'
+  // 所有可编辑配置组均可「另存为（前名-后名）」：不复制真实 JSON，仅以当前行为前名生成带后名的新引用
+  return item.kind !== 'stamina'
 }
 
 // 直接复制相同：把当前行作为新实例追加到队列末尾（不改名、不写新副本，等同再添加一次该组）
@@ -3261,117 +3437,90 @@ const duplicateSameGroup = (item: ConfigGroupIdentity) => {
 const duplicateModal = reactive<{
   open: boolean
   saving: boolean
-  name: string
+  suffix: string
   error: string
   source: ConfigGroupIdentity | null
 }>({
   open: false,
   saving: false,
-  name: '',
+  suffix: '',
   error: '',
   source: null,
 })
 
 const duplicateSourceLabel = computed<string>(() =>
-  duplicateModal.source ? groupLabel(duplicateModal.source) : ''
+  duplicateModal.source ? duplicateModal.source.key : ''
 )
 
 const openDuplicateModal = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value || !canDuplicateGroup(item)) return
   duplicateModal.source = { ...item }
-  duplicateModal.name = ''
+  duplicateModal.suffix = ''
   duplicateModal.error = ''
   duplicateModal.open = true
 }
 
-// 取当前行的「内容底稿 json」：scriptgroup 走 detail（per-user 副本 → BGI 实配）；
-// js/pathing 没有 json 载体，按单项目配置组构造（复用添加脚本的 project 行结构）。
-const duplicateSourceJson = async (): Promise<Record<string, unknown> | null> => {
-  const source = duplicateModal.source
-  if (!source) return null
-  if (source.kind === 'scriptgroup') {
-    const resp =
-      await BetterGiService.getBettergiScriptGroupDetailApiApiScriptsBettergiScriptGroupDetailGet(
-        scriptId,
-        userId.value,
-        source.key
-      )
-    if (resp.code !== 200 || !resp.data || typeof resp.data !== 'object') {
-      message.warning(resp.message || t('edit.bettergiDuplicateSourceEmpty'))
-      return null
-    }
-    return { ...resp.data }
-  }
-  // js/pathing：构造单项目配置组 json（与「添加脚本到配置组」的 project 行一致）
-  const row = toScriptGroupProjectRow({ kind: source.kind, key: source.key, chipUid: 0 })
-  if (!row) {
-    message.warning(t('edit.bettergiDuplicateSourceEmpty'))
-    return null
-  }
-  return { index: 1, config: {}, projects: [{ ...row, index: 1 }] }
-}
-
-const confirmDuplicateGroup = async () => {
+const confirmDuplicateGroup = () => {
   if (duplicateModal.saving) return
   const source = duplicateModal.source
   if (!source) return
   duplicateModal.error = ''
-  const typed = (duplicateModal.name || '').trim()
-
-  // 另存为必须提供新名称（「复制相同」已由行尾右侧的复制按钮直接完成，无需经过本弹窗）
-  if (!typed) {
-    duplicateModal.error = t('edit.bettergiEnterGroupName')
-    return
-  }
-  // 非法字符（与后端 resolve_script_group_name 一致：拒绝路径穿越与空名）
-  if (/[\\/]|\.\./.test(typed)) {
-    duplicateModal.error = t('edit.bettergiGroupNamesIllegal')
-    return
-  }
-  // 与「当前一条龙中已存在」的配置组/JS/路径名冲突时弹窗内警告，要求重新命名。
-  // 判定集合：当前队列行 key + 已入表的自定义组名 + JS 目录/路径（BGI 同名字面量会互相覆盖）
-  const taken = new Set<string>()
-  for (const row of dragonList.value) {
-    if (row.kind === 'builtin' || row.kind === 'stamina') continue
-    taken.add(row.key)
-  }
-  for (const row of customGroupsTable.value) taken.add(row.name)
-  for (const o of jsScriptOptions.value) taken.add(o.value)
-  for (const p of pathingFileSet.value) taken.add(p)
-  if (taken.has(typed)) {
-    duplicateModal.error = t('edit.bettergiDuplicateNameTaken', { name: typed })
-    return
-  }
+  // 后名（后缀）仅作显示别名，不复制真实配置组 JSON；执行仍按前名（基名）归一。
+  // 与「复制相同」不同，另存为会生成一条带新后名、指向同一前名的新引用行。
+  const clean = (duplicateModal.suffix || '').trim().replace(/^-+|-+$/g, '')
   duplicateModal.saving = true
   try {
-    const json = await duplicateSourceJson()
-    if (!json) {
-      duplicateModal.error = t('edit.bettergiDuplicateSourceEmpty')
-      return
+    const newItem: ConfigGroupIdentity = {
+      kind: source.kind,
+      key: source.key,
+      suffix: clean || undefined,
     }
-    json['name'] = typed
-    const resp =
-      await BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost({
-        scriptId,
-        userId: userId.value,
-        name: typed,
-        data: json,
-      })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.bettergiProjectSaveFailed'))
-    }
-    // 让本地识别集包含新副本名：scriptgroup 候选 + CustomGroups 总开关开启后随 watch 入队
-    if (!scriptGroupOptions.value.some(o => o.value === typed)) {
-      scriptGroupOptions.value.push({ label: typed, value: typed })
-    }
+    addToDragon(newItem)
     duplicateModal.open = false
-    addToDragon({ kind: 'scriptgroup', key: typed })
-    message.success(t('edit.bettergiDuplicateDone', { name: typed }))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    duplicateModal.error = e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed')
+    message.success(t('edit.bettergiDuplicateDone', { name: groupLabel(newItem) }))
   } finally {
     duplicateModal.saving = false
+  }
+}
+
+// ---- 修改名称：编辑当前行后名（仅显示别名，不复制真实配置组）----
+const renameModal = reactive<{
+  open: boolean
+  saving: boolean
+  suffix: string
+  error: string
+  source: ConfigGroupIdentity | null
+}>({
+  open: false,
+  saving: false,
+  suffix: '',
+  error: '',
+  source: null,
+})
+
+const openRenameModal = (item: ConfigGroupIdentity) => {
+  if (!groupsEditable.value) return
+  renameModal.source = item
+  renameModal.suffix = item.suffix ?? ''
+  renameModal.error = ''
+  renameModal.open = true
+}
+
+const confirmRename = () => {
+  if (renameModal.saving) return
+  const source = renameModal.source
+  if (!source) return
+  renameModal.error = ''
+  const clean = (renameModal.suffix || '').trim().replace(/^-+|-+$/g, '')
+  renameModal.saving = true
+  try {
+    // 直接改写当前队列行实例的后名（item 即 dragonList 中的元素引用）
+    source.suffix = clean || undefined
+    renameModal.open = false
+    persistDragonQueue()
+    message.success(t('edit.bettergiRenameDone', { name: groupLabel(source) }))
+  } finally {
+    renameModal.saving = false
   }
 }
 

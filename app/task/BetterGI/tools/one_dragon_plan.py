@@ -136,7 +136,6 @@ BUILTIN_STEP_SETTING_KEYS: dict[str, frozenset[str]] = {
             "country",
             "leyLineOutcropType",
             "team",
-            "leyLineOneDragonMode",
             "timeout",
             "weeklyLeyLine",
             "useAdventurerHandbook",
@@ -361,8 +360,8 @@ def plan_to_json(steps: list[dict[str, Any]]) -> str:
 # 键名全部来自 BUILTIN_STEP_SETTING_KEYS 白名单（已逐项核对），未列出的右栏字段
 # （如秘境每周秘境表、地脉花每工作日 country/type、maxArtifactStar）
 # 属结构化/全局共享，无法对齐到单值 Plan，留在原生存储。
-# 注：地脉花「跳过准备流程」(LeyLineOneDragonMode) 现已对齐进 Plan；其执行层
-# 字段层级（Param 还是 Task cfg）待实机确认，见 main.js 地脉花分支 TODO。
+# 注：地脉花「跳过准备流程」(LeyLineOneDragonMode) 因 BGI 未向 JS 暴露注入点，
+# 在 MAS 接管路径下无效，已从右栏移除（不进 Plan、不进原生白名单）。
 RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
     "自动幽境危战": {
         "bossNum": "bossNum",
@@ -407,7 +406,6 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
         "LeyLineResinExhaustionMode": "isResinExhaustionMode",
         "LeyLineOpenModeCountMin": "openModeCountMin",
         "LeyLineRunCount": "count",
-        "LeyLineOneDragonMode": "leyLineOneDragonMode",
         "LeyLineTimeout": "timeout",
         "useAdventurerHandbook": "useAdventurerHandbook",
         "useFragileResin": "useFragileResin",

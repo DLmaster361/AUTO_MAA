@@ -1501,7 +1501,7 @@ export default {
     bettergiDuplicateOk: '保存して追加',
     bettergiDuplicateSource: '元：{name}',
     bettergiDuplicateNamePlaceholder: '新しいグループ名を入力',
-    bettergiDuplicateTip: 'このグループの内容を新しい名前で保存し、キューに追加します。まったく同じグループを複製したい場合は、行右端のコピーボタンを使ってください。現在の一条龍内で名前が重複する場合は変更が必要です。',
+    bettergiDuplicateTip: '表示用の別名のみで、実際の設定はコピーされません。実行時は元の（ベースの）名前で処理されます。まったく同じグループを追加したい場合は、行右端のコピーボタンを使ってください。',
     bettergiDuplicateSourceEmpty: '元のグループが空か、読み込みに失敗しました',
     bettergiDuplicateSameName: '新しい名前は元の名前と違う必要があります',
     bettergiGroupNamesIllegal: '名前に不正な文字が含まれています（/、\\、.. は使用不可）',

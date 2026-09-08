@@ -102,7 +102,17 @@ def _bettergi_user_config(script_config, user_id: str):
 
 
 def _combat_target_group(source: str, group: str) -> str:
-    """按 source 确定右栏设置归属的战斗组（global* 端点不带组名，按段固定映射）。"""
+    """确定右栏设置归属的战斗组（支持同一战斗组的多个独立实例）。
+
+    优先采用前端传入的**实例组名**（形如 ``自动幽境危战-3``、``自动秘境-3``）：
+    同一战斗组可配多个实例，各自独立保存/回显设置。未传组名（或组名不是内置
+    战斗组）时按 source 固定映射（globalStygian→自动幽境危战、globalDomain→
+    自动秘境），兼容不带 groupName 的调用方与旧数据。
+    """
+    from app.task.BetterGI.tools import one_dragon_plan
+
+    if group and one_dragon_plan.resolve_base_name(group):
+        return group
     return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(source, group)
 
 
@@ -125,7 +135,9 @@ def _route_combat_to_plan(
     from app.task.BetterGI.tools import one_dragon_plan
 
     target_group = _combat_target_group(source, group)
-    mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(target_group)
+    mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(
+        one_dragon_plan.resolve_base_name(target_group)
+    )
     if not mapping or not settings:
         return settings, None
     plan_settings = {k: v for k, v in settings.items() if k in mapping}
@@ -138,13 +150,19 @@ def _route_combat_to_plan(
         plan_json, target_group, plan_settings, extra=extra or None
     )
     # ``maxArtifactStar`` 是秘境与幽境危战共用的全局字段（BGI 同一份
-    # ``autoArtifactSalvageConfig`` 段），两边面板的 ``source`` 都是 ``globalDomain``，
-    # 会被本端点统一写到秘境 step；这里再把同一份值同步进幽境 step，
-    # 执行层幽境分支才能透传。
-    if target_group == "自动秘境" and "maxArtifactStar" in settings:
-        new_plan = one_dragon_plan.merge_rightbar_into_plan(
-            new_plan, "自动幽境危战", {"maxArtifactStar": settings["maxArtifactStar"]}
-        )
+    # ``autoArtifactSalvageConfig`` 段），会被本端点统一写到秘境 step；这里再把
+    # 同一份值同步进 Plan 中**所有已存在的** ``自动幽境危战`` 步骤（含默认 base 与
+    # 各实例），执行层幽境分支才能透传。
+    # 仅同步既有步骤：不为同步凭空新建幽境步骤（避免队列出现用户未创建的幽灵项）；
+    # 新建的幽境实例会在其自身保存时写入该值。
+    if one_dragon_plan.resolve_base_name(target_group) == "自动秘境" and "maxArtifactStar" in settings:
+        _val = settings["maxArtifactStar"]
+        for _st in one_dragon_plan.parse_one_dragon_plan(new_plan):
+            _nm = _st.get("name", "")
+            if one_dragon_plan.resolve_base_name(_nm) == "自动幽境危战":
+                new_plan = one_dragon_plan.merge_rightbar_into_plan(
+                    new_plan, _nm, {"maxArtifactStar": _val}
+                )
     return settings, new_plan
 
 
@@ -155,12 +173,14 @@ def _read_combat_from_plan(
     from app.task.BetterGI.tools import one_dragon_plan
 
     target_group = _combat_target_group(source, group)
-    mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(target_group)
+    mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(
+        one_dragon_plan.resolve_base_name(target_group)
+    )
     if not mapping:
         return data
     user_config = _bettergi_user_config(script_config, user_id)
     plan_json = user_config.get("OneDragon", "Plan") or ""
-    data.update(one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group))
+    data.update(one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {})
     # 还原 weekly 嵌套结构为平铺右栏键（供前端周表回显）
     steps = one_dragon_plan.parse_one_dragon_plan(plan_json) if plan_json else []
     target = next((s for s in steps if s.get("name") == target_group), None)
@@ -1473,6 +1493,64 @@ async def save_bettergi_one_dragon_settings_api(
         )
 
 
+@router.post(
+    "/bettergi/one-dragon/plan/step-enabled",
+    tags=["BetterGI"],
+    summary="设置一条龙 Plan 某步骤的启用状态（按实例名，支持 基名-后缀）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def set_one_dragon_plan_step_enabled(
+    scriptId: str = Query(...),
+    userId: str = Query(...),
+    name: str = Query(...),
+    enabled: bool = Query(True),
+) -> OutBase:
+    """按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
+
+    步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
+    「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
+    一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+
+    步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
+    后端无步骤可写，刷新后回退。
+    """
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        _bettergi_user_id(script_config, userId)
+        user_config = _bettergi_user_config(script_config, userId)
+        plan = one_dragon_plan.parse_one_dragon_plan(
+            user_config.get("OneDragon", "Plan") or ""
+        )
+        target = next((s for s in plan if s.get("name") == name), None)
+        if target is None:
+            plan.append(
+                {
+                    "uid": uuid.uuid4().hex[:12],
+                    "kind": "builtin",
+                    "name": name,
+                    "enabled": enabled,
+                    "settings": {},
+                }
+            )
+        else:
+            target["enabled"] = enabled
+        await user_config.set("OneDragon", "Plan", one_dragon_plan.plan_to_json(plan))
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已更新步骤 {name} 启用={enabled}",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
 @router.get(
     "/bettergi/global-domain/settings",
     tags=["BetterGI"],
@@ -1481,7 +1559,7 @@ async def save_bettergi_one_dragon_settings_api(
     status_code=200,
 )
 async def get_bettergi_global_domain_settings_api(
-    scriptId: str, userId: str = ""
+    scriptId: str, userId: str = "", groupName: str = ""
 ) -> BetterGIGlobalDomainSettingsOut:
     """返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
 
@@ -1504,7 +1582,7 @@ async def get_bettergi_global_domain_settings_api(
         )
         # 战斗4项（自动秘境）的可映射字段（领奖树脂/分解圣遗物/奖励识别等）在 Plan 中回显
         if userId:
-            data = _read_combat_from_plan(script_config, userId, "自动秘境", "globalDomain", data)
+            data = _read_combat_from_plan(script_config, userId, groupName, "globalDomain", data)
         return BetterGIGlobalDomainSettingsOut(
             code=200,
             status="success",
@@ -1542,7 +1620,7 @@ async def save_bettergi_global_domain_settings_api(
             _bettergi_user_id(script_config, req.userId)
             # 战斗4项（自动秘境）可映射字段仅写 Plan；maxArtifactStar 等全局共享字段仍落副本
             native_leftover, new_plan = _route_combat_to_plan(
-                script_config, req.userId, "自动秘境", req.settings, "globalDomain"
+                script_config, req.userId, req.groupName, req.settings, "globalDomain"
             )
             if new_plan is not None:
                 user_config = _bettergi_user_config(script_config, req.userId)
@@ -1575,7 +1653,7 @@ async def save_bettergi_global_domain_settings_api(
     status_code=200,
 )
 async def get_bettergi_global_stygian_settings_api(
-    scriptId: str, userId: str = ""
+    scriptId: str, userId: str = "", groupName: str = ""
 ) -> BetterGIGlobalStygianSettingsOut:
     """返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
 
@@ -1598,7 +1676,7 @@ async def get_bettergi_global_stygian_settings_api(
         )
         # 战斗4项（自动幽境危战）全部字段在 Plan 中回显
         if userId:
-            data = _read_combat_from_plan(script_config, userId, "自动幽境危战", "globalStygian", data)
+            data = _read_combat_from_plan(script_config, userId, groupName, "globalStygian", data)
         return BetterGIGlobalStygianSettingsOut(
             code=200,
             status="success",
@@ -1636,7 +1714,7 @@ async def save_bettergi_global_stygian_settings_api(
             _bettergi_user_id(script_config, req.userId)
             # 战斗4项（自动幽境危战）全部字段仅写 Plan，不再落全局副本
             native_leftover, new_plan = _route_combat_to_plan(
-                script_config, req.userId, "自动幽境危战", req.settings, "globalStygian"
+                script_config, req.userId, req.groupName, req.settings, "globalStygian"
             )
             if new_plan is not None:
                 user_config = _bettergi_user_config(script_config, req.userId)

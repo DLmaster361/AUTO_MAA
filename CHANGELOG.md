@@ -68,6 +68,7 @@
 ### 变更
 
 - 启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)
+- 配置分享 通用脚本的模板浏览与分享改用新的 AUTO-MAS 配置中心，分享前需在浏览器完成一次登录授权，分享者身份由登录账号确定、不再手填作者
 - OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
 - 后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA) by [@qiyinxi](https://github.com/qiyinxi)
 - 配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
@@ -98,7 +99,7 @@
 
 ### 修复
 
-- 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因
+- 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因 by [@Lance0174](https://github.com/Lance0174)
 - Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复深色模式下初始化界面连同标题栏整体变暗的问题 by [@qiyinxi](https://github.com/qiyinxi)

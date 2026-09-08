@@ -13,8 +13,8 @@ import type { QueueReorderIn } from '../models/QueueReorderIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
+import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
-import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
@@ -86,13 +86,13 @@ export class UpdateService {
         });
     }
     /**
-     * 从网络加载脚本配置
+     * 从配置中心导入脚本配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static importScriptFromWebApiScriptsImportWebPost(
-        requestBody: ScriptUrlIn,
+        requestBody: ScriptTemplateImportIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',

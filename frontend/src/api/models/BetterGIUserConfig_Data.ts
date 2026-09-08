@@ -19,3 +19,4 @@ export type BetterGIUserConfig_Data = {
      */
     LastProxyStatus?: (string | null);
 };
+

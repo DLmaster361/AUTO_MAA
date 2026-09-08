@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from app.tools.miyoushe_qr import (
+    _LEGACY_PASSPORT_APP_ID,
+    PASSPORT_APP_ID,
     _check_game_token_qr_status,
     _check_passport_app_qr_status,
     _create_passport_app_qr,
@@ -18,9 +20,15 @@ from app.tools.miyoushe_qr import (
 
 
 class _FakeAsyncClient:
-    def __init__(self, *responses: httpx.Response) -> None:
+    def __init__(
+        self,
+        *responses: httpx.Response,
+        get_responses: tuple[httpx.Response, ...] = (),
+    ) -> None:
         self.responses = list(responses)
+        self.get_responses = list(get_responses)
         self.post_calls = []
+        self.get_calls = []
 
     async def __aenter__(self):
         return self
@@ -31,6 +39,15 @@ class _FakeAsyncClient:
     async def post(self, *args, **kwargs) -> httpx.Response:
         self.post_calls.append((args, kwargs))
         return self.responses.pop(0)
+
+    async def get(self, *args, **kwargs) -> httpx.Response:
+        # _supplement_qr_tokens 用 GET 派生 ltoken / cookie_token。没有排队响应
+        # 时模拟派生失败：实现会逐字段吞掉 httpx.HTTPError 并保留已取得的凭据，
+        # 这里的用例只验证确认与解析契约，不验证派生本身。
+        self.get_calls.append((args, kwargs))
+        if not self.get_responses:
+            raise httpx.ConnectError("no queued GET response")
+        return self.get_responses.pop(0)
 
 
 class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
@@ -87,8 +104,8 @@ class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
             args[0],
             "https://passport-api.mihoyo.com/account/ma-cn-passport/app/createQRLogin",
         )
-        self.assertEqual(kwargs["json"], {})
-        self.assertEqual(kwargs["headers"]["x-rpc-app_id"], "ddxf5dufpuyo")
+        self.assertEqual(kwargs["content"], "{}")
+        self.assertEqual(kwargs["headers"]["x-rpc-app_id"], PASSPORT_APP_ID)
         self.assertEqual(kwargs["headers"]["x-rpc-client_type"], "3")
         self.assertEqual(kwargs["headers"]["x-rpc-device_id"], "DEVICE-ID")
 
@@ -110,7 +127,7 @@ class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
         ):
             result = await create_qr_login()
 
-        self.assertEqual(result["ticket"], "passport-app:ticket")
+        self.assertEqual(result["ticket"], "passport-bbs:ticket")
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0], devices[0].upper())
         self.assertEqual(result["device"], devices[0])
@@ -158,9 +175,24 @@ class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
             args[0],
             "https://passport-api.mihoyo.com/account/ma-cn-passport/app/queryQRLoginStatus",
         )
-        self.assertEqual(kwargs["json"], {"ticket": "qr-ticket"})
+        # DS 签名对正文字节签名，请求体走 content 而不是 json
+        self.assertEqual(kwargs["content"], '{"ticket":"qr-ticket"}')
 
-    async def test_check_routes_prefixed_ticket_to_passport_app(self) -> None:
+    async def test_check_routes_current_prefix_to_passport_app(self) -> None:
+        with patch(
+            "app.tools.miyoushe_qr._check_passport_app_qr_status",
+            new=AsyncMock(return_value={"status": "Init"}),
+        ) as check_mock:
+            result = await check_qr_status(
+                "passport-bbs:qr-ticket", "DEVICE-ID"
+            )
+
+        self.assertEqual(result, {"status": "Init"})
+        check_mock.assert_awaited_once_with(
+            "qr-ticket", "DEVICE-ID", None
+        )
+
+    async def test_check_routes_legacy_prefix_with_legacy_app_id(self) -> None:
         with patch(
             "app.tools.miyoushe_qr._check_passport_app_qr_status",
             new=AsyncMock(return_value={"status": "Init"}),
@@ -171,7 +203,7 @@ class MiyousheQrContractTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"status": "Init"})
         check_mock.assert_awaited_once_with(
-            "qr-ticket", "DEVICE-ID", None
+            "qr-ticket", "DEVICE-ID", None, app_id=_LEGACY_PASSPORT_APP_ID
         )
 
     def test_accepts_confirmed_game_token_qr_host(self) -> None:

@@ -21,3 +21,4 @@ export type BetterGICustomGroupsOut = {
      */
     data?: Array<BetterGICustomGroupOut>;
 };
+

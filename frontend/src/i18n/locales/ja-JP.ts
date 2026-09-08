@@ -24,6 +24,9 @@ export default {
     unknown: '不明',
   },
   comp: {
+    changelog: {
+      empty: 'このバージョンの更新履歴はまだありません',
+    },
     editUser: 'ユーザーを編集',
     addUser2: 'ユーザーを追加',
     enabled: 'オン',
@@ -3035,6 +3038,8 @@ export default {
       copyVersion: 'バージョン：{version}',
       copyBackendDate: 'バックエンドの日付：{date}',
       copyBackendHash: 'バックエンドのハッシュ：{hash}',
+      viewChangelog: '更新履歴',
+      changelogTitle: '{version} の更新履歴',
     },
     tray: {
       section: 'トレイメニューのカスタマイズ',

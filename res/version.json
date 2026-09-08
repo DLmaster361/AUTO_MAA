@@ -2,7 +2,20 @@
     "version": "v5.5.0-beta.3",
     "version_info": {
         "v5.5.0-beta.3": {
-            "新增功能": [
+            "破坏性变更": [
+                "MFW 项目新增了自动更新时机设置，升级后**已有脚本一律默认为「运行前更新」**；不需要的话在项目配置里改成「不更新」",
+                "HSR 专项脚本页的「游戏启动参数」已移除，**旧配置中的该项会在下次保存时自动清除**；窗口大小改由「1920×1080 窗口模式」开关控制",
+                "MAA 专项代理接管配置时**会强制开启「开始唤醒」的账号切换开关**，以确保按用户配置的账号切号；用户未填写账号时仍不会切号",
+                "MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁 / 详细」配置模式**更名为「脚本 / 用户」**，含义不变，旧配置自动迁移"
+            ],
+            "本次亮点": [
+                "新增绝区零一条龙（ZZZ-OD）专项适配，支持用户独立模式与直控模式",
+                "模拟器管理新增「Emulator 2.0」配置：一条配置纳管多个雷电 14 / MuMu 6 安装路径与实例",
+                "调度队列新增循环队列，队列里的任务可各自按固定时间或间隔一直跑下去",
+                "启动速度大幅优化，启动与初始化的等待画面重做",
+                "通知系统支持扫码绑定微信 Claw 与 QQ 官方机器人接收任务通知"
+            ],
+            "新增": [
                 "模拟器管理 新增「Emulator 2.0」配置类型：一条配置可纳管多个雷电 14 / MuMu 6 安装路径，两家的实例合并成一张设备表统一编号；支持新建与删除实例，分辨率（含 DPI）、CPU、内存、帧率的单台与批量设置，以及一键「稳定模式」关掉高帧率、后台保活等会干扰截图识别的功能；另有「配置守卫」，把你定的设置记成基准，启动前与关闭后各核验一次，被模拟器改掉就还原回来 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaEnd专项 新增脚本直控模式，抢委托送货与自动采集独立为可单独配置的阶段，用户配置页改为锚点导航加分区卡片布局 by [@HarcoChen](https://github.com/HarcoChen)",
                 "MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen)",
@@ -11,7 +24,6 @@
                 "新增绝区零一条龙（ZZZ-OD）专项适配：支持用户独立模式与直控模式 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、避免卡界面，新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
-                "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -19,9 +31,10 @@
                 "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "首页 快速启动支持多选并记住上次选择，可一次启动多个任务 by [@Craun718](https://github.com/Craun718)",
                 "MAA专项 托管结束后保存 MAA 写入配置文件的每日状态（如借战赚信用与访问好友的当天执行记录），同一天多次托管不再重复执行 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "全局设置 新增「虚拟显示器」：显示器断开或关闭后 Windows 只保留一块占位的幻影屏，它照旧上报一个看着正常的分辨率，但背后没有任何输出，游戏渲染与截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后 MAS 在检测到没有任何真实显示输出时临时挂一块 1920x1080 的虚拟显示器，任务结束即拆除；程序若被强制结束，下次启动会自动清理上次遗留的虚拟显示器。刷新率可选 60Hz 或更省 GPU 的 30Hz，并提供驱动检测（需自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动） by [@qiyinxi](https://github.com/qiyinxi)"
+                "全局设置 新增「虚拟显示器」：显示器断开或关闭后 Windows 只保留一块占位的幻影屏，它照旧上报一个看着正常的分辨率，但背后没有任何输出，游戏渲染与截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后 MAS 在检测到没有任何真实显示输出时临时挂一块 1920x1080 的虚拟显示器，任务结束即拆除；程序若被强制结束，下次启动会自动清理上次遗留的虚拟显示器。刷新率可选 60Hz 或更省 GPU 的 30Hz，并提供驱动检测（需自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动） by [@qiyinxi](https://github.com/qiyinxi)",
+                "更新提示改为按版本分区块展示，「重要变更」与「本次亮点」置顶，并可在设置页随时查看当前版本的更新日志"
             ],
-            "程序优化": [
+            "变更": [
                 "启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)",
@@ -51,13 +64,7 @@
                 "MAA专项 代理接管 MAA 配置时强制开启开始唤醒的账号切换开关，确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "MFW专项 进入项目配置页不再每次都要等一遍运行环境确认，开启自动更新时环境准备也提前到任务开始之前完成 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
-            "开发流程": [
-                "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 清理未达提交规范的测试文件及其格式、静态检查问题，并移除误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)",
-                "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
-            ],
-            "修复BUG": [
+            "修复": [
                 "Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复深色模式下初始化界面连同标题栏整体变暗的问题",
@@ -115,10 +122,16 @@
                 "MFW专项 修复脚本侧强制停止任务（如 MaaEnd 分辨率不达标时的强停）被记成「任务完成」的问题：现在被强停的任务按失败记录，本轮剩余任务不再投递，不会再出现整轮一件事没做却报成全部成功 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 修复 MAA 卡死后不会被判定为超时、任务一直挂着的问题：MAA 每隔一段时间输出的日志停滞提示被当成任务仍在推进，把超时计时反复重置，剿灭等超时阈值长于提示间隔的模式永远等不到超时；现已识别新旧两版 MAA 的该提示，MAA 的五种界面语言均生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
+            ],
+            "开发流程": [
+                "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
+                "BetterGI专项 清理未达提交规范的测试文件及其格式、静态检查问题，并移除误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)",
+                "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
             ]
         },
         "v5.5.0-beta.2": {
-            "新增功能": [
+            "新增": [
                 "前端i18n 新增日本語词表，界面语言可选日本語，首次启动跟随系统语言；日文词表缺 key 时先回退英文再回退中文 by [@qiyinxi](https://github.com/qiyinxi)",
                 "日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
@@ -135,7 +148,7 @@
                 "界面设置 托盘图标右键菜单支持自定义：可在设置中增删、排序菜单项，支持「启动任务」（一键启动指定队列/脚本，控制台新建任务并运行）「停止全部任务」「重启应用」命令，退出与重启统一走与窗口关闭一致的确认窗（任务运行中时提示），并修复托盘事件监听重复注册及异常配置导致的无效菜单项，未配置时保持原菜单行为 by [@1w1w11w1](https://github.com/1w1w11w1) by [@TCddddd](https://github.com/TCddddd)",
                 "BetterGI专项 新增更好的原神脚本适配，支持原生 GUI 直控配置与一条龙任务自动代理 by [@TCddddd](https://github.com/TCddddd)"
             ],
-            "程序优化": [
+            "变更": [
                 "架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)",
                 "回滚启动时的遮罩 by [@HarcoChen](https://github.com/HarcoChen)",
                 "匿名遥测 接入 Electron 主进程与渲染进程错误上报，增加应用启动、后端启动和任务执行的性能指标，抑制无异常的日志事件并遮蔽上报内容中的本机用户名，并关联 Sentry 发布提交与生产部署信息 by [@ClozyA](https://github.com/ClozyA)",
@@ -149,16 +162,7 @@
                 "MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
-            "开发流程": [
-                "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
-                "前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，保持既有规则与格式配置兼容，并由每周自动格式化工作流执行 Markdown lint 修复 by [@Craun718](https://github.com/Craun718)",
-                "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
-                "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
-                "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",
-                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)",
-                "清理 MaaFW 配置复用模块：能力未接入任何界面，留着只会让人以为可用，需要时可从上游重新取用 by [@qiyinxi](https://github.com/qiyinxi)"
-            ],
-            "修复BUG": [
+            "修复": [
                 "前端i18n 修复两条含「|」的说明文案在界面上被截断的问题——vue-i18n 把 | 当复数分隔符，字面量需要转义 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 HSR 托管任务列表中点击任务开关导致界面报错的问题 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -184,10 +188,19 @@
                 "修复 HSR 未配置 SRA 路径时多个用户会静默跑在同一个已登录账号上的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 MaaFW 游戏启动失败后仍继续投递剩余任务、空转到各自超时的问题，改为直接报错并进入下一次重试 by [@qiyinxi](https://github.com/qiyinxi)",
                 "修复 MaaFW 用户级通知配置形同虚设的问题，运行结束后按用户自己配置的渠道推送统计信息 by [@qiyinxi](https://github.com/qiyinxi)"
+            ],
+            "开发流程": [
+                "开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)",
+                "前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，保持既有规则与格式配置兼容，并由每周自动格式化工作流执行 Markdown lint 修复 by [@Craun718](https://github.com/Craun718)",
+                "添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)",
+                "订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)",
+                "清理 MaaFW 配置复用模块：能力未接入任何界面，留着只会让人以为可用，需要时可从上游重新取用 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.1": {
-            "新增功能": [
+            "新增": [
                 "MAA专项 支持启动前检查并更新明日方舟客户端 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "OK-WW专项 支持启动前自动更新鸣潮客户端 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "日志采集 支持将运行节点推送至任务报告 by [@AthenaHibou](https://github.com/AthenaHibou)",
@@ -195,15 +208,12 @@
                 "界面设置 支持自定义托盘菜单及任务控制命令 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "界面设置 支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ],
-            "程序优化": [
+            "变更": [
                 "MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)"
             ],
-            "开发流程": [
-                "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
-            ],
-            "修复BUG": [
+            "修复": [
                 "SRC专项 修复任务结束后的进程与配置清理问题 by [@Craun718](https://github.com/Craun718)",
                 "MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -211,14 +221,16 @@
                 "修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "日志采集 修复多账号任务各用户节点详情被合并推送的问题，报告按用户分开展示节点归属 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "日志采集 统一通用脚本编辑页「推送配置」区块标题大小/样式与其他配置区一致，默认不展示规则编辑卡片、首次点击「添加规则」后才出现，标题栏支持点击折叠/展开规则编辑区，并修复新增/删除/排序规则时在用户尚未编辑字段就立即弹出「缺必填字段」提示，改为仅在实际字段编辑缺失时给出提示，且避免异步保存刷新回写时移除刚添加的空规则 by [@AthenaHibou](https://github.com/AthenaHibou)"
+            ],
+            "开发流程": [
+                "开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)"
             ]
         },
         "v5.4.0": {
-            "新增功能": [],
-            "程序优化": [
+            "变更": [
                 "MaaEnd专项 增强账号切换"
             ],
-            "修复BUG": [
+            "修复": [
                 "OK-WW专项 修复任务在日志产生前手动终止时历史记录误显示未捕获到日志的问题",
                 "OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题",
                 "MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度"

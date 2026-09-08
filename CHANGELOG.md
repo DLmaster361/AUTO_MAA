@@ -1,0 +1,285 @@
+# 更新日志
+
+本项目所有值得注意的变更都记录在此文件中。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
+
+<!--
+  本文件是更新日志与版本号的唯一手写来源，请不要手改 res/version.json 等生成物。
+
+  - 文件顶部第一个 `## [vX.Y.Z] - 未发布` 标题即当前尚未发布的版本号，新条目写进它下面。
+  - 每个 PR 都要在这里登记一条，写在最贴切的分类下；分类不存在就新建一个 `###`。
+  - 条目写成一行，`- ` 开头，从用户视角描述这次改动带来了什么。
+  - 不要手写 ` by [@用户](链接)` 署名，PR 合并后由机器人补。
+  - 改完运行 `python scripts/changelog.py sync`，它会同步各处版本号、规范化本文件、
+    并重新生成底部的版本对比链接。
+
+  分类含义（中间六类来自 Keep a Changelog）：
+
+  - 破坏性变更：需要用户动手确认或会改变既有行为的改动，在更新提示里最醒目地展示。
+  - 本次亮点：这一版最值得一看的三五条，正文仍写在下面对应的分类里。
+  - 新增：新添加的功能。
+  - 变更：对现有功能的变更，含优化与调整。
+  - 弃用：已经不建议使用、即将移除的功能。
+  - 移除：已经移除的功能。
+  - 修复：对 bug 的修复。
+  - 安全：对安全性的改进。
+  - 开发流程：只影响贡献者、用户看不见的改动。
+-->
+
+## [v5.5.0-beta.3] - 未发布
+
+### 破坏性变更
+
+- MFW 项目新增了自动更新时机设置，升级后**已有脚本一律默认为「运行前更新」**；不需要的话在项目配置里改成「不更新」
+- HSR 专项脚本页的「游戏启动参数」已移除，**旧配置中的该项会在下次保存时自动清除**；窗口大小改由「1920×1080 窗口模式」开关控制
+- MAA 专项代理接管配置时**会强制开启「开始唤醒」的账号切换开关**，以确保按用户配置的账号切号；用户未填写账号时仍不会切号
+- MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁 / 详细」配置模式**更名为「脚本 / 用户」**，含义不变，旧配置自动迁移
+
+### 本次亮点
+
+- 新增绝区零一条龙（ZZZ-OD）专项适配，支持用户独立模式与直控模式
+- 模拟器管理新增「Emulator 2.0」配置：一条配置纳管多个雷电 14 / MuMu 6 安装路径与实例
+- 调度队列新增循环队列，队列里的任务可各自按固定时间或间隔一直跑下去
+- 启动速度大幅优化，启动与初始化的等待画面重做
+- 通知系统支持扫码绑定微信 Claw 与 QQ 官方机器人接收任务通知
+
+### 新增
+
+- 模拟器管理 新增「Emulator 2.0」配置类型：一条配置可纳管多个雷电 14 / MuMu 6 安装路径，两家的实例合并成一张设备表统一编号；支持新建与删除实例，分辨率（含 DPI）、CPU、内存、帧率的单台与批量设置，以及一键「稳定模式」关掉高帧率、后台保活等会干扰截图识别的功能；另有「配置守卫」，把你定的设置记成基准，启动前与关闭后各核验一次，被模拟器改掉就还原回来 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaEnd专项 新增脚本直控模式，抢委托送货与自动采集独立为可单独配置的阶段，用户配置页改为锚点导航加分区卡片布局 by [@HarcoChen](https://github.com/HarcoChen)
+- MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen)
+- MFW 项目支持在脚本运行前或运行后自动更新，可在项目配置中选择时机；升级后已有脚本默认为「运行前更新」，不需要可在项目配置中改为「不更新」 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 新增绿票商店开关：开启后每月单独启动一次 MAA 自动购买绿票商店，用户配置页可查看本月状态并手动重置 by [@qiyinxi](https://github.com/qiyinxi)
+- 新增绝区零一条龙（ZZZ-OD）专项适配：支持用户独立模式与直控模式 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、避免卡界面，新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)
+- MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)
+- 调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)
+- 调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)
+- 通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen)
+- HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)
+- 首页 快速启动支持多选并记住上次选择，可一次启动多个任务 by [@Craun718](https://github.com/Craun718)
+- MAA专项 托管结束后保存 MAA 写入配置文件的每日状态（如借战赚信用与访问好友的当天执行记录），同一天多次托管不再重复执行 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 全局设置 新增「虚拟显示器」：显示器断开或关闭后 Windows 只保留一块占位的幻影屏，它照旧上报一个看着正常的分辨率，但背后没有任何输出，游戏渲染与截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后 MAS 在检测到没有任何真实显示输出时临时挂一块 1920x1080 的虚拟显示器，任务结束即拆除；程序若被强制结束，下次启动会自动清理上次遗留的虚拟显示器。刷新率可选 60Hz 或更省 GPU 的 30Hz，并提供驱动检测（需自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动） by [@qiyinxi](https://github.com/qiyinxi)
+- 更新提示改为按版本分区块展示，「重要变更」与「本次亮点」置顶，并可在设置页随时查看当前版本的更新日志
+
+### 变更
+
+- 启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)
+- 配置来源 MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁/详细」配置模式更名为「脚本/用户」，含义不变，旧配置自动迁移 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 代码清理 统一全仓 Python 导入排序，并清理 BetterGI 只写不读的配置项与已冻结的更新开关，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 代码清理 合并各脚本重复的用户标签生成与配置模型并精简报告统计逻辑，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 代码清理 清理后端与前端遗留的无用导入、无效格式与未使用组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 全仓清理 删除后端与前端不再运行的死代码与重复实现，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 帮助入口 在计划管理、模拟器管理、脚本管理及脚本编辑页面增加直达对应文档的入口，链接会随界面语言打开中文或英文文档，降低遇到问题时查找指南的成本 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MaaEnd专项 清理已停用的终末地 PC 登录相关代码，并按实际引用保留登录识别图片 by [@HarcoChen](https://github.com/HarcoChen)
+- 启动流程 超大幅度优化启动速度，前端加载纵享丝滑 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 启动与首页 大幅优化启动速度；修复弱网或 VPN 下刷新活动数据导致所有请求长时间无响应的问题，六张第三方活动卡任一张数据异常只影响自身 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 前端i18n BetterGI 专项的脚本编辑页、用户编辑页与配置组件接入词表，切换界面语言即时生效 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaEnd专项 清理不再需要的 MFW 资源 by [@HarcoChen](https://github.com/HarcoChen)
+- Runtime 接入 开启 AUTO_MAS_RUNTIME_MODE 后，首次初始化、后端监督与后端更新由 auto-mas-runtime.exe 统一完成，界面保留镜像切换、失败处置与旧链路回退 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 移除脚本页的「游戏启动参数」，窗口大小统一由「1920×1080 窗口模式」开关临时改写注册表、任务结束后恢复，旧配置中的该项会在下次保存时自动清除 by [@qiyinxi](https://github.com/qiyinxi)
+- 通用脚本 未填写「配置路径」时改为在任务开始前直接提示，不再跑起来后才报出难懂的错误 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 脚本直控不再要求先导入配置快照，默认直接使用 SRA / 三月七助手当前的配置运行；导入快照改为可选，仅在同一脚本下多个用户需要各跑一套配置时使用，并可一键改回使用脚本当前配置 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 MAS 管控任务的「一键从源配置导入」改名为「重置为源配置」并增加二次确认，明确该操作会清除用户在 MAS 里改过的全部覆盖配置、重新读取 SRA / 三月七助手当前配置 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 MAS 管控任务的配置项补齐中文名称、取值范围与填写说明（如货币战争刷开局的四个重开条件格式），三月七助手缺少配置说明文件时给出明确提示；切换执行引擎时明确提示配置项与副本按引擎分别保存、需要重新选择 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 体力副本在所指派引擎下未选择、执行引擎因缺少路径被自动改派时，改为在任务开始前提示并写入运行日志，不再跑完才在日志里体现 by [@qiyinxi](https://github.com/qiyinxi)
+- 首页 使用快速启动成功后会自动跳转到调度中心 by [@Craun718](https://github.com/Craun718)
+- HSR专项 脚本页新增「SRA 配置档案」下拉，可指定 SRA 多份配置档案中的哪一份供 MAS 管控表单、脚本直控与导入快照使用；默认「自动」保持原有的优先 Default 行为，所选档案被删除时会回退并在脚本页、用户页与运行日志中提示 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 用户页仍以中文显示的一批界面文案（页面标题、用户名与剩余天数标签、历战余响与周常的本周完成状态、服务器与体力副本选项、管控任务列表的周常/日常与启用摘要等）接入多语言词表，英文与日文界面不再夹杂中文 by [@qiyinxi](https://github.com/qiyinxi)
+- 日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)
+- 代码清理 单源化各脚本专项重复的任务报告推送核心与 QQ/微信通知公共助手，并清理前后端死代码与直通包装组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MAA专项 代理接管 MAA 配置时强制开启开始唤醒的账号切换开关，确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MFW专项 进入项目配置页不再每次都要等一遍运行环境确认，开启自动更新时环境准备也提前到任务开始之前完成 by [@qiyinxi](https://github.com/qiyinxi)
+
+### 修复
+
+- Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复深色模式下初始化界面连同标题栏整体变暗的问题
+- OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 修复同时打开两个前端窗口时互相抢占后端连接、每隔几秒断线并反复弹出提示的问题：后开的窗口接管连接，先开的窗口停止重连并只提示一次 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaEnd专项 修复 MaaEnd 更新后已完成任务被误判失败并重复重试的问题 by [@HarcoChen](https://github.com/HarcoChen)
+- 修复与后端断开连接时立即弹出阻塞式弹窗的问题：改为右上角非阻塞提示并在重连成功后自动收起，生产模式仅在整轮重连失败后才升级为弹窗，开发模式下开发者手动重启后端不再被弹窗打断 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复点击「更新后端」时弹出「与后端失去连接」弹窗的问题：更新期间的断开按计划内处理，不再提示，也不再由前端另起一个后端与更新流程抢进程 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复首页读取终末地活动缓存后因日期格式异常导致黑屏的问题
+- MAA专项 修复日常理智作战误用剿灭任务队列、导致计划表关卡被错误用于剿灭任务的问题
+- 修复渲染进程崩溃后窗口永久黑屏的问题，崩溃会自动记录并重载窗口 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 修复剿灭任务因体力耗尽结束时被误判为已完成本周额度的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MaaFW专项 修复 Python 运行时损坏时直到任务中途才报出难懂错误的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 新增受限网络下为 Python 解释器下载配置镜像的环境变量 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复运行环境不可用时会反复重启模拟器与游戏、白等数分钟的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复运行环境损坏时直到任务中途才暴露的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW 建项向导在运行环境准备完成前不再允许进入下一步，准备失败时可就地重试 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW与OK-NTE专项 多用户切换时等待上一用户的游戏进程完全退出，避免误复用正在退出的旧游戏窗口导致任务被中止 by [@AthenaHibou](https://github.com/AthenaHibou)
+- OK-NTE专项 修复任务报告剩余体力计算不准确的问题：体力不足以刷满设定目标时误显「剩余体力: 0」，改为按实际刷本消耗（异象界域双倍/单倍次数、异象追猎实际消耗）精确计算剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 前端类型治理 清理脚本与 Electron 基础边界中的 any，并修复 BetterGI 设置会话无法接收完成和错误事件的问题
+- HSR专项 修复 MAS 管控任务的文本与 JSON 配置项在输入过程中被重渲染清空、导致只有数字项能填写的问题（如货币战争的首领/投资重开条件、策略文件、开拓者名称） by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复 SRA 开启「使用培养目标」后历战余响一直不刷、状态始终停在本周未完成的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复三月七助手跑完体力后按其「任务完成后操作」自行关闭游戏，导致本已成功的模块被判失败、后续模块空跑一次的问题；MAS 管控运行时该项固定为「无操作」，游戏中途退出时不再继续启动该用户的剩余模块 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW专项 修复任务报告推送因漏传通知用户配置参数而失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 游戏签到 修复通知返回值改为 DispatchResult 后未同步两处消费方、开启签到通知时执行签到必报 TypeError 的问题（手动签到接口返回 500，慢渠道后台通知路径丢失日志） by [@1w1w11w1](https://github.com/1w1w11w1)
+- BetterGI专项 修复任务跨过本地午夜后仍监控前一天日志文件、导致后续状态误判的问题 by [@Craun718](https://github.com/Craun718)
+- 修复明日方舟PC工具连接失败后每秒重试并反复弹出错误提示的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW专项 修复账号切换在游戏启动阶段定位不到窗口、或界面尚未进入可执行登录态就误操作而失败的问题，改为分段进展续延等待：先轮询窗口就绪，再等待界面进入「登录页/已登录主菜单」（游戏内长时间更新/加载时持续顺延，长时间无进展才判失败），兼容低性能设备启动延迟 by [@AthenaHibou](https://github.com/AthenaHibou)
+- OK-WW专项 账号切换未能回到登录界面时立即报错并说明原因，不再误报已就绪后在错误画面上继续选号失败 by [@AthenaHibou](https://github.com/AthenaHibou)
+- MAA专项 修复 MAA 更新至 v6.14 后代理时不再按用户填写的账号执行账号切换的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW与OK-NTE专项 修复多用户切换时误复用正在退出的旧游戏窗口导致任务被中止的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- OK-NTE专项 修复体力不足以刷满目标时任务报告误显「剩余体力: 0」的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- HSR专项 修复 SRA / 三月七助手升级或更换配置后，单个失效的 MAS 覆盖配置项会让该引擎全部任务表单一起消失、运行时任务直接失败的问题，现在只忽略失效项并在用户页提示、可一键清理 by [@qiyinxi](https://github.com/qiyinxi)
+- BetterGI专项 修复设置会话无法接收完成和错误事件的问题
+- HSR专项 修复任务配置的文本与 JSON 项在输入时被清空、导致只有数字项能填写的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW专项 修复任务报告推送失败的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 游戏签到 修复开启签到通知时执行签到必报 TypeError 的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- OK-NTE专项 修复日常任务在当日活跃度奖励已领取过（或日常领取子任务被关闭）时被误判为失败并反复重试的问题，已领取时任务报告显示「跳过（当日已领取）」 by [@AthenaHibou](https://github.com/AthenaHibou)
+- HSR专项 修复模块重试耗尽仍失败时用户被误标为「完成」的问题，调度台总览与任务报告不再把失败的代理报成成功 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 修复便携版在装有另一份 Python 3.12 的电脑上运行环境准备成功、任务一启动却报 ctypes 错误的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复脚本直控的用户在脚本结束后偶发被标记为异常的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW 项目更新不再需要填写 GitHub 仓库、Tag 与资产匹配规则，改为从项目 interface.json 自动识别 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW 项目更新检查版本时不再占用 Mirror 酱 CDK 的当日下载次数 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW 项目更新在 Mirror 酱 CDK 过期、类型不符、次数用尽或被封禁时会说明原因，不再只提示失败 by [@qiyinxi](https://github.com/qiyinxi)
+- 首页 修复活动卡片鼠标悬停在边缘时反复上下抖动的问题
+- BetterGI专项 修复一条龙任务跨零点被误判超时、重试后执行报告出现两轮重复、设置会话结束后 BGI GUI 残留运行时配置、切号首次启用误删已有脚本仓库、以管理员权限运行时重复弹出 UAC 授权（支持关闭管理员提权启动）、以及自定义配置组默认启用状态前后端不一致的问题 by [@TCddddd](https://github.com/TCddddd)
+- 通用脚本 修复配置管理方式选「脚本直控配置」时，若脚本配置目录中有文件正被占用，该目录会被删掉一部分且不再还原的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复差分宇宙 / 货币战争在日志未确认完成时，统计通知仍显示「完成」而用户页周常标签停在「未完成」、下次运行重复执行的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复 MAS 管控任务中体力「补充方式」的选项与 SRA 实际含义错位一格的问题：原先选「燃料」实际使用后备开拓力、选「星琼」实际使用燃料，现修正为后备开拓力 / 燃料 / 星琼，并补上缺失的货币战争「刷开局」模式 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复调度台日志每行的时间戳被硬编码为东八区、非中国时区用户看到的时间与本机时钟不符的问题，现跟随本机时区（周常重置日等游戏内日期判定仍按游戏服务器时区） by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项与SRC专项 修复英文与日文界面的术语错误：「历战余响」在英文下被显示为「差分宇宙」（两者在同一页面上是不同玩法），「体力配置」沿用了明日方舟的「理智」译法，「侵蚀隧洞」英文名复数有误 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 修复项目 interface 的同一个预设里重复写了同一个任务（例如 MXU 的随机启动标记）时整份项目读不出来、建项向导卡在第一步的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 从新链路回退到旧链路后准备项目运行环境时，改为直接复用 Runtime 已经装好的 uv，不再要求用户自己再准备一份 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)
+- MFW专项 修复脚本侧强制停止任务（如 MaaEnd 分辨率不达标时的强停）被记成「任务完成」的问题：现在被强停的任务按失败记录，本轮剩余任务不再投递，不会再出现整轮一件事没做却报成全部成功 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 修复 MAA 卡死后不会被判定为超时、任务一直挂着的问题：MAA 每隔一段时间输出的日志停滞提示被当成任务仍在推进，把超时计时反复重置，剿灭等超时阈值长于提示间隔的模式永远等不到超时；现已识别新旧两版 MAA 的该提示，MAA 的五种界面语言均生效 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+
+### 开发流程
+
+- 新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)
+- BetterGI专项 清理未达提交规范的测试文件及其格式、静态检查问题，并移除误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)
+- BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)
+- 开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)
+
+## [v5.5.0-beta.2] - 2026-08-31
+
+### 新增
+
+- 前端i18n 新增日本語词表，界面语言可选日本語，首次启动跟随系统语言；日文词表缺 key 时先回退英文再回退中文 by [@qiyinxi](https://github.com/qiyinxi)
+- 日志处理 新增日志处理钩子层并支持成功/失败标志正则匹配 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW专项 支持启动前按手机号后 4 位强制切换鸣潮登录账号，并新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)
+- OK-NTE专项 将运行日志关键节点注入任务报告，支持用户级节点详情开关并展示日常子任务状态与剩余体力 by [@AthenaHibou](https://github.com/AthenaHibou)
+- OK-WW与OK-NTE专项 任务报告节点详情可逐用户选择关闭/逐条/汇总三种推送模式，逐条模式每条带回采集时间，汇总模式按成功/失败/跳过聚合为一行 by [@AthenaHibou](https://github.com/AthenaHibou)
+- MaaFW专项 新增 MaaFW 脚本类型，可直接托管 MaaFramework 项目：编辑页读取项目 interface.json 后选择控制器、资源与任务，支持 ADB 模拟器与 Win32 PC 游戏两条控制链路；运行时由 AUTO-MAS 进程内的 runner 在独立子进程中驱动项目的 MaaFramework，不启动项目自带界面，也不占用项目自身的配置文件；已在 M9A、MaaYYs、Maa_bbb、MaaEnd 五个项目包上真机验证，覆盖项目自带解释器、项目自带二进制、隔离虚拟环境与双 Agent 四类运行环境 by [@qiyinxi](https://github.com/qiyinxi)
+- 自定义 Webhook 新增 {gamedate} 变量，可在推送模板中引用与历史记录归档一致的游戏日 by [@qiyinxi](https://github.com/qiyinxi)
+- 前端i18n 新增语言选项，首次启动跟随系统语言，英文界面将逐步补全 by [@qiyinxi](https://github.com/qiyinxi)
+- 前端i18n 任务与调度台的状态标签跟随界面语言显示，判定逻辑不变 by [@qiyinxi](https://github.com/qiyinxi)
+- 前端i18n 主要页面（首页、脚本、计划、模拟器、队列、调度中心、历史记录、工具、游戏签到、设置与各脚本/用户编辑页）的界面文案接入词表，切到英文后即时生效；参与判断的中文（状态枚举、后端返回值、搜索别名、游戏内关卡与材料名）保持原样 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-WW专项 由 MAS 自行接管鸣潮游戏更新：启动前自动检查官方版本并完成资源更新，支持多 CDN 断点续传下载、md5 校验、官方增量补丁优先并在失败时回退整文件同步（超 30GB 阈值中止提示），新增「启动前自动更新」「整文件同步上限」配置与手动「检查更新」入口，更新写入暂存区校验通过后原子替换，并修复本地版本记录缺失被误判为最新导致静默启动旧版客户端的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@TCddddd](https://github.com/TCddddd)
+- 日志采集 API 落地为 log_box 通用组件（与专项解耦：进程无关宿主、多文件自采集、i18n 预翻译前置与后置处理），OK-WW专项 作为 log_box 实例将运行日志关键节点推送至任务报告，支持用户级「是否采集节点详情」开关，日志源轮转 .bak 补偿；并修复通用脚本进程退出判定、OK-WW 采集收尾异常与补充翻译路径问题 by [@AthenaHibou](https://github.com/AthenaHibou) by [@TCddddd](https://github.com/TCddddd)
+- 调度队列 新增 每日首次启动 运行队列的功能 by [@luo-luo-o](https://github.com/luo-luo-o) by [@TCddddd](https://github.com/TCddddd)
+- 界面设置 托盘图标右键菜单支持自定义：可在设置中增删、排序菜单项，支持「启动任务」（一键启动指定队列/脚本，控制台新建任务并运行）「停止全部任务」「重启应用」命令，退出与重启统一走与窗口关闭一致的确认窗（任务运行中时提示），并修复托盘事件监听重复注册及异常配置导致的无效菜单项，未配置时保持原菜单行为 by [@1w1w11w1](https://github.com/1w1w11w1) by [@TCddddd](https://github.com/TCddddd)
+- BetterGI专项 新增更好的原神脚本适配，支持原生 GUI 直控配置与一条龙任务自动代理 by [@TCddddd](https://github.com/TCddddd)
+
+### 变更
+
+- 架构优化 新增 utils/services 平台层，按通用与 Windows 能力拆分底层实现，非 Windows 环境跳过 Windows 专用初始化 by [@HarcoChen](https://github.com/HarcoChen)
+- 回滚启动时的遮罩 by [@HarcoChen](https://github.com/HarcoChen)
+- 匿名遥测 接入 Electron 主进程与渲染进程错误上报，增加应用启动、后端启动和任务执行的性能指标，抑制无异常的日志事件并遮蔽上报内容中的本机用户名，并关联 Sentry 发布提交与生产部署信息 by [@ClozyA](https://github.com/ClozyA)
+- 清理无用前端资源、依赖及后端冗余代码 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MaaFW项目 interface 解析接上闲置的两级缓存，并对 .json 文件先按严格 JSON 解析、失败再回退 JSON5（json5 是纯 Python 实现，比标准库慢三个数量级）：用户页与脚本页进入耗时由约 5.5 秒降至约 0.12 秒 by [@qiyinxi](https://github.com/qiyinxi)
+- 任务调度 单独运行脚本任务不再受单日代理次数上限约束，该限制仅对计划队列生效 by [@qiyinxi](https://github.com/qiyinxi)
+- 配置任务的成败判定改用协议中的机器可读字段，不再匹配结果文本 by [@qiyinxi](https://github.com/qiyinxi)
+- 通知系统 脚本、签到、MaaFW 与测试通知统一走同一渠道分发层，失败渠道不阻断其余渠道且可单独重试；签到汇总按渠道记录投递状态，部分失败时不会被误消费成已送达 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MaaFW专项 运行日志改为记录实际加载的 MaaFramework 版本与来源，并在原生库与 Python 绑定版本不一致时给出警告 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 运行日志在项目自带非官方构建的 MaaFramework 时给出提示 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 任务失败信息改为指出停在哪个节点，不再堆砌内部标识与重复的任务名 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 下载了与本机架构不匹配的发行包时给出明确提示，而非原生层难以定位的报错 by [@qiyinxi](https://github.com/qiyinxi)
+
+### 修复
+
+- 前端i18n 修复两条含「|」的说明文案在界面上被截断的问题——vue-i18n 把 | 当复数分隔符，字面量需要转义 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 Mirror 酱一次性下载地址被版本检查缓存复用导致更新包下载失败的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 HSR 托管任务列表中点击任务开关导致界面报错的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复系统通知标题或内容过长时推送失败的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 修复任务生成时无条件覆盖用户原生高级配置的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 通知服务 自定义 Webhook 推送本地/内网目标绕过代理 by [@ArmedHelicopter](https://github.com/ArmedHelicopter)
+- 修复 M9A 任务跨过本地午夜后日志监控仍读取前一天文件、导致任务被误判超时的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复启动时队列的「每日首次」在跨日前十秒内冷启动时，可能漏跑当天或在同一天重复运行的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复日志文件在监控期间被替换或截断后，监控可能永远读不到新内容的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复系统时钟跳变（夏令时切换、NTP 校时）导致运行中任务被误判超时、模拟器等待提前放弃与历史记录归档时刻偏移一小时的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 复用原生预设任务队列，补齐剿灭、活动关优先和库存保持并移除生息演算，同时明确剿灭与日常分两次启动
+- MaaFW专项 修复 Win32 项目定位游戏窗口时因超时参数类型不符而失败，导致窗口未前置、首个任务识别不到目标的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复 MXU 外壳的项目（M9A、MaaEnd）识别不出外壳家族，导致同版本发布多个外壳分包时无法选出可安装更新包的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复内置运行未加载项目自带的 MaaFramework 而回落到 AUTO-MAS 运行环境中同版本号但二进制不同的一份的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复内置运行装上与项目自带 MaaFramework 版本不符的 Python 绑定的问题，改为按项目实际发行的运行库版本安装 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复运行期间界面日志停止更新、点击停止无响应的问题，原因是转发脚本输出时独占事件循环 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复删除脚本或项目升级后，旧的隔离运行环境永久占用磁盘不被清理的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaFW专项 修复中止任务后项目 Agent 进程残留、持续占用内存与文件句柄的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复接入词表后 MaaEnd 与 HSR 脚本编辑页、通用配置来源选择器无法加载的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 MaaFW 框架调试日志在运行中发生轮转时只保存到后半段的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 HSR 脚本只填写三月七路径时任务模块仍被分配给 SRA、导致无法运行的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 MaaFW 单个任务失败时运行日志不即时提示、要等整轮跑完才能看到的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 HSR 未配置 SRA 路径时多个用户会静默跑在同一个已登录账号上的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 MaaFW 游戏启动失败后仍继续投递剩余任务、空转到各自超时的问题，改为直接报错并进入下一次重试 by [@qiyinxi](https://github.com/qiyinxi)
+- 修复 MaaFW 用户级通知配置形同虚设的问题，运行结束后按用户自己配置的渠道推送统计信息 by [@qiyinxi](https://github.com/qiyinxi)
+
+### 开发流程
+
+- 开发环境改用独立的后端端口与 userData 目录，可与已安装的正式版同时运行 by [@qiyinxi](https://github.com/qiyinxi)
+- 前端代码检查与格式化工具由 ESLint 与 Prettier 迁移至 oxlint 与 oxfmt，保持既有规则与格式配置兼容，并由每周自动格式化工作流执行 Markdown lint 修复 by [@Craun718](https://github.com/Craun718)
+- 添加pyproject和ruff配置 by [@HarcoChen](https://github.com/HarcoChen)
+- 订正前端 Skill 中已过时的 lint / typecheck 基线描述，避免把自己引入的错误当成既有噪音 by [@qiyinxi](https://github.com/qiyinxi)
+- 清理两处后端测试缺陷：SRC 配置测试不再向系统临时目录写入固定名目录，并移除已不在目标内的 headless 导入守卫测试 by [@qiyinxi](https://github.com/qiyinxi)
+- 清理 MaaFW 从未发布的外部运行代码路径（启动项目自带 UI 外壳）与随之失效的配置项，内置运行成为唯一实现 by [@qiyinxi](https://github.com/qiyinxi)
+- 清理 MaaFW 配置复用模块：能力未接入任何界面，留着只会让人以为可用，需要时可从上游重新取用 by [@qiyinxi](https://github.com/qiyinxi)
+
+## [v5.5.0-beta.1] - 2026-08-28
+
+### 新增
+
+- MAA专项 支持启动前检查并更新明日方舟客户端 by [@1w1w11w1](https://github.com/1w1w11w1)
+- OK-WW专项 支持启动前自动更新鸣潮客户端 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 日志采集 支持将运行节点推送至任务报告 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 调度队列 支持每日首次启动时运行队列 by [@luo-luo-o](https://github.com/luo-luo-o)
+- 界面设置 支持自定义托盘菜单及任务控制命令 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 界面设置 支持一键备份数据 by [@1w1w11w1](https://github.com/1w1w11w1)
+
+### 变更
+
+- MAA专项 重构用户配置页面 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 专项任务移除人工排查模式并统一签到入口 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 前端界面 统一编辑页样式并优化状态管理 by [@ClozyA](https://github.com/ClozyA)
+
+### 修复
+
+- SRC专项 修复任务结束后的进程与配置清理问题 by [@Craun718](https://github.com/Craun718)
+- MaaEnd专项 修复脚本退出后任务持续等待问题 by [@HarcoChen](https://github.com/HarcoChen)
+- HSR专项 修复 M7A 切换界面失败未重启任务问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复开机自启动后台任务异常未记录问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- 修复通知服务延迟加载导致的 Config/System 错误 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 日志采集 修复多账号任务各用户节点详情被合并推送的问题，报告按用户分开展示节点归属 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 日志采集 统一通用脚本编辑页「推送配置」区块标题大小/样式与其他配置区一致，默认不展示规则编辑卡片、首次点击「添加规则」后才出现，标题栏支持点击折叠/展开规则编辑区，并修复新增/删除/排序规则时在用户尚未编辑字段就立即弹出「缺必填字段」提示，改为仅在实际字段编辑缺失时给出提示，且避免异步保存刷新回写时移除刚添加的空规则 by [@AthenaHibou](https://github.com/AthenaHibou)
+
+### 开发流程
+
+- 开发流程 修复前端类型与 lint 检查问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+
+## [v5.4.0] - 2026-08-26
+
+### 变更
+
+- MaaEnd专项 增强账号切换
+
+### 修复
+
+- OK-WW专项 修复任务在日志产生前手动终止时历史记录误显示未捕获到日志的问题
+- OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题
+- MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度
+
+[v5.5.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.2...dev
+[v5.5.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.1...v5.5.0-beta.2
+[v5.5.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0-beta.1
+[v5.4.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/tag/v5.4.0

@@ -1307,8 +1307,16 @@ const toggleGroup = (value: string) => {
   }
   // 按内置顺序排序，保持后端一条龙 TaskOrder 稳定
   const groups = ONE_DRAGON_GROUPS.map(g => g.value).filter(v => set.has(v))
+  const prev = formData.OneDragon.Groups
   formData.OneDragon.Groups = groups
-  void saveField('OneDragon.Groups', groups)
+  void saveField('OneDragon.Groups', groups).then(ok => {
+    // 保存失败必须回滚并提示：否则界面显示与后端数据脱节（运行时按旧数据执行，
+    // 出现「界面开着、实际没跑」的静默不一致，直到重新进入页面才被发现）
+    if (!ok) {
+      formData.OneDragon.Groups = prev
+      message.error(`组开关「${value}」保存失败，已还原，请重试`)
+    }
+  })
 }
 
 // 一条龙配置名下拉选项（{RootPath}/User/OneDragon/*.json，默认配置置顶），由后端实时读取
@@ -1436,6 +1444,12 @@ type ConfigGroupIdentity = {
   uid?: number
   /** 每实例独立启用状态：战斗 4 项走执行层 Plan，按此启停；其余组不使用此字段 */
   enabled?: boolean
+  /**
+   * 绑定的执行层 Plan 步骤 uid：同名多实例（如「自动秘境」×3）靠它定向排序——
+   * 后端 build_combat_steps 按 planUid 精确匹配 Plan 步骤，队列拖拽顺序才能逐实例生效。
+   * 由 persistDragonQueue 按行实例的 Plan 步骤名（stepNameIn）自动解析写入。
+   */
+  planUid?: string
 }
 
 // 启用体力作战时自动关闭并冻结的官方内置组（专项接管刷取）
@@ -1665,8 +1679,15 @@ const inDragon = (item: ConfigGroupIdentity): boolean =>
 
 // 同步后端内置组启用集合（当前 Groups 含 enabled 列表 + 冻结时剔除冻结项）
 const applyGroupsPatch = (next: string[]) => {
+  const prev = formData.OneDragon.Groups
   formData.OneDragon.Groups = next
-  void saveField('OneDragon.Groups', next)
+  void saveField('OneDragon.Groups', next).then(ok => {
+    // 保存失败回滚并提示，避免界面与后端静默脱节（与 toggleGroup 同理）
+    if (!ok) {
+      formData.OneDragon.Groups = prev
+      message.error('组开关保存失败，已还原，请重试')
+    }
+  })
 }
 
 // 从当前 Groups 中剔除指定内置组（冻结 / 删除共用）
@@ -1724,7 +1745,8 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
     }
     const suffix = typeof rec.suffix === 'string' ? rec.suffix : undefined
     const uid = typeof rec.uid === 'number' ? rec.uid : undefined
-    rows.push(makeDragonRow({ kind, key: name, suffix, uid }))
+    const planUid = typeof rec.planUid === 'string' ? rec.planUid : undefined
+    rows.push(makeDragonRow({ kind, key: name, suffix, uid, planUid }))
   }
   // 第二遍：战斗组每实例启用状态来自 Plan，按「行实例 uid」定位步骤名（与后名解耦）
   const planEnabled = readPlanEnabled()
@@ -1743,9 +1765,20 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
 // 把当前队列顺序/成员落库（体力作战行不持久化；运行时后端按此重建 TaskOrder）
 const persistDragonQueue = () => {
   if (!dragonListReady || !groupsEditable.value) return
+  // 战斗实例解析其 Plan 步骤 uid（按行实例的步骤名精确对应）；非战斗行无 planUid。
+  // 后端 build_combat_steps 按 planUid 精确匹配 Plan 步骤——同名多实例（「自动秘境」×3）
+  // 的拖拽顺序据此逐实例生效，不再退化为按 Plan 原顺序 FIFO。
+  const planSteps = parsePlanSteps((formData.OneDragon as any)?.Plan)
   const entries = dragonList.value
     .filter(i => i.kind !== 'stamina')
-    .map(i => ({ kind: i.kind, name: i.key, suffix: i.suffix, uid: i.uid }))
+    .map(i => {
+      let planUid: string | undefined
+      if (i.kind === 'builtin' && COMBAT_BUILTIN_SET.has(i.key)) {
+        const stepName = stepNameIn(i, dragonList.value)
+        planUid = planSteps.find(s => s && s.name === stepName)?.uid
+      }
+      return { kind: i.kind, name: i.key, suffix: i.suffix, uid: i.uid, planUid }
+    })
   void saveField('OneDragon.Queue', JSON.stringify(entries))
   // 存在战斗实例时确保执行层开启：否则 Plan 中的 per-instance 设置/启停不会被运行时消费
   const oneDragon = formData.OneDragon as unknown as Record<string, unknown>
@@ -2199,8 +2232,9 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
   自动幽境危战: [
     {
       // 刷取战场(bossNum)/战斗队伍(fightTeamName)/战斗策略(strategyName)/分解圣遗物(autoArtifactSalvage)：
-      // 前四项存于 BGI 全局 config.json 的 autoStygianOnslaughtConfig 段（source: 'globalStygian'）；
-      // 分解圣遗物星级(maxArtifactStar)走 autoArtifactSalvageConfig 段（source: 'globalDomain'，与秘境共用）。
+      // 均存于 BGI 全局 config.json 的 autoStygianOnslaughtConfig 段（source: 'globalStygian'）。
+      // 分解星级不在此配置：BGI 幽境 Param（AutoStygianOnslaughtParam）无 maxArtifactStar 参数，
+      // 分解档位由全局 autoArtifactSalvageConfig 统一生效（在「自动秘境」面板配置）。
       // 队伍/策略与顶部「通用战斗队伍/策略」同段——面板非空运行时覆盖通用值，留空由通用兜底。
       title: '刷取设置',
       fields: [
@@ -2208,7 +2242,6 @@ const BUILTIN_GROUP_SETTING_SECTIONS: Record<string, DragonSettingSection[]> = {
         { key: 'fightTeamName', label: '战斗队伍', type: 'text', source: 'globalStygian', help: '填游戏内队伍名；留空不指定（由顶部「通用战斗队伍」兜底）。' },
         { key: 'strategyName', label: '战斗策略', type: 'strategy', source: 'globalStygian', help: '选择战斗策略；留空由顶部「通用战斗策略」兜底。' },
         { key: 'autoArtifactSalvage', label: '分解圣遗物', type: 'bool', source: 'globalStygian', help: '任务结束后自动分解圣遗物。' },
-        { key: 'maxArtifactStar', label: '分解圣遗物星级', type: 'select', source: 'globalDomain', options: ARTIFACT_STAR_OPTIONS, help: '分解的最高星级。' },
       ],
     },
     {

@@ -18,6 +18,7 @@
 
 import asyncio
 import re
+import time
 import uuid
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -91,7 +92,9 @@ _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
 _BGI_SWITCH_TIMEOUT_SECONDS = 600
 
 # 路径 B 执行层（战斗 4 项 --startGroups MAS一条龙）单独执行的超时（秒）
-_BGI_PLAN_COMBAT_TIMEOUT_SECONDS = 900
+# 执行层空闲超时：on_log 每次收到日志即续期；仅当日志静默超过该时长才判定卡死。
+# （旧实现为固定 900s 墙钟，多实例执行层总耗时可超 20 分钟会被误杀——2026-09-08 实机排障。）
+_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS = 300
 
 # BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
 # TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
@@ -457,13 +460,14 @@ class AutoProxyTask(TaskExecuteBase):
         self._backup_one_dragon_config()
         self._write_one_dragon_config()
 
-        # 路径 B：先直连执行层跑战斗 4 项；失败则中止（日常 4 项仍走随后的一条龙）
-        if self.plan_mode:
-            if not await self._run_plan_combat():
-                self.cur_user_item.status = "异常"
-                self.script_info.log = "执行层（战斗4项）失败，已中止任务"
-                logger.error(f"用户 {self.cur_user_item.name} 执行层失败，中止任务")
-                return
+        # 路径 B：先直连执行层跑战斗 4 项。失败不再中止任务：日常 4 项（领奖类）
+        # 与战斗无依赖，仍由随后的一条龙承接，避免战斗异常连坐吞掉日常收益
+        # （2026-09-08 用户决策：记录警告但继续）。
+        if self.plan_mode and not await self._run_plan_combat():
+            self.script_info.log = "执行层（战斗4项）失败，继续执行一条龙日常"
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
+            )
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
@@ -587,9 +591,17 @@ class AutoProxyTask(TaskExecuteBase):
             "执行配置组任务时失败",
             "任务启动失败",
             "[FTL]",
+            # 执行层 JS 脚本自身失败标记（MAS_PLAN_FAIL 抛异常后 BGI 仍会打印
+            # 「配置组 ... 执行结束」，仅靠 done_marker 会把失败误判为成功）
+            "MAS_PLAN_FAIL",
+            "MAS_STEP_FAIL",
         )
 
+        last_activity = time.monotonic()
+
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
+            nonlocal last_activity
+            last_activity = time.monotonic()
             log = "".join(log_content)
             if done_marker in log:
                 result["success"] = True
@@ -618,13 +630,23 @@ class AutoProxyTask(TaskExecuteBase):
             await monitor.start_monitor_file(
                 self._resolve_log_file_path, datetime.now()
             )
-            try:
-                await asyncio.wait_for(
-                    done_event.wait(), timeout=_BGI_PLAN_COMBAT_TIMEOUT_SECONDS
-                )
-            except asyncio.TimeoutError:
-                result["success"] = False
-                logger.warning(f"用户 {self.cur_user_item.name} 执行层超时")
+            # 空闲超时循环：日志每次输出即续期，仅当日志静默超过 idle 阈值
+            #（BGI 卡死）才终止，不设总时长上限。旧实现为固定 900s 墙钟，
+            # 多实例执行层总耗时 20+ 分钟会被误杀（2026-09-08 实机排障：
+            # 7 步在 14 分钟处被砍，末位步骤未执行）。
+            while not done_event.is_set():
+                    try:
+                        await asyncio.wait_for(done_event.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass
+                    # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
+                    if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
+                        result["success"] = False
+                        logger.warning(
+                            f"用户 {self.cur_user_item.name} 执行层空闲超时"
+                            f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                        )
+                        break
         except Exception as e:
             logger.opt(exception=True).warning(f"执行层执行异常: {e}")
             result["success"] = False

@@ -35,6 +35,19 @@ function masLog(line) {
   console.log(line);
 }
 
+// 统一守卫：向 BGI Param 对象（.NET 互斥对象）赋值时，若该版本未暴露对应属性，
+// 会抛 "no suitable property or field" 异常并中断整个执行层。setProp 静默跳过
+// 不支持的属性并打标记，保证后续步骤继续执行。
+function setProp(obj, name, value) {
+  try {
+    obj[name] = value;
+  } catch (e) {
+    masLog(
+      "MAS_PROP_UNSUPPORTED: " + name + " " + ((e && (e.message || e.toString())) || String(e))
+    );
+  }
+}
+
 // 统一封装：每次 new 一个新 Param；必须 await；try/finally 复位主界面；
 // 策略用 setCombatStrategyPath 的返回值回填（遵循 AutoPlan 六条纪律）。
 // new Date().getDay() 的顺序：0=周日..6=周六
@@ -186,21 +199,34 @@ async function dispatchCombat(step) {
       break;
     }
     case "自动幽境危战": {
-      const p = new AutoStygianOnslaughtParam("");
-      if (s.bossNum != null) p.bossNum = s.bossNum;
-      if (s.autoArtifactSalvage != null) p.autoArtifactSalvage = !!s.autoArtifactSalvage;
-      // maxArtifactStar 来自秘境面板（globalDomain），由 _route_combat_to_plan 同步进本 step
-      if (s.maxArtifactStar != null) p.maxArtifactStar = String(s.maxArtifactStar);
-      if (s.specifyResinUse != null) p.specifyResinUse = !!s.specifyResinUse;
-      if (s.originalResinUseCount != null) p.originalResinUseCount = s.originalResinUseCount;
-      if (s.condensedResinUseCount != null) p.condensedResinUseCount = s.condensedResinUseCount;
-      if (s.transientResinUseCount != null) p.transientResinUseCount = s.transientResinUseCount;
-      if (s.fragileResinUseCount != null) p.fragileResinUseCount = s.fragileResinUseCount;
+      // 无参构造：SetDefault() 先把 BGI 全局幽境配置（含默认策略路径）填进 Param。
+      // 不要用 AutoStygianOnslaughtParam("")——带参构造会用空串覆盖 CombatScriptBagPath，
+      // 导致未指定策略时丢掉全局默认策略（源码 AutoStygianOnslaughtParam.cs 已核实）。
+      const p = new AutoStygianOnslaughtParam();
+      // BGI 部分版本未在 Param 类上暴露某些属性（如 AutoStygianOnslaughtParam 无
+      // maxArtifactStar），直接赋值会抛 "no suitable property or field" 并中断整个
+      // 执行层（实机 0.64.1-alpha.1 已复现）。统一走 setProp 静默跳过并打标记。
+      if (s.bossNum != null) setProp(p, "bossNum", s.bossNum);
+      if (s.autoArtifactSalvage != null) setProp(p, "autoArtifactSalvage", !!s.autoArtifactSalvage);
+      if (s.specifyResinUse != null) setProp(p, "specifyResinUse", !!s.specifyResinUse);
+      if (s.originalResinUseCount != null) setProp(p, "originalResinUseCount", s.originalResinUseCount);
+      if (s.condensedResinUseCount != null) setProp(p, "condensedResinUseCount", s.condensedResinUseCount);
+      if (s.transientResinUseCount != null) setProp(p, "transientResinUseCount", s.transientResinUseCount);
+      if (s.fragileResinUseCount != null) setProp(p, "fragileResinUseCount", s.fragileResinUseCount);
       // 右栏幽境面板的战斗队伍/策略优先（fightTeamName/strategyName 来自 globalStygian），
       // 留空时 Param 不设置，BGI 回退全局 config.json 段（顶部通用队伍/策略兜底）。
-      if (s.fightTeamName) p.fightTeamName = s.fightTeamName;
+      if (s.fightTeamName) setProp(p, "fightTeamName", s.fightTeamName);
       const stygianStrategy = s.strategyName || s.combatStrategyPath;
-      if (stygianStrategy) p.combatStrategyPath = p.setCombatStrategyPath(stygianStrategy);
+      // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
+      // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
+      // 只调用方法本身即可，不要把返回值赋给属性（会抛 no suitable property 异常）。
+      if (stygianStrategy) {
+        if (typeof p.setCombatStrategyPath === "function") {
+          p.setCombatStrategyPath(stygianStrategy);
+        } else {
+          masLog("MAS_STYGIAN_STRATEGY_UNSUPPORTED: " + stygianStrategy);
+        }
+      }
       if (Array.isArray(s.resinPriorityList)) p.setResinPriorityList(...s.resinPriorityList);
       await genshin.returnMainUi();
       try {

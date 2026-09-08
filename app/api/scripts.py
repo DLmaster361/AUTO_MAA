@@ -149,20 +149,6 @@ def _route_combat_to_plan(
     new_plan = one_dragon_plan.merge_rightbar_into_plan(
         plan_json, target_group, plan_settings, extra=extra or None
     )
-    # ``maxArtifactStar`` 是秘境与幽境危战共用的全局字段（BGI 同一份
-    # ``autoArtifactSalvageConfig`` 段），会被本端点统一写到秘境 step；这里再把
-    # 同一份值同步进 Plan 中**所有已存在的** ``自动幽境危战`` 步骤（含默认 base 与
-    # 各实例），执行层幽境分支才能透传。
-    # 仅同步既有步骤：不为同步凭空新建幽境步骤（避免队列出现用户未创建的幽灵项）；
-    # 新建的幽境实例会在其自身保存时写入该值。
-    if one_dragon_plan.resolve_base_name(target_group) == "自动秘境" and "maxArtifactStar" in settings:
-        _val = settings["maxArtifactStar"]
-        for _st in one_dragon_plan.parse_one_dragon_plan(new_plan):
-            _nm = _st.get("name", "")
-            if one_dragon_plan.resolve_base_name(_nm) == "自动幽境危战":
-                new_plan = one_dragon_plan.merge_rightbar_into_plan(
-                    new_plan, _nm, {"maxArtifactStar": _val}
-                )
     return settings, new_plan
 
 

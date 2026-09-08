@@ -159,7 +159,6 @@ BUILTIN_STEP_SETTING_KEYS: dict[str, frozenset[str]] = {
             "fragileResinUseCount",
             "resinPriorityList",
             "combatStrategyPath",
-            "maxArtifactStar",
         }
     ),
     "自动首领讨伐": frozenset(
@@ -368,7 +367,6 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
         "fightTeamName": "fightTeamName",
         "strategyName": "strategyName",
         "autoArtifactSalvage": "autoArtifactSalvage",
-        "maxArtifactStar": "maxArtifactStar",
         "specifyResinUse": "specifyResinUse",
         "originalResinUseCount": "originalResinUseCount",
         "condensedResinUseCount": "condensedResinUseCount",
@@ -632,6 +630,22 @@ def build_combat_steps(
         if not bool(item.get("enabled", True)):
             continue
         qname = str(item.get("name", ""))
+        # ① 条目 planUid 与 Plan 步骤 uid 一致 → 精确定向（同名多实例的唯一区分手段）
+        quid = str(item.get("planUid", "") or "")
+        if quid:
+            exact = next(
+                (
+                    i
+                    for i in range(len(plan_combat))
+                    if i not in consumed and str(plan_combat[i].get("uid", "")) == quid
+                ),
+                None,
+            )
+            if exact is not None:
+                consumed.add(exact)
+                out.append(plan_combat[exact])
+                continue
+        # ② 名称精确匹配
         exact = next(
             (
                 i

@@ -638,7 +638,13 @@ def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
             kind = str(item.get("kind", "")).strip()
             if kind not in ("js", "pathing", "scriptgroup", "custom"):
                 kind = "custom"
-        out.append({"kind": kind, "name": name})
+        entry: dict[str, str] = {"kind": kind, "name": name}
+        # 保留前端条目 planUid（其绑定的执行层 Plan 步骤 uid）：同名多实例如
+        # 「自动秘境」×3 依赖它定向排序，否则只能按 Plan 原顺序 FIFO。
+        item_plan_uid = str(item.get("planUid", "")).strip()
+        if item_plan_uid:
+            entry["planUid"] = item_plan_uid
+        out.append(entry)
     return out
 
 

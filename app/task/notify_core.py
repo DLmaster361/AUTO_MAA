@@ -31,11 +31,11 @@ from app.core import Config
 from app.core.notify import (
     DispatchResult,
     NotifyPayload,
+    dispatch_task_report,
     global_target,
     should_send_result,
 )
 from app.tools.game_sign_notify import (
-    dispatch_task_report,
     get_task_game_sign_summary,
 )
 
@@ -63,7 +63,7 @@ async def push_proxy_result(
         skip_debug_message: SendTaskResultTime 不满足时的 debug 文案，仅 M9A 传入。
     """
 
-    if not should_send_result(message):
+    if not should_send_result(message, task_info=task_info):
         if logger is not None and skip_debug_message:
             logger.debug(skip_debug_message)
         return DispatchResult()

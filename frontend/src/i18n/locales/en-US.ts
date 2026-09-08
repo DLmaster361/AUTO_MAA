@@ -2500,6 +2500,7 @@ export default {
     input: 'Input',
     couldNotPickLaunch: 'Could not pick the launch exe',
     qqDirectMessageOver: 'QQ direct message over the OneBot HTTP API',
+    qqDirectMessageOverImage: 'Send a QQ direct-message image over the OneBot HTTP API',
     notifyGetRequest: 'Notify with a GET request',
     restartApp: 'Restart the app',
     couldNotReorder: 'Could not reorder',

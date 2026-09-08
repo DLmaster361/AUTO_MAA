@@ -2398,6 +2398,7 @@ export default {
     input: '输入',
     couldNotPickLaunch: '选择启动 exe 失败',
     qqDirectMessageOver: '通过 OneBot HTTP API 发送 QQ 私聊消息',
+    qqDirectMessageOverImage: '通过 OneBot HTTP API 发送 QQ 私聊图片',
     notifyGetRequest: '通过GET请求发送通知',
     restartApp: '重启应用',
     couldNotReorder: '重新排序失败',

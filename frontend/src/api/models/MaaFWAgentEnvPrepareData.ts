@@ -40,5 +40,13 @@ export type MaaFWAgentEnvPrepareData = {
      * 实际解析到的 MaaFramework 版本
      */
     maafwVersion?: (string | null);
+    /**
+     * 是否命中指纹缓存，命中时本次未做实际准备
+     */
+    cached?: boolean;
+    /**
+     * 缓存命中时，上一次实际完成准备的时间
+     */
+    preparedAt?: (string | null);
 };
 

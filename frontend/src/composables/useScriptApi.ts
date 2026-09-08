@@ -1252,12 +1252,14 @@ export function useScriptApi() {
 
   const prepareMaaFWAgentEnv = async (
     path: string,
-    scriptId?: string
+    scriptId?: string,
+    force = false
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
     try {
       return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
         path,
         scriptId,
+        force,
       })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)

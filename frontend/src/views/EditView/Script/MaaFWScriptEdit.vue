@@ -491,12 +491,13 @@ onBeforeUnmount(() => {
 
 const envPreparedPath = ref('')
 
-const runAgentEnvPrepare = async (targetPath?: string) => {
+const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
   const path = (targetPath ?? maafwConfig.Info.Path).trim()
   if (!path) return
   if (envPreparing.value) return
-  // 同一个项目已经备好过就不重复跑；换了目录才重新准备
-  if (envReady.value && envPreparedPath.value === path) return
+  // 同一个项目已经备好过就不重复跑；换了目录才重新准备。
+  // 这层只挡住本次停留在页面上的重复调用；跨页面进出由后端比项目指纹来挡。
+  if (!force && envReady.value && envPreparedPath.value === path) return
   ensureEnvSubscription()
   envPreparing.value = true
   envReady.value = false
@@ -505,7 +506,7 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
   envLogs.value = []
   envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
   try {
-    const response = await prepareMaaFWAgentEnv(path, scriptId)
+    const response = await prepareMaaFWAgentEnv(path, scriptId, force)
     if (!response || response.code !== 200 || !response.data) {
       envFailed.value = true
       envMessage.value = response?.message || 'MFW 运行环境准备失败'
@@ -529,10 +530,11 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
   }
 }
 
-// 重试要清掉「这个路径已经备好过」的记忆，否则 runAgentEnvPrepare 会直接跳过。
+// 重试要清掉「这个路径已经备好过」的记忆，并让后端也别吃指纹缓存：用户点重试
+// 就是因为环境实际不好使，而指纹只看项目文件动没动，看不出 venv 内部坏了。
 const retryAgentEnvPrepare = async () => {
   envPreparedPath.value = ''
-  await runAgentEnvPrepare()
+  await runAgentEnvPrepare(undefined, true)
 }
 
 const selectMaaFWPath = async () => {

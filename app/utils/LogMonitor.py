@@ -192,11 +192,14 @@ class LogMonitor:
                 # 轮转或文件被替换（同一路径上换了文件身份）：滚动前后属于
                 # 同一次运行，log_contents 与 if_log_start 保留不清空，否则
                 # 落库历史只剩轮转后内容（跨零点实测）；被重命名的旧文件按
-                # inode 在同目录找回，把未读尾部接回来
-                if (
-                    log_stat.st_ino != current_path.stat().st_ino
-                    or log_stat.st_size > current_path.stat().st_size
-                ):
+                # inode 在同目录找回，把未读尾部接回来。身份比对用
+                # (st_ino, st_ctime_ns) 双信号（与 log_box 的 LogSource 一致）：
+                # Windows 下 ctime 是创建时间，同文件追加不变、被替换才变化，
+                # 补上无 inode 文件系统上新文件长过旧 offset 时漏检替换的缺口
+                current_stat = current_path.stat()
+                previous_id = (log_stat.st_ino, log_stat.st_ctime_ns)
+                current_id = (current_stat.st_ino, current_stat.st_ctime_ns)
+                if previous_id != current_id or log_stat.st_size > current_stat.st_size:
                     if_log_start = await self._recover_rotated_tail(
                         current_path,
                         log_stat.st_ino,
@@ -207,7 +210,7 @@ class LogMonitor:
                     )
                     offset = 0
 
-                log_stat = current_path.stat()
+                log_stat = current_stat
 
                 if log_stat.st_size < offset:
                     # 文件比记录的偏移还短，说明它被替换或截断过。按日期滚动

@@ -645,14 +645,17 @@ export class RepositoryService {
    * 复制文件到根目录
    */
   private async copyToRoot(): Promise<void> {
+    // .git 放在最后: 中途失败时不要让「版本已最新」的假象盖住残缺的源码。
+    // 否则后端 get_git_version() 会认为 HEAD 已是最新，标题栏不再提示
+    // 「后端有更新」，用户失去重新拉取的入口。
     const itemsToCopy = [
-      '.git',
       'app',
       'res',
       'main.py',
       'requirements.txt',
       'LICENSE',
       'README.md',
+      '.git',
     ]
 
     for (const item of itemsToCopy) {
@@ -664,29 +667,65 @@ export class RepositoryService {
         continue
       }
 
+      const stagePath = `${dstPath}.new`
+      const backupPath = `${dstPath}.old`
+      let backedUp = false
+
       try {
-        // 删除目标文件/目录
-        if (fs.existsSync(dstPath)) {
-          if (fs.statSync(dstPath).isDirectory()) {
-            fs.rmSync(dstPath, { recursive: true, force: true })
-          } else {
-            fs.unlinkSync(dstPath)
-          }
+        // 1. 先把新内容整个落到 <item>.new。这一步耗时最长、也最容易被
+        //    杀软/占用/进程被杀打断，但失败时 <item> 还原封不动。
+        this.removePath(stagePath)
+        this.removePath(backupPath)
+        if (fs.statSync(srcPath).isDirectory()) {
+          this.copyDirectory(srcPath, stagePath)
+        } else {
+          fs.copyFileSync(srcPath, stagePath)
         }
 
-        // 复制文件/目录
-        if (fs.statSync(srcPath).isDirectory()) {
-          this.copyDirectory(srcPath, dstPath)
-        } else {
-          fs.copyFileSync(srcPath, dstPath)
+        // 2. 换上。rename 是元数据操作，暴露的空窗远小于逐文件复制的耗时。
+        if (fs.existsSync(dstPath)) {
+          fs.renameSync(dstPath, backupPath)
+          backedUp = true
         }
+        fs.renameSync(stagePath, dstPath)
+
+        // 3. 换成功了才删旧的
+        this.removePath(backupPath)
+        backedUp = false
 
         logger.info(`复制完成: ${item}`)
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`复制失败: ${item}, 错误信息: ${errorMsg}`)
+        try {
+          // 回滚: 把原内容换回去，不要留下一个残缺的 app/
+          if (backedUp) {
+            this.removePath(dstPath)
+            fs.renameSync(backupPath, dstPath)
+            logger.warn(`已回滚到原内容: ${item}`)
+          }
+          this.removePath(stagePath)
+        } catch (rollbackError) {
+          const rollbackMsg =
+            rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+          logger.error(`回滚失败: ${item}, 错误信息: ${rollbackMsg}，原内容保留在: ${backupPath}`)
+        }
         throw error
       }
+    }
+  }
+
+  /**
+   * 删除文件或目录, 不存在时静默返回
+   */
+  private removePath(target: string): void {
+    if (!fs.existsSync(target)) {
+      return
+    }
+    if (fs.statSync(target).isDirectory()) {
+      fs.rmSync(target, { recursive: true, force: true })
+    } else {
+      fs.unlinkSync(target)
     }
   }
 

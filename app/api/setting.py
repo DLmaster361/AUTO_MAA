@@ -351,3 +351,34 @@ async def check_virtual_display() -> VirtualDisplayCheckOut:
                 )
             ],
         )
+
+
+@router.post(
+    "/virtual-display/status",
+    tags=["Get"],
+    summary="查询虚拟显示驱动状态",
+    response_model=VirtualDisplayCheckOut,
+    status_code=200,
+)
+async def virtual_display_status() -> VirtualDisplayCheckOut:
+    """只查驱动装没装、能不能调，不改变桌面拓扑。
+
+    设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+    而存下来的状态只会变陈旧。
+    """
+
+    from app.core.desktop_guard import probe_virtual_display_driver
+
+    try:
+        return await probe_virtual_display_driver()
+    except Exception as e:
+        return VirtualDisplayCheckOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            results=[
+                VirtualDisplayCheckResultItem(
+                    stage="installed", passed=False, message="探测过程异常"
+                )
+            ],
+        )

@@ -574,6 +574,21 @@ export class GetService {
         });
     }
     /**
+     * 查询虚拟显示驱动状态
+     * 只查驱动装没装、能不能调，不改变桌面拓扑。
+     *
+     * 设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+     * 而存下来的状态只会变陈旧。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static virtualDisplayStatusApiSettingVirtualDisplayStatusPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/status',
+        });
+    }
+    /**
      * 获取更新下载初始快照
      * 返回当前下载权威状态；WS 只承载后续进度与终态事件。
      * @returns UpdateDownloadSnapshot Successful Response

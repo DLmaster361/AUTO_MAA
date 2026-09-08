@@ -235,6 +235,56 @@ def _probe_hint(result) -> str:
     return f"驱动异常: {result.detail}"
 
 
+async def probe_virtual_display_driver():
+    """只跑前两段（装没装 / 能不能调），不改变桌面拓扑。
+
+    供设置页在打开时自动调用，用来决定开关能不能打开。实测一次 0.2ms，所以**不缓存也
+    不持久化**：存下来的状态只会变陈旧（驱动可能被卸载、被显卡驱动更新搞坏、或者配置
+    被同步到另一台机器），而实时问一次永远是对的。
+    """
+
+    from app.models.schema import (
+        VirtualDisplayCheckOut,
+        VirtualDisplayCheckResultItem,
+    )
+
+    def item(stage: str, passed: bool, message: str):
+        return VirtualDisplayCheckResultItem(
+            stage=stage, passed=passed, message=message
+        )
+
+    if not IS_WINDOWS:
+        return VirtualDisplayCheckOut(
+            message="虚拟显示器仅支持 Windows",
+            results=[item("installed", False, "当前系统不支持")],
+        )
+
+    from app.utils.platform.vdd import VddStatus, probe
+
+    result = await asyncio.to_thread(probe)
+    if result.status is VddStatus.NOT_INSTALLED:
+        return VirtualDisplayCheckOut(
+            message="未安装 Parsec 虚拟显示驱动",
+            results=[item("installed", False, "未找到驱动，请先安装")],
+        )
+    if result.status is not VddStatus.OK:
+        return VirtualDisplayCheckOut(
+            message=_probe_hint(result),
+            results=[
+                item("installed", True, "驱动已安装"),
+                item("openable", False, _probe_hint(result)),
+            ],
+        )
+    return VirtualDisplayCheckOut(
+        message="驱动可用",
+        driverVersion=result.version,
+        results=[
+            item("installed", True, "驱动已安装"),
+            item("openable", True, f"握手成功，驱动版本 0.{result.version}"),
+        ],
+    )
+
+
 async def check_virtual_display_driver():
     """设置页「检测」按钮的三段式检查。
 

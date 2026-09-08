@@ -24,6 +24,9 @@ export default {
     unknown: '不明',
   },
   comp: {
+    changelog: {
+      empty: 'このバージョンの更新履歴はまだありません',
+    },
     editUser: 'ユーザーを編集',
     addUser2: 'ユーザーを追加',
     enabled: 'オン',
@@ -2221,6 +2224,7 @@ export default {
     input: '入力',
     couldNotPickLaunch: '起動する exe を選択できませんでした',
     qqDirectMessageOver: 'OneBot HTTP API 経由で QQ のダイレクトメッセージを送信',
+    qqDirectMessageOverImage: 'OneBot HTTP API 経由で QQ の画像ダイレクトメッセージを送信',
     notifyGetRequest: 'GET リクエストで通知を送信',
     restartApp: 'アプリを再起動',
     couldNotReorder: '並び替えを保存できませんでした',
@@ -3035,6 +3039,8 @@ export default {
       copyVersion: 'バージョン：{version}',
       copyBackendDate: 'バックエンドの日付：{date}',
       copyBackendHash: 'バックエンドのハッシュ：{hash}',
+      viewChangelog: '更新履歴',
+      changelogTitle: '{version} の更新履歴',
     },
     tray: {
       section: 'トレイメニューのカスタマイズ',

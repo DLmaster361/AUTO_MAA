@@ -1276,9 +1276,6 @@ const ensurePoolBackup = async (
 /** 一条龙原生配置按需归档（进入直控/用户编辑页、退出直控时调用） */
 const ensureDirectBackup = () => ensurePoolBackup(ZzzOdBackupEnsureIn.target.ONEDRAGON)
 
-/** 用户模式进入时机：归档一条龙原生配置（MAS 操作前原始态） */
-const ensureOnedragonBackup = () => ensureDirectBackup()
-
 /** 用户模式退出时机：归档绑定槽 MAS 终态 + 一条龙原生配置终态（编辑会话包络） */
 const ensureUserExitBackups = () =>
   Promise.all([
@@ -1662,7 +1659,7 @@ const handleNativeInstanceRunChange = async () => {
  *  - 任务开关/排序、运行实例：即时增量提交对应字段——不把未保存的账号
  *    草稿一并落盘或覆盖。
  */
-type NativeSaveSection = 'all' | 'tasks' | 'instanceRun'
+type NativeSaveSection = 'all' | 'tasks'
 /** 提交给后端的任务条目（后端只认 app_id/enabled） */
 const toNativeTaskIn = (list: TaskCard[]): { app_id: string; enabled: boolean }[] =>
   list.map(t => ({ app_id: t.app_id, enabled: !!t.enabled }))
@@ -1701,8 +1698,6 @@ const saveNativeConfig = async (
     }
     if (section === 'tasks') {
       nativeTasks.value = toTaskCards(resp.tasks ?? [])
-    } else if (section === 'instanceRun') {
-      nativeInstanceRun.value = resp.instanceRun || '全部实例'
     } else {
       applyNativeConfig(resp)
     }
@@ -2234,7 +2229,6 @@ const {
   startSession,
   saveSession,
   stopSession,
-  dispose: disposeGuiSession,
 } = useZzzodGuiSession()
 
 const handleZzzodConfig = () => {
@@ -2331,7 +2325,7 @@ onMounted(async () => {
     } else {
       // 用户模式进入：归档一条龙原生配置当前状态（MAS 操作前的原始态，
       // 指纹去重），保证后续 MAS 侧修改始终有可还原的进入时点
-      await ensureOnedragonBackup()
+      await ensureDirectBackup()
     }
   }
 })
@@ -2370,14 +2364,13 @@ onUnmounted(() => {
   flushAllTaskConfigSaves()
   // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
   // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
-  // ensureOnedragonBackup 配对）。指纹去重，内容无变化不产生新条目
+  // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目
   if (formData.Info.Mode === '直控') {
     void ensureDirectBackup()
   } else {
     void ensureUserExitBackups()
   }
   void stopSession()
-  disposeGuiSession()
 })
 </script>
 

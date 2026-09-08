@@ -1880,8 +1880,6 @@ class AppConfig(GlobalConfig):
         )
 
         # 恢复后的槽内容 = 该时点的 MAS 配置；把 MAS 管理的字段全量回填本页
-        import json
-
         slot_dir = instance_dir(root, slot)
         account = read_game_account(slot_dir)
         # 任务编排整表回填（含未启用项原位保留顺序，运行侧只消费启用项）
@@ -1933,9 +1931,6 @@ class AppConfig(GlobalConfig):
         zzz-od 默认开启，不搬会让「来源关着」变开着）、team.yml（预备编队）、
         one_dragon/ 全部 per-app 配置（体力计划/咖啡店/随便观等任务级 yml）。
         """
-
-        import json
-        import shutil
 
         from app.task.ZzzOd.AutoProxy import (
             collect_used_slot_idxs,

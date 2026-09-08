@@ -139,10 +139,6 @@ export function useZzzodGuiSession() {
     }
   }
 
-  const dispose = () => {
-    void stopSession()
-  }
-
   return {
     zzzodConfigLoading,
     zzzodWebsocketId,
@@ -152,6 +148,5 @@ export function useZzzodGuiSession() {
     startSession,
     saveSession,
     stopSession,
-    dispose,
   }
 }

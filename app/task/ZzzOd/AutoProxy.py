@@ -464,12 +464,6 @@ class AutoProxyTask(TaskExecuteBase):
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
 
-    @staticmethod
-    def _parse_app_list(cfg: ZzzOdUserConfig) -> list[dict]:
-        """当前用户的一条龙任务编排 enabled 项列表（模块级共享实现）。"""
-
-        return parse_user_apps(cfg)
-
     def _enabled_app_list(self) -> list[dict]:
         """当前用户的一条龙任务编排 enabled 项列表。"""
 
@@ -551,7 +545,7 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item.status = "跳过"
                 continue
             try:
-                apps = self._parse_app_list(cfg)
+                apps = parse_user_apps(cfg)
             except ValueError:
                 user_item.status = "异常"
                 continue
@@ -1403,9 +1397,6 @@ class AutoProxyTask(TaskExecuteBase):
         await self._persist_user_run_result()
 
     async def _persist_user_run_result(self) -> None:
-        if self.cur_user_config is None:
-            return
-
         # 多实例切换：各用户的数据已在 _judge_multi 逐用户写回，避免重复计数
         if self._multi_ran:
             return

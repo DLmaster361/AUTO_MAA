@@ -181,11 +181,7 @@ def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int
     """
 
     used: set[int] = set()
-    used.update(
-        int(item.get("idx", -1))
-        for item in list_instances(root)
-        if isinstance(item, dict)
-    )
+    used.update(int(item.get("idx", -1)) for item in list_instances(root))
     config_root = root / "config"
     if config_root.is_dir():
         for child in config_root.iterdir():

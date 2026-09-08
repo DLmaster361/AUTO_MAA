@@ -654,12 +654,6 @@ onMounted(loadScript)
   gap: 8px;
 }
 
-.section-desc {
-  color: var(--ant-color-text-tertiary);
-  margin: 8px 0 16px;
-  font-size: 14px;
-}
-
 .form-label {
   display: flex;
   align-items: center;

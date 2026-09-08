@@ -83,13 +83,6 @@ _NATIVE_ACCOUNT_FIELDS: list[dict[str, Any]] = [
     },
 ]
 
-# 直控任务页所需的应用目录并入字段（缺失时的兜底，与 list_app_catalog 一致）
-_APP_META_DEFAULTS: dict[str, Any] = {
-    "app_name": "",
-    "default_group": True,
-    "priority": 9999,
-}
-
 
 def read_native_account_fields(root, slot_idx: int) -> list[dict]:
     """读取实例原生账号配置为字段列表（缺失字段合并默认值，与一条龙 GUI 一致）。"""
@@ -170,7 +163,7 @@ def read_native_tasks(root, slot_idx: int, catalog: list[dict]) -> list[dict]:
         if not app_id:
             continue
         known.add(app_id)
-        meta = name_book.get(app_id) or dict(_APP_META_DEFAULTS)
+        meta = name_book.get(app_id) or {}
         tasks.append(
             {
                 "app_id": app_id,

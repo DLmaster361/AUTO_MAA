@@ -106,18 +106,12 @@ _LOST_VOID_TASK_OPTIONS = [
 
 # NotoriousHuntWeekdayEnum（value 为 int，对齐上游 `notorious_hunt_run_record.py:47`
 # 的 `>=` 比较，避免 select 分支 str 落盘后上游抛 TypeError；其他 select 字段保持字符串）
-_WEEKDAY_OPTIONS = [
-    {"label": "周一", "value": 1},
-    {"label": "周二", "value": 2},
-    {"label": "周三", "value": 3},
-    {"label": "周四", "value": 4},
-    {"label": "周五", "value": 5},
-    {"label": "周六", "value": 6},
-    {"label": "周日", "value": 7},
-]
-
 # 周几短标签（按 1~7，咖啡每日选择等字段标题用）
 _WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+
+_WEEKDAY_OPTIONS = [
+    {"label": label, "value": day} for day, label in enumerate(_WEEKDAY_LABELS, 1)
+]
 
 # CoffeeTransportPoint（ConfigItem 单参构造 value=label）
 _COFFEE_TRANSPORT_OPTIONS = [

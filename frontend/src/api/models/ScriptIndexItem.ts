@@ -25,6 +25,7 @@ export namespace ScriptIndexItem {
         MAA_END_CONFIG = 'MaaEndConfig',
         M9ACONFIG = 'M9AConfig',
         MAA_FWCONFIG = 'MaaFWConfig',
+        MAA_FWMANAGED_CONFIG = 'MaaFWManagedConfig',
         HSRCONFIG = 'HSRConfig',
         BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',

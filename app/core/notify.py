@@ -477,7 +477,9 @@ async def dispatch(
                 lambda: Notify.send_koishi(
                     payload.koishi_content,
                     msgtype=payload.koishi_msgtype,
-                ),
+                )
+                if payload.koishi_msgtype != "text"
+                else Notify.send_koishi(payload.koishi_content),
             )
 
         if target.openclaw_weixin:

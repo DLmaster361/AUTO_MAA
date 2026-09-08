@@ -24,6 +24,9 @@ export default {
     unknown: '未知',
   },
   comp: {
+    changelog: {
+      empty: '本版本暂无更新日志',
+    },
     editUser: '编辑用户',
     addUser2: '添加用户',
     enabled: '启用',
@@ -2437,7 +2440,7 @@ export default {
     input: '输入',
     couldNotPickLaunch: '选择启动 exe 失败',
     qqDirectMessageOver: '通过 OneBot HTTP API 发送 QQ 私聊消息',
-    qqDirectMessageOverImage: '通过 OneBot HTTP API 发送 QQ 私聊图片消息',
+    qqDirectMessageOverImage: '通过 OneBot HTTP API 发送 QQ 私聊图片',
     notifyGetRequest: '通过GET请求发送通知',
     restartApp: '重启应用',
     couldNotReorder: '重新排序失败',
@@ -3202,6 +3205,8 @@ export default {
       copyVersion: '软件版本：{version}',
       copyBackendDate: '后端日期：{date}',
       copyBackendHash: '后端哈希：{hash}',
+      viewChangelog: '更新日志',
+      changelogTitle: '{version} 更新日志',
     },
     tray: {
       section: '托盘菜单自定义',

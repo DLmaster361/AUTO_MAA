@@ -22,6 +22,9 @@ export default {
     unknown: 'Unknown',
   },
   comp: {
+    changelog: {
+      empty: 'No changelog for this version yet',
+    },
     editUser: 'Edit user',
     addUser2: 'Add a user',
     enabled: 'On',
@@ -3321,6 +3324,8 @@ export default {
       copyVersion: 'Version: {version}',
       copyBackendDate: 'Backend date: {date}',
       copyBackendHash: 'Backend hash: {hash}',
+      viewChangelog: 'Changelog',
+      changelogTitle: 'Changelog for {version}',
     },
     tray: {
       section: 'Custom tray menu',

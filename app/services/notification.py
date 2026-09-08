@@ -341,6 +341,18 @@ class Notification:
                 # 递归替换JSON对象中的变量
                 def replace_variables(obj):
                     if isinstance(obj, dict):
+                        # 普通任务报告没有图片时，OneBot 图片模板仍需投递可读正文。
+                        if (
+                            not image_base64
+                            and obj.get("type") == "image"
+                            and isinstance(obj.get("data"), dict)
+                            and obj["data"].get("file")
+                            == "base64://{image_base64}"
+                        ):
+                            return {
+                                "type": "text",
+                                "data": {"text": f"{title}\n\n{content}"},
+                            }
                         return {k: replace_variables(v) for k, v in obj.items()}
                     elif isinstance(obj, list):
                         return [replace_variables(item) for item in obj]

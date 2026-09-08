@@ -64,6 +64,24 @@ class _DownloadJob:
     download_url: Optional[str]
 
 
+def select_newer_version_info(
+    version_info: Dict[str, Dict[str, List[str]]], current_version: str
+) -> Dict[str, Dict[str, List[str]]]:
+    """挑出比当前版本新的版本段，按版本号降序排列，保留每段的分类归属。
+
+    版本号用 packaging 比较而不是字符串比较，否则 beta.10 会排到 beta.2 前面。
+    """
+
+    current = version.parse(current_version)
+    newer = [
+        (version.parse(ver), ver, info)
+        for ver, info in version_info.items()
+        if version.parse(ver) > current
+    ]
+    newer.sort(key=lambda item: item[0], reverse=True)
+    return {ver: info for _, ver, info in newer}
+
+
 class _UpdateHandler:
     def __init__(self) -> None:
         self.is_locked: bool = False
@@ -72,7 +90,7 @@ class _UpdateHandler:
         self.remote_version: Optional[str] = None
         self.current_version: Optional[str] = None
         self.last_check_time: Optional[datetime] = None
-        self.update_version_info: Optional[Dict[str, List[str]]] = None
+        self.update_version_info: Optional[Dict[str, Dict[str, List[str]]]] = None
         self.mirror_chyan_download_url: Optional[str] = None
         self._download_task_job: Optional[_DownloadJob] = None
         self._download_snapshot = UpdateDownloadSnapshot()
@@ -347,7 +365,7 @@ class _UpdateHandler:
 
     async def check_update(
         self, current_version: str, if_force: bool = False
-    ) -> tuple[bool, str, Dict[str, List[str]]]:
+    ) -> tuple[bool, str, Dict[str, Dict[str, List[str]]]]:
 
         self.current_version = current_version
 
@@ -389,16 +407,9 @@ class _UpdateHandler:
                 )
             )
 
-            self.update_version_info = {}
-            for v_i in [
-                info
-                for ver, info in version_info_json.items()
-                if version.parse(ver) > version.parse(current_version)
-            ]:
-                for key, value in v_i.items():
-                    if key not in self.update_version_info:
-                        self.update_version_info[key] = []
-                    self.update_version_info[key] += value
+            self.update_version_info = select_newer_version_info(
+                version_info_json, current_version
+            )
 
             return True, self.remote_version, self.update_version_info
 

@@ -4540,7 +4540,10 @@ class UpdateCheckIn(BaseModel):
 class UpdateCheckOut(OutBase):
     if_need_update: bool = Field(..., description="是否需要更新前端")
     latest_version: str = Field(..., description="最新前端版本号")
-    update_info: Dict[str, List[str]] = Field(..., description="版本更新信息字典")
+    update_info: Dict[str, Dict[str, List[str]]] = Field(
+        ...,
+        description="版本更新信息：版本号 -> 分类 -> 条目，只含比当前版本新的版本段，按版本号降序",
+    )
 
 
 # ============== 日志模式调试相关模型 ==============

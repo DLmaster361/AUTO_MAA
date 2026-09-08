@@ -68,6 +68,10 @@ export default defineConfig(({ command }) => {
     define: {
       // 在编译时将版本号注入到环境变量中
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(versionJson.version),
+      // res/ 不进 Electron 产物，当前版本的更新日志也在编译期注入；只打当前这一段
+      'import.meta.env.VITE_APP_CHANGELOG': JSON.stringify(
+        versionJson.version_info?.[versionJson.version] ?? {}
+      ),
       // 渲染进程兜底端点用，正常仍以 Electron 下发的端点为准
       'import.meta.env.VITE_AUTO_MAS_HTTP_PORT': JSON.stringify(String(backendPort)),
     },

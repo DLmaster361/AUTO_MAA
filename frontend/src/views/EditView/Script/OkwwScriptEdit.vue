@@ -133,7 +133,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换">
+                  <a-tooltip
+                    title="开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换"
+                  >
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -512,7 +514,6 @@ interface OkwwRunForm {
 
 interface OkwwScriptConfigForm {
   Info: OkwwInfoForm
-  Script: Record<string, never>
   Game: OkwwGameForm
   Run: OkwwRunForm
 }
@@ -529,7 +530,6 @@ const formData = reactive({
 
 const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Script: {},
   Game: {
     Enabled: false,
     AccountSwitch: false,
@@ -838,7 +838,6 @@ const loadScript = async () => {
     formData.name = detail.name
     const config = detail.config as Partial<OkwwScriptConfigForm>
     Object.assign(okwwConfig.Info, config.Info || {})
-    Object.assign(okwwConfig.Script, config.Script || {})
     Object.assign(okwwConfig.Game, config.Game || {})
     Object.assign(okwwConfig.Run, config.Run || {})
     if (okwwConfig.Game.Path && okwwConfig.Game.Path !== '.') {

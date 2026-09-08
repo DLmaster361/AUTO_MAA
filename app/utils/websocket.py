@@ -168,10 +168,6 @@ class WebSocketClient:
             if asyncio.iscoroutine(result):
                 await result
 
-    async def close(self, code: int = 1000, reason: str = "正常关闭"):
-        """兼容统一的关闭接口。"""
-        await self.disconnect()
-
     async def send(self, message: Dict[str, Any]) -> bool:
         """
         发送 JSON 消息
@@ -192,10 +188,6 @@ class WebSocketClient:
         except Exception as e:
             self.logger.error(f"发送消息失败: {type(e).__name__}: {e}")
             return False
-
-    async def send_json(self, data: Dict[str, Any]) -> bool:
-        """兼容 FastAPI WebSocket 的 send_json 接口。"""
-        return await self.send(data)
 
     async def send_auth(
         self,
@@ -418,15 +410,6 @@ class WebSocketClient:
             self.logger.info("已发送认证消息")
         return success
 
-    def set_auth_token(self, token: Optional[str]):
-        """
-        设置认证令牌（下次连接/重连时生效）
-
-        Args:
-            token: 认证令牌，设为 None 可清除
-        """
-        self._auth_token = token
-
 
 # ============== WebSocket 客户端管理器 ==============
 
@@ -456,18 +439,6 @@ class WSClientManager:
     def get_client(self, name: str) -> Optional[WebSocketClient]:
         """获取客户端实例"""
         return self._clients.get(name)
-
-    def get_session(self, name: str) -> Optional[WebSocketClient]:
-        """兼容旧接口：获取客户端实例。"""
-        return self._clients.get(name)
-
-    def has_client(self, name: str) -> bool:
-        """检查客户端是否存在"""
-        return name in self._clients
-
-    def is_system_client(self, name: str) -> bool:
-        """检查是否为系统客户端"""
-        return name in self._system_clients
 
     def list_clients(self) -> Dict[str, Dict[str, Any]]:
         """列出所有客户端及其状态"""
@@ -718,27 +689,6 @@ class WSClientManager:
         except Exception as e:
             self._logger.error(f"初始化 Koishi 系统客户端失败: {type(e).__name__}: {e}")
             return False
-
-    async def update_system_client_koishi(self) -> bool:
-        """
-        更新 Koishi 系统客户端配置
-
-        当配置变更时调用，会断开旧连接并重新连接
-
-        Returns:
-            bool: 是否成功更新
-        """
-        # 如果客户端存在，先断开
-        if self.has_client(self.KOISHI_CLIENT_NAME):
-            await self.disconnect_client(self.KOISHI_CLIENT_NAME)
-            # 从系统客户端集合中移除以允许删除
-            self._system_clients.discard(self.KOISHI_CLIENT_NAME)
-            # 删除旧客户端
-            if self.KOISHI_CLIENT_NAME in self._clients:
-                del self._clients[self.KOISHI_CLIENT_NAME]
-
-        # 重新初始化
-        return await self.init_system_client_koishi()
 
 
 # 全局管理器实例

@@ -39,11 +39,13 @@
 
           <div class="launcher-controls">
             <a-select
-              v-model:value="selectedTaskId"
+              v-model:value="selectedTaskIds"
               class="launcher-select"
+              mode="multiple"
               :options="schedulerTaskOptions"
               :loading="schedulerTasksLoading"
               size="large"
+              :max-tag-count="'responsive'"
               :placeholder="t('home.command.placeholder')"
               @dropdown-visible-change="$emit('dropdown-visible-change', $event)"
             />
@@ -52,7 +54,7 @@
               size="large"
               class="launcher-start"
               :loading="startingHomeTask"
-              :disabled="!selectedTaskId"
+              :disabled="schedulerTasksLoading || selectedTaskIds.length === 0"
               @click="$emit('start')"
             >
               <template #icon>
@@ -85,18 +87,18 @@ const props = defineProps<{
   schedulerTaskOptions: ComboBoxItem[]
   schedulerTasksLoading: boolean
   startingHomeTask: boolean
-  selectedTaskId: string | null
+  selectedTaskIds: string[]
 }>()
 
 const emit = defineEmits<{
-  'update:selectedTaskId': [value: string | null]
+  'update:selectedTaskIds': [value: string[]]
   'dropdown-visible-change': [open: boolean]
   start: []
 }>()
 
-const selectedTaskId = computed({
-  get: () => props.selectedTaskId,
-  set: value => emit('update:selectedTaskId', value),
+const selectedTaskIds = computed({
+  get: () => props.selectedTaskIds,
+  set: value => emit('update:selectedTaskIds', value),
 })
 
 const { themeColor, themeColors } = useTheme()

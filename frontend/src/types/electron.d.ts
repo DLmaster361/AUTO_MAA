@@ -297,6 +297,11 @@ export interface ElectronAPI {
     error?: string
   }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
+  /** file 指定打开时选中哪一份日志，省略则沿用日志页自己的默认（后端日志）。 */
+  openLogWindow: (file?: 'app' | 'frontend') => Promise<{ success: boolean; error?: string }>
+  /** 日志窗已经开着时，主进程用它通知日志页换到请求的那一份。 */
+  onLogSelectFile?: (callback: (file: 'app' | 'frontend') => void) => void
+  removeLogSelectFileListener?: () => void
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {
@@ -311,7 +316,7 @@ export interface ElectronAPI {
   loadLogsFromFile: () => Promise<string | null>
 
   // 文件系统操作
-  openFile: (filePath: string) => Promise<void>
+  openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
@@ -391,6 +396,13 @@ export interface ElectronAPI {
     /** 本次生命周期是否走 Runtime 监督链路；true 时后端只能由 Electron 经 Runtime 停止。 */
     runtimeSupervised?: boolean
   }>
+  checkRuntimeBackendUpdate: () => Promise<{
+    updateAvailable: boolean
+    staged?: boolean
+    currentCommit?: string
+    remoteCommit?: string
+    error?: string
+  }>
 
   // Runtime 链路的后端更新（启动模式统一走上面的 getRuntimeLaunchMode）
   updateBackendViaRuntime: (targetVersion: string) => Promise<RuntimeUpdateOutcome>
@@ -426,6 +438,8 @@ export interface ElectronAPI {
       status?: 'started' | 'running' | 'completed' | 'failed'
       /** 本条进度来自哪条链路；旧链路不产生，按 off 处理。 */
       runtimeMode?: RuntimeInitMode
+      /** 当前阶段没有可靠总量，应展示持续活动状态而不是精确百分比。 */
+      indeterminate?: boolean
     }) => void
   ) => void
   removeInitializationProgressListener?: () => void

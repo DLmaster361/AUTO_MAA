@@ -32,7 +32,7 @@ if IS_WINDOWS:
     import win32gui
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
@@ -58,7 +58,6 @@ class GeneralDeviceManager(DeviceBase):
         self.config = config
         self.emulator_path = Path(config.get("Info", "Path"))
         self.process_managers: Dict[str, ProcessManager] = {}
-        self.device_info: Dict[str, Dict[str, Any]] = {}
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
 
@@ -205,6 +204,5 @@ class GeneralDeviceManager(DeviceBase):
                 logger.error(f"清理设备{idx}资源失败: {str(e)}")
 
         self.process_managers.clear()
-        self.device_info.clear()
 
         logger.info("设备管理器资源清理完成")

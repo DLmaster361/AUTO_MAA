@@ -34,6 +34,7 @@ import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
 import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
 import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
+import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
@@ -88,7 +89,10 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
-import type { SklandLoginIn } from '../models/SklandLoginIn';
+import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
+import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
+import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
+import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
@@ -128,7 +132,10 @@ import { request as __request } from '../core/request';
 export class Service {
     /**
      * 获取后端就绪状态
-     * 返回核心 API 与后台初始化状态。
+     * 返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
+     *
+     * version/commit 受监督且监督器注入了期望值时原样回显，否则分别回退到本地版本号
+     * 与空字符串；commit 不通过 Git 推断，只能来自监督器注入。
      * @returns BackendHealthOut Successful Response
      * @throws ApiError
      */
@@ -813,6 +820,10 @@ export class Service {
      * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
      * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
      * 在请求内完成，首次冷启动可能耗时数分钟。
+     *
+     * 编辑页每打开一次就会调一次，所以先比一遍项目输入指纹：项目没更新过、上次
+     * 准备的环境也还在盘上，就直接还回上次的结果，不再取锁起进程。用户手动重试
+     * 时前端带 ``force``，跳过这层缓存。
      * @param requestBody
      * @returns MaaFWAgentEnvPrepareOut Successful Response
      * @throws ApiError
@@ -1012,6 +1023,27 @@ export class Service {
         });
     }
     /**
+     * 获取 HSR 可选的 SRA 配置档案
+     * 列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。
+     * @param scriptId
+     * @returns HSRSRAProfilesOut Successful Response
+     * @throws ApiError
+     */
+    public static getHsrSraProfilesApiApiScriptsHsrSraProfilesGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<HSRSRAProfilesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/hsr/sra-profiles',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 导入 HSR 原生配置快照
      * @param requestBody
      * @returns HSRDirectConfigImportOut Successful Response
@@ -1023,6 +1055,26 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/hsr/direct-config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清除 HSR 用户的直控配置快照
+     * 清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。
+     * @param requestBody
+     * @returns HSRDirectConfigImportOut Successful Response
+     * @throws ApiError
+     */
+    public static clearHsrDirectConfigApiApiScriptsHsrDirectConfigClearPost(
+        requestBody: HSRDirectConfigImportIn,
+    ): CancelablePromise<HSRDirectConfigImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/direct-config/clear',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1989,26 +2041,6 @@ export class Service {
         });
     }
     /**
-     * 森空岛手机号密码登录
-     * 一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static loginSklandApiToolsSignAccountSklandLoginPost(
-        requestBody: SklandLoginIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/skland/login',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 导出数据备份
      * 导出数据、配置与历史记录。
      * @returns any Successful Response
@@ -2321,6 +2353,56 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/miyoushe/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns SklandQrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignSklandQrCreatePost(): CancelablePromise<SklandQrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 确认后返回短时 scanCode，由前端随后提交保存。
+     * @param requestBody
+     * @returns SklandQrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignSklandQrCheckPost(
+        requestBody: SklandQrCheckIn,
+    ): CancelablePromise<SklandQrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存森空岛 Token
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignSklandQrSavePost(
+        requestBody: SklandQrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/save',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

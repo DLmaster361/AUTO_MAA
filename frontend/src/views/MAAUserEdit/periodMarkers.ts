@@ -1,9 +1,7 @@
 // 与后端 AutoProxy 的周期标记保持一致：都按 UTC+4（游戏 04:00 换日）计算当前日期。
 const currentUtc4Date = () => {
   const shifted = new Date(Date.now() + 4 * 60 * 60 * 1000)
-  return new Date(
-    Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate())
-  )
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()))
 }
 
 // 对应 _current_week_marker：取 UTC+4 的日期后按 ISO 规则落到本周四，避免时移残留导致周数 +1。

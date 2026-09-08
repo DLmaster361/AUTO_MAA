@@ -51,13 +51,14 @@
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
             v-if="moduleKey === 'command'"
-            v-model:selected-task-id="selectedHomeTaskId"
+            :selected-task-ids="selectedHomeTaskIds"
             :is-bootstrapping="isBootstrapping"
             :command-title="commandTitle"
             :command-author="commandAuthor"
             :scheduler-task-options="schedulerTaskOptions"
             :scheduler-tasks-loading="schedulerTasksLoading"
             :starting-home-task="startingHomeTask"
+            @update:selected-task-ids="updateSelectedHomeTaskIds"
             @dropdown-visible-change="onSchedulerDropdownVisibleChange"
             @start="startHomeTask"
           />
@@ -207,7 +208,9 @@ const {
   schedulerTasksLoading,
   startingHomeTask,
   schedulerTaskOptions,
-  selectedHomeTaskId,
+  selectedHomeTaskIds,
+  restoreSelectedHomeTaskIds,
+  updateSelectedHomeTaskIds,
   fetchSchedulerTaskOptions,
   onSchedulerDropdownVisibleChange,
   startHomeTask,
@@ -249,7 +252,8 @@ const greeting = computed(() => {
   }
 })
 
-const loadHomeData = () => {
+const loadHomeData = async () => {
+  await restoreSelectedHomeTaskIds()
   fetchSchedulerTaskOptions({ quiet: true })
   fetchOverviewData()
   fetchNoticeData()

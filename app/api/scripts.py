@@ -23,6 +23,7 @@
 
 import asyncio
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -968,6 +969,52 @@ async def update_maafw_project(
     )
 
 
+def _maafw_agent_env_prepare_data(
+    root_path: Path,
+    result: Mapping[str, Any],
+    logs: list[str],
+    *,
+    cached: bool,
+) -> MaaFWAgentEnvPrepareData:
+    """把 ``prepare_project_environment()`` 的结果摊平成响应体。
+
+    缓存命中与实际准备两条路共用，免得两边的字段各写一份、慢慢长歪。
+    """
+
+    runtime = result.get("runtime")
+    runtime = runtime if isinstance(runtime, Mapping) else {}
+    agent_payload = result.get("agents")
+    agent_payload = agent_payload if isinstance(agent_payload, Mapping) else {}
+    raw_plans = agent_payload.get("plans")
+    raw_plans = raw_plans if isinstance(raw_plans, list) else []
+
+    agents = [
+        MaaFWAgentEnvInfo(
+            childExec=str(plan.get("childExec") or ""),
+            executable=str(plan.get("executable") or ""),
+            runtimeKind=plan.get("runtimeKind"),
+            isolatedVenvPath=plan.get("isolatedVenvPath"),
+            fallbackReason=plan.get("fallbackReason"),
+        )
+        for plan in raw_plans
+        if isinstance(plan, Mapping)
+    ]
+
+    return MaaFWAgentEnvPrepareData(
+        path=str(root_path),
+        agentCount=len(agents),
+        agents=agents,
+        logs=logs,
+        runtimeId=runtime.get("runtimeId"),
+        poolId=runtime.get("poolId"),
+        pythonExecutable=runtime.get("pythonExecutable"),
+        venvPath=runtime.get("venvPath"),
+        maafwVersion=runtime.get("maafwVersion"),
+        cached=cached,
+        preparedAt=result.get("preparedAt"),
+    )
+
+
 @router.post(
     "/maafw/agent-env/prepare",
     tags=["MaaFW"],
@@ -983,6 +1030,10 @@ async def prepare_maafw_agent_env(
     在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
     成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
     在请求内完成，首次冷启动可能耗时数分钟。
+
+    编辑页每打开一次就会调一次，所以先比一遍项目输入指纹：项目没更新过、上次
+    准备的环境也还在盘上，就直接还回上次的结果，不再取锁起进程。用户手动重试
+    时前端带 ``force``，跳过这层缓存。
     """
 
     # 这些模块会拉起 runtime_pool 与 agent_env，放在函数内延迟导入，
@@ -991,9 +1042,14 @@ async def prepare_maafw_agent_env(
     from app.core.ws.publisher import Publisher
     from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
         MaaFWRunnerService,
+        project_environment_fingerprint,
     )
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
         MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.embedded.env_cache import (
+        load_prepared_environment,
+        store_prepared_environment,
     )
     from app.task.MaaFW.tools.embedded.project_path import (
         release_project_path,
@@ -1064,6 +1120,32 @@ async def prepare_maafw_agent_env(
         )
 
     try:
+        # 指纹哈希的是 interface / requirements / uv.lock 这些「脚本更新了没」
+        # 的输入，所以项目一更新缓存自然失效。放在拿到项目锁之后：此刻没人在
+        # 更新这个目录，算出来的指纹不会是半个更新中间态。
+        fingerprint = await asyncio.to_thread(
+            project_environment_fingerprint, root_path
+        )
+        if not payload.force:
+            cached_result = await asyncio.to_thread(
+                load_prepared_environment, root_path, fingerprint
+            )
+            if cached_result is not None:
+                prepared_at = str(cached_result.get("preparedAt") or "")
+                append_log(
+                    "项目文件自上次准备以来没有变化，沿用已就绪的运行环境"
+                    + (f"（上次准备于 {prepared_at}）" if prepared_at else "")
+                )
+                # 命中时不推 ready 进度：没有进度可言，而那条 WS 与本次响应
+                # 抢着写同一行提示，谁后到谁说了算——推了反而会把响应里带
+                # MaaFramework 版本号的那句盖成一句干巴巴的「已就绪」。
+                return MaaFWAgentEnvPrepareOut(
+                    message="MFW 运行环境已就绪",
+                    data=_maafw_agent_env_prepare_data(
+                        root_path, cached_result, logs, cached=True
+                    ),
+                )
+
         try:
             interface = await asyncio.to_thread(load_interface_model_cached, root_path)
         except MaaFWInterfaceLoadError as exc:
@@ -1103,27 +1185,17 @@ async def prepare_maafw_agent_env(
                 message=f"MFW 运行环境准备失败: {exc}",
                 data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
             )
+        # 用准备流程自己回报的指纹：它在准备前后各算了一次，确认这期间项目文件
+        # 没被动过；本地这份只在它没回报时兜底。
+        # 写在项目锁内：写完才放行下一个准备/更新请求，免得它读到半份缓存。
+        await asyncio.to_thread(
+            store_prepared_environment,
+            root_path,
+            str(result.get("projectFingerprint") or "") or fingerprint,
+            result,
+        )
     finally:
         await release_project_path(reservation_key)
-
-    runtime = result.get("runtime")
-    runtime = runtime if isinstance(runtime, dict) else {}
-    agent_payload = result.get("agents")
-    agent_payload = agent_payload if isinstance(agent_payload, dict) else {}
-    raw_plans = agent_payload.get("plans")
-    raw_plans = raw_plans if isinstance(raw_plans, list) else []
-
-    agents = [
-        MaaFWAgentEnvInfo(
-            childExec=str(plan.get("childExec") or ""),
-            executable=str(plan.get("executable") or ""),
-            runtimeKind=plan.get("runtimeKind"),
-            isolatedVenvPath=plan.get("isolatedVenvPath"),
-            fallbackReason=plan.get("fallbackReason"),
-        )
-        for plan in raw_plans
-        if isinstance(plan, dict)
-    ]
 
     publish_progress(
         {
@@ -1135,17 +1207,7 @@ async def prepare_maafw_agent_env(
     )
     return MaaFWAgentEnvPrepareOut(
         message="MFW 运行环境已就绪",
-        data=MaaFWAgentEnvPrepareData(
-            path=str(root_path),
-            agentCount=len(agents),
-            agents=agents,
-            logs=logs,
-            runtimeId=runtime.get("runtimeId"),
-            poolId=runtime.get("poolId"),
-            pythonExecutable=runtime.get("pythonExecutable"),
-            venvPath=runtime.get("venvPath"),
-            maafwVersion=runtime.get("maafwVersion"),
-        ),
+        data=_maafw_agent_env_prepare_data(root_path, result, logs, cached=False),
     )
 
 
@@ -1274,7 +1336,8 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
         )
     except Exception as e:
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1319,7 +1382,8 @@ async def get_bettergi_custom_groups_api(
         )
     except Exception as e:
         return BetterGICustomGroupsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1352,7 +1416,8 @@ async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
         )
     except Exception as e:
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1427,6 +1492,37 @@ async def get_hsr_managed_config_api(
         )
 
 
+@router.get(
+    "/hsr/sra-profiles",
+    tags=["HSR"],
+    summary="获取 HSR 可选的 SRA 配置档案",
+    response_model=HSRSRAProfilesOut,
+    status_code=200,
+)
+async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfilesOut:
+    """列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。"""
+
+    try:
+        if not scriptId:
+            return HSRSRAProfilesOut(code=400, status="error", message="缺少 scriptId")
+        script_config = _hsr_script_config(scriptId)
+        from app.task.HSR.tools.api import build_sra_profiles
+
+        data = HSRSRAProfilesData(**build_sra_profiles(script_config))
+        return HSRSRAProfilesOut(
+            message=f"共 {len(data.profiles)} 份 SRA 配置档案",
+            data=data,
+        )
+    except Exception as e:
+        return HSRSRAProfilesOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
 @router.post(
     "/hsr/direct-config/import",
     tags=["HSR"],
@@ -1461,6 +1557,45 @@ async def import_hsr_direct_config_api(
             code=409, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     except (FileNotFoundError, KeyError, TypeError, ValueError, RuntimeError) as e:
+        return HSRDirectConfigImportOut(
+            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    except OSError as e:
+        return HSRDirectConfigImportOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
+    "/hsr/direct-config/clear",
+    tags=["HSR"],
+    summary="清除 HSR 用户的直控配置快照",
+    response_model=HSRDirectConfigImportOut,
+    status_code=200,
+)
+async def clear_hsr_direct_config_api(
+    request: HSRDirectConfigImportIn = Body(...),
+) -> HSRDirectConfigImportOut:
+    """清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。"""
+
+    from app.task.HSR.tools.api import clear_direct_config
+
+    try:
+        script_config = _hsr_script_config(request.scriptId)
+        _hsr_user_config(script_config, request.userId)
+
+        result = await clear_direct_config(
+            script_config,
+            request.engine,
+            script_id=request.scriptId,
+            user_id=request.userId,
+            update_user=Config.update_user,
+        )
+        return HSRDirectConfigImportOut(
+            message=f"{request.engine} 已改回使用脚本当前配置",
+            data=HSRDirectConfigImportData(**result),
+        )
+    except (KeyError, TypeError, ValueError) as e:
         return HSRDirectConfigImportOut(
             code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

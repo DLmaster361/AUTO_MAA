@@ -186,7 +186,9 @@ def migrate_legacy_dir(old_path: Path, new_path: Path) -> bool:
         new_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(old_path), str(new_path))
     except Exception as exc:  # noqa: BLE001 - 迁移失败不应阻塞调用方后续访问
-        logger.warning(f"旧目录迁移失败，将继续使用新路径：{old_path} -> {new_path}：{exc}")
+        logger.warning(
+            f"旧目录迁移失败，将继续使用新路径：{old_path} -> {new_path}：{exc}"
+        )
         return False
     logger.info(f"旧目录已迁移：{old_path} -> {new_path}")
     return True

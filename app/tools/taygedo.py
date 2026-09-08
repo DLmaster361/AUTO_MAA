@@ -368,7 +368,7 @@ async def _laohu_password_login(
         data=_signed_laohu_data(data),
         timeout=30.0,
     )
-    payload = _read_login_json(response, "塔吉多账号密码登录")
+    payload = _read_json(response, "塔吉多账号密码登录")
     result = payload.get("result")
     user_id = ""
     token = ""
@@ -474,7 +474,7 @@ async def _request_user_center_login(
         },
         timeout=30.0,
     )
-    return response, _read_login_json(response, "塔吉多用户中心登录")
+    return response, _read_json(response, "塔吉多用户中心登录")
 
 
 def _laohu_android_base_params(device_id: str, timestamp: str) -> dict[str, str]:
@@ -520,18 +520,6 @@ def _make_login_ds() -> str:
         )
     ).hexdigest()
     return f"{timestamp},{nonce},{signature}"
-
-
-def _read_login_json(response: httpx.Response, endpoint: str) -> dict[str, object]:
-    try:
-        data = response.json()
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError(
-            f"{endpoint}返回了无效 JSON（HTTP {response.status_code}）"
-        ) from exc
-    if not isinstance(data, dict):
-        raise ValueError(f"{endpoint}返回格式无效（HTTP {response.status_code}）")
-    return data
 
 
 def _is_code(value: object, expected: int) -> bool:

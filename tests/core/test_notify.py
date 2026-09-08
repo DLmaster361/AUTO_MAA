@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.core.notify import DispatchResult, NotifyPayload, NotifyTarget, dispatch
 from app.tools.game_sign_notify import (
@@ -116,9 +116,7 @@ def test_dispatch_reports_named_webhook_failure() -> None:
     )
 
     with patch("app.core.notify.Notify", notify):
-        result = _run(
-            dispatch(NotifyPayload(title="标题", text="正文"), [target])
-        )
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
 
     assert list(result.failed) == ["全局 Webhook 值班群"]
 
@@ -137,9 +135,7 @@ def test_dispatch_continues_after_system_failure() -> None:
     )
 
     with patch("app.core.notify.Notify", notify):
-        result = _run(
-            dispatch(NotifyPayload(title="标题", text="正文"), [target])
-        )
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
 
     assert list(result.failed) == ["测试系统"]
     assert list(result.succeeded) == ["测试邮件", "测试 ServerChan"]
@@ -150,7 +146,10 @@ def test_dispatch_skips_disabled_webhook_channel() -> None:
     from app.core.notify import _webhooks
 
     webhooks = _webhooks(
-        {"hook-1": _Webhook(enabled=True, name="启用"), "hook-2": _Webhook(enabled=False, name="禁用")}
+        {
+            "hook-1": _Webhook(enabled=True, name="启用"),
+            "hook-2": _Webhook(enabled=False, name="禁用"),
+        }
     )
     assert [uid for uid, _ in webhooks] == ["hook-1"]
 
@@ -158,9 +157,7 @@ def test_dispatch_skips_disabled_webhook_channel() -> None:
     target = NotifyTarget(name="测试", webhooks=webhooks)
 
     with patch("app.core.notify.Notify", notify):
-        result = _run(
-            dispatch(NotifyPayload(title="标题", text="正文"), [target])
-        )
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
 
     assert result.attempted == 1
     assert list(result.succeeded) == ["测试 Webhook 启用"]
@@ -265,3 +262,34 @@ def test_dispatch_task_report_zero_targets_keeps_summary() -> None:
     assert task.game_sign_summary_delivered == set()
     assert task.game_sign_summary_pending == ()
     assert task.game_sign_summary_consumed is False
+
+
+def test_dispatch_task_report_publishes_failure_notice() -> None:
+    class _FailingMailNotify(_Notify):
+        async def send_mail(self, **kwargs) -> bool:
+            self.calls.append("邮件")
+            return False
+
+    task = _Task()
+    task.task_id = "task-1"
+    target = NotifyTarget(name="全局", mail_to="user@example.com")
+
+    with (
+        patch("app.core.notify.Notify", _FailingMailNotify()),
+        patch(
+            "app.tools.game_sign_notify.Publisher.send", new_callable=AsyncMock
+        ) as publish,
+    ):
+        result = _run(
+            dispatch_task_report(
+                NotifyPayload(title="报告", text="正文"), [target], task
+            )
+        )
+
+    assert result.failed == ("全局邮件",)
+    publish.assert_awaited_once()
+    assert publish.await_args.kwargs["id"] == "task-1"
+    assert publish.await_args.kwargs["type"] == "task.notice"
+    notice = publish.await_args.kwargs["data"]
+    assert notice.level == "warning"
+    assert "全局邮件" in notice.message

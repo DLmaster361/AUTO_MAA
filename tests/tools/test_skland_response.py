@@ -2,8 +2,10 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.tools.skland import prepare_skland_session_credential
-from app.tools.skland_response import is_skland_already_signed
+from app.tools.skland import (
+    is_skland_already_signed,
+    prepare_skland_session_credential,
+)
 
 
 class SklandResponseTest(unittest.TestCase):

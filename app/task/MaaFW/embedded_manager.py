@@ -30,9 +30,11 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -44,6 +46,10 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.MaaFW.tools.embedded.project_path import (
+    release_project_path,
+    try_reserve_project_path,
+)
 from app.task.MaaFW.tools.embedded.update_credentials import (
     AutoUpdateMode,
     MaaFWUpdateCredentials,
@@ -64,6 +70,11 @@ logger = get_logger("MFW 内置运行")
 # Store checkout 的 sidecar：存在即说明版本由 Project Store 管理（source hash
 # 绑定），原地改文件会破坏这层绑定，第三层要求走「下载 → 导入新版本 → 切换」。
 MANAGED_PROJECT_SIDECAR_NAME = ".auto_mas_maafw_project.json"
+
+# 取消运行环境准备后等线程收尾的上限，与 ``runner_task`` 里那条准备路径的
+# ``_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS`` 取同一个值（那边导入即打开
+# maa DLL，不为一个常数把它拉进来）。
+_ENV_PREPARE_CANCEL_GRACE_SECONDS = 2.0
 # CDK 距到期不足这些天时提醒用户续费
 CDK_EXPIRY_WARNING_DAYS = 7
 
@@ -395,6 +406,24 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self.project_update_logs.append(f"[{timestamp}] {line}\n")
         self.script_info.log = "".join(self.project_update_logs[-80:])
 
+    def _threadsafe_update_log(self) -> Callable[[str], None]:
+        """给会在工作线程里回调的下游用的日志入口。
+
+        ``_append_update_log`` 末尾写 ``script_info.log``，而那个 setter 会
+        ``schedule_on_change()`` → ``asyncio.create_task`` 推 WS。在非事件循环
+        线程里直接调它会 ``RuntimeError: no running event loop``，异常还会被
+        上层的容错吞掉，表面上只看到一句「…失败，任务继续」——更新与环境准备
+        都把 ``send_log`` 交给 ``asyncio.to_thread`` 里的同步代码，所以两边都
+        得走这个转发。
+        """
+
+        loop = asyncio.get_running_loop()
+
+        def send_log(message: str) -> None:
+            loop.call_soon_threadsafe(self._append_update_log, message)
+
+        return send_log
+
     async def _notify_update(
         self, level: Literal["info", "warning", "error"], message: str
     ) -> None:
@@ -432,7 +461,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "channel": credentials.channel,
             # 下载源由用户显式选定，核心包不再自动分流。
             "source_config": {"package_source": credentials.package_source},
-            "send_log": self._append_update_log,
+            "send_log": self._threadsafe_update_log(),
             "project_lock_already_held": False,
         }
         # 核心包签名正在收敛：``interface_model`` 位置参数可能被拿掉（改为包内
@@ -456,9 +485,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         assert self.script_config is not None
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
-        project_path = Path(
-            str(self.script_config.get("Info", "Path") or "")
-        ).resolve()
+        project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
 
         if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
             self._append_update_log("受管项目由 Store 管理版本，跳过原地更新")
@@ -511,6 +538,129 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 "；".join(text for _, text in lines),
             )
 
+    def _prepare_project_environment_sync(
+        self,
+        project_path: Path,
+        cancel_event: threading.Event,
+        send_log: Callable[[str], None],
+    ) -> bool:
+        """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
+
+        先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
+        几个 stat，直接跳过。
+        """
+
+        # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
+        # 用时导入。
+        from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+            MaaFWRunnerService,
+            project_environment_fingerprint,
+        )
+        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+            MaaFWRuntimePoolService,
+        )
+        from app.task.MaaFW.tools.embedded.env_cache import (
+            load_prepared_environment,
+            store_prepared_environment,
+        )
+        from app.task.MaaFW.tools.embedded.runtime_route import (
+            runtime_pool_route_from_service,
+        )
+
+        fingerprint = project_environment_fingerprint(project_path)
+        if load_prepared_environment(project_path, fingerprint) is not None:
+            return False
+
+        interface = self._load_interface_model(project_path)
+        route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
+        result = MaaFWRunnerService().prepare_project_environment(
+            project_path,
+            interface,
+            runtime_pool_root=route.root,
+            runtime_pool_id=route.pool_id,
+            # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
+            import_paths=[Path.cwd()],
+            send_log=send_log,
+            cancel_event=cancel_event,
+        )
+        store_prepared_environment(
+            project_path,
+            str(result.get("projectFingerprint") or "") or fingerprint,
+            result,
+        )
+        return True
+
+    async def _ensure_project_environment(self, phase: AutoUpdateMode) -> None:
+        """更新之后确认一次运行环境，别把建环境的成本留到用户任务里。
+
+        更新过就意味着 interface / requirements 变了，隔离 venv 得重建。不在
+        这里做的话，重建会推迟到 runner 的 worker 子进程里——那时模拟器和游戏
+        都已经起来了，用户看到的只是「任务卡住」。
+
+        **任何失败都只记日志 + 通知，不抛出、不改脚本/用户状态**：runner 本来
+        就会按需准备，这里失败最多把成本推回运行时，不该让能跑的任务跑不了。
+        """
+
+        assert self.script_config is not None
+        phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
+        project_path = Path(
+            str(self.script_config.get("Info", "Path") or "")
+        ).resolve()
+
+        if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
+            # 受管项目的环境由 Store/Gateway 那条链自己准备，别在这里插一脚。
+            return
+
+        # 更新已经放掉了项目锁。拿不到说明另有准备/运行在跑，那份准备一样管用。
+        reservation_key = await try_reserve_project_path(project_path)
+        if reservation_key is None:
+            self._append_update_log("项目正被占用，跳过本次运行环境确认")
+            return
+
+        # 准备可能要几分钟（首次要下 MaaFramework）。用户这时点停止，
+        # ``task.cancel()`` 会在下面的 await 上抛出，但工作线程不会自己停——
+        # 取消得靠令牌传进去，做法与 ``runner_task`` 的准备路径一致。
+        cancel_event = threading.Event()
+        prepare_task = asyncio.create_task(
+            asyncio.to_thread(
+                self._prepare_project_environment_sync,
+                project_path,
+                cancel_event,
+                self._threadsafe_update_log(),
+            )
+        )
+        try:
+            prepared = await asyncio.shield(prepare_task)
+        except asyncio.CancelledError:
+            # 置位后正在跑的 uv 子进程会被终止。只等有限时间：等到了就在放开
+            # 项目锁之前收干净，等不到也不再拖着关机，线程随子进程结束。
+            cancel_event.set()
+            with suppress(BaseException):
+                await asyncio.wait_for(
+                    asyncio.shield(prepare_task),
+                    timeout=_ENV_PREPARE_CANCEL_GRACE_SECONDS,
+                )
+            raise
+        except Exception as exc:  # noqa: BLE001 - 准备失败不阻断运行
+            reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
+            logger.opt(exception=True).warning(
+                f"MFW {phase_zh}运行环境确认失败，任务继续：{reason}"
+            )
+            self._append_update_log(f"运行环境确认失败，任务继续：{reason}")
+            await self._notify_update(
+                "error", f"MFW {phase_zh}运行环境确认失败，任务继续：{reason}"
+            )
+            return
+        finally:
+            await release_project_path(reservation_key)
+
+        # 没变化时只留一行日志，别为「什么都没做」弹通知。
+        self._append_update_log(
+            f"{phase_zh}运行环境已重新准备完成"
+            if prepared
+            else "项目文件没有变化，运行环境沿用上次的准备结果"
+        )
+
     async def main_task(self) -> None:
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -543,9 +693,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         )
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
+        # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
+        # 还是得备。两步都在用户任务之外，不计入 ``Run.RunTimeLimit``。
         self._auto_update_mode = resolve_auto_update_mode(self.script_config)
         if self._auto_update_mode == "BeforeRun":
             await self._run_project_update("BeforeRun")
+            await self._ensure_project_environment("BeforeRun")
 
         # AutoProxy 的 main_task / final_task 都是**按用户**的（final_task 会
         # 结算该用户的代理次数、剩余天数并释放项目锁），因此每个用户各建一个。
@@ -634,6 +787,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
         if self._users_completed and self._auto_update_mode == "AfterRun":
             await self._run_project_update("AfterRun")
+            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
+            await self._ensure_project_environment("AfterRun")
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")

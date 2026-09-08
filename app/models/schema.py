@@ -136,12 +136,27 @@ class EmulatorConfigIndexItem(BaseModel):
 
 class EmulatorConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="模拟器名称")
-    Type: Optional[Literal["general", "mumu", "ldplayer"]] = Field(
+    Type: Optional[Literal["general", "mumu", "ldplayer", "emulator2"]] = Field(
         default=None, description="模拟器类型"
     )
     Path: Optional[str] = Field(default=None, description="模拟器路径")
+    Paths: Optional[str] = Field(
+        default=None, description="Emulator 2.0 纳管的模拟器路径列表（JSON）"
+    )
+    Slots: Optional[str] = Field(
+        default=None, description="Emulator 2.0 的设备号槽位表（JSON）"
+    )
     BossKey: Optional[str] = Field(default=None, description="老板键快捷键配置")
     MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间（秒）")
+    ConfigGuard: Optional[bool] = Field(
+        default=None, description="Emulator 2.0: 配置守卫是否开启"
+    )
+    Baselines: Optional[str] = Field(
+        default=None, description="Emulator 2.0: 配置守卫的基准, JSON 字符串"
+    )
+    StableMode: Optional[bool] = Field(
+        default=None, description="Emulator 2.0: 稳定模式是否开启"
+    )
     ForceKillOnClose: Optional[bool] = Field(
         default=None, description="关闭 MuMu 时强力清理残留进程"
     )
@@ -426,6 +441,12 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="Koishi服务器地址"
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
+    IfOpenClawWeixin: Optional[bool] = Field(
+        default=None, description="是否启用微信 Claw 通知"
+    )
+    IfOpenClawQQ: Optional[bool] = Field(
+        default=None, description="是否启用 QQ 官方机器人通知"
+    )
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
     FromAddress: Optional[str] = Field(default=None, description="邮件发送地址")
@@ -434,6 +455,67 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
+
+
+class OpenClawWeixinQrStartOut(OutBase):
+    """微信 Claw 二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawWeixinQrCheckIn(BaseModel):
+    """微信 Claw 二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+    verifyCode: Optional[str] = Field(
+        default=None, max_length=32, description="微信要求时输入的配对码"
+    )
+
+
+class OpenClawWeixinQrCheckOut(OutBase):
+    """微信 Claw 二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawWeixinStatusOut(OutBase):
+    """微信 Claw 通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
+    connected: bool = Field(default=False, description="是否已绑定微信账号")
+    state: str = Field(default="disconnected", description="当前连接状态")
+
+
+class OpenClawQQQrStartOut(OutBase):
+    """QQ 官方机器人二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawQQQrCheckIn(BaseModel):
+    """QQ 官方机器人二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+
+
+class OpenClawQQQrCheckOut(OutBase):
+    """QQ 官方机器人二维码状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(default="", description="二维码状态")
+    connected: bool = Field(default=False, description="是否已完成账号绑定")
+
+
+class OpenClawQQStatusOut(OutBase):
+    """QQ 官方机器人通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
+    connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
+    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class GlobalConfig_Update(BaseModel):
@@ -582,6 +664,9 @@ class QueueConfig_Info(BaseModel):
             "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
+    AfterAccomplishDelay: Optional[int] = Field(
+        default=None, ge=0, le=1440, description="完成后操作的延时时长(分钟)"
+    )
 
 
 class QueueConfig(BaseModel):
@@ -979,13 +1064,15 @@ class BetterGIUserConfig_OneDragon(BaseModel):
         default=None, description="一条龙要执行的内置配置组名列表"
     )
     DailyRewardPartyName: Optional[str] = Field(
-        default=None, description="领取奖励队伍（对应一条龙 DailyRewardPartyName，留空不覆盖）"
+        default=None,
+        description="领取奖励队伍（对应一条龙 DailyRewardPartyName，留空不覆盖）",
     )
     PartyName: Optional[str] = Field(
         default=None, description="战斗队伍（对应一条龙通用 PartyName，留空不覆盖）"
     )
     AutoBossStrategyName: Optional[str] = Field(
-        default=None, description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）"
+        default=None,
+        description="战斗策略（对应一条龙 AutoBossStrategyName，留空不覆盖）",
     )
     IfUseCustomGroups: Optional[bool] = Field(
         default=None, description="是否管理自定义配置组（总开关）"
@@ -1005,12 +1092,24 @@ class BetterGIUserConfig_Data(GeneralUserConfig_Data):
 
 
 class BetterGIUserConfig(BaseModel):
-    Info: Optional[BetterGIUserConfig_Info] = Field(default=None, description="用户信息")
-    Task: Optional[BetterGIUserConfig_Task] = Field(default=None, description="任务配置")
-    Switch: Optional[BetterGIUserConfig_Switch] = Field(default=None, description="切换账号配置")
-    OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(default=None, description="一条龙配置")
-    Data: Optional[BetterGIUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[GeneralUserConfig_Notify] = Field(default=None, description="单独通知")
+    Info: Optional[BetterGIUserConfig_Info] = Field(
+        default=None, description="用户信息"
+    )
+    Task: Optional[BetterGIUserConfig_Task] = Field(
+        default=None, description="任务配置"
+    )
+    Switch: Optional[BetterGIUserConfig_Switch] = Field(
+        default=None, description="切换账号配置"
+    )
+    OneDragon: Optional[BetterGIUserConfig_OneDragon] = Field(
+        default=None, description="一条龙配置"
+    )
+    Data: Optional[BetterGIUserConfig_Data] = Field(
+        default=None, description="用户数据"
+    )
+    Notify: Optional[GeneralUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
 
 
 class GeneralConfig_Info(BaseModel):
@@ -1100,21 +1199,10 @@ class GeneralConfig(BaseModel):
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
-class OkwwConfig_Info(GeneralConfig_Info):
-    """OK-WW 脚本基础信息（复用通用字段）"""
-
-
-class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
-
-
 class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
     Enabled: Optional[bool] = Field(default=None, description="游戏相关功能是否启用")
-    LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏"
-    )
     Path: Optional[str] = Field(default=None, description="游戏启动器路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
@@ -1125,19 +1213,15 @@ class OkwwConfig_Game(BaseModel):
         default=None, description="整文件同步体积上限（GB），超过则中止并提示手动处理"
     )
     AccountSwitch: Optional[bool] = Field(
-        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
+        default=None,
+        description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）",
     )
 
 
-class OkwwConfig_Run(GeneralConfig_Run):
-    """OK-WW 运行配置（复用通用字段）"""
-
-
 class OkwwConfig(BaseModel):
-    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
-    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
-    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
+    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
 class OkNteConfig_Info(GeneralConfig_Info):
@@ -1190,7 +1274,8 @@ class OkNteConfig_Game(BaseModel):
         default=None, description="类型: PC端, URL协议"
     )
     Path: Optional[str] = Field(
-        default=None, description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）"
+        default=None,
+        description="游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）",
     )
     URL: Optional[str] = Field(default=None, description="自定义协议URL")
     ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
@@ -1206,7 +1291,8 @@ class OkNteConfig_Game(BaseModel):
         default=None, description="任务结束后是否关闭游戏"
     )
     AccountSwitch: Optional[bool] = Field(
-        default=None, description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）"
+        default=None,
+        description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）",
     )
 
 
@@ -1243,8 +1329,9 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["脚本", "用户"]] = Field(
-        default=None, description="配置来源（脚本/用户）"
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None,
+        description="配置来源（脚本共享、用户独立、脚本直控）",
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
@@ -1260,6 +1347,35 @@ class MaaEndUserConfig_Info(BaseModel):
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+MaaEndAutoCollectRoute = Literal[
+    "Route1",
+    "Route2",
+    "Route3",
+    "Route4",
+    "Route5",
+    "Route6",
+    "Route7",
+    "Route8",
+    "Route9",
+    "Route10",
+    "Route11",
+    "Route12",
+    "Route13",
+    "Route14",
+    "Route15",
+]
+MaaEndAutoCollectCommonRoute = Literal[
+    "CommonRoute1",
+    "CommonRoute2",
+    "CommonRoute3",
+    "CommonRoute4",
+    "CommonRoute5",
+    "CommonRoute6",
+    "CommonRoute7",
+    "CommonRoute8",
+]
 
 
 class MaaEndUserConfig_Task(BaseModel):
@@ -1298,13 +1414,32 @@ class MaaEndUserConfig_Task(BaseModel):
     IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
     IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
     IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    SeizeDeliveryJobsReward: Optional[float] = Field(
+        default=None, ge=0, description="抢委托送货最低接取价格（万）"
+    )
+    SeizeDeliveryJobsCommissionSource: Optional[
+        Literal["Unlimited", "WulingCity", "TestArea"]
+    ] = Field(default=None, description="抢委托送货委托接收点")
+    IfSeizeDeliveryJobs: Optional[bool] = Field(default=None, description="抢委托送货")
     IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
     IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
     IfEnvironmentMonitoring: Optional[bool] = Field(
         default=None, description="环境监测"
     )
     IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    AutoCollectMode: Optional[Literal["Distributed", "Concentrated"]] = Field(
+        default=None, description="自动采集路线安排：分散或集中"
+    )
+    AutoCollectRoutes: Optional[list[MaaEndAutoCollectRoute]] = Field(
+        default=None, description="自动采集区域资源路线"
+    )
+    AutoCollectCommonRoutes: Optional[list[MaaEndAutoCollectCommonRoute]] = Field(
+        default=None, description="自动采集通用资源路线"
+    )
+    DailyOnceTasks: Optional[str] = Field(
+        default=None,
+        description="每日正常完成一次后当天跳过的 MaaEnd 任务名列表（JSON 字符串）",
+    )
     IfTrialOfSwordmancy: Optional[bool] = Field(default=None, description="选剑演武")
     IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
     IfResourceRecycleStation: Optional[bool] = Field(
@@ -1330,6 +1465,9 @@ class MaaEndUserConfig_Data(BaseModel):
     LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
         default=None, description="上次代理状态"
     )
+    PeriodTaskRecords: Optional[str] = Field(
+        default=None, description="MaaEnd 每日任务完成记录"
+    )
 
 
 class MaaEndUserConfig(BaseModel):
@@ -1354,6 +1492,9 @@ class MaaEndConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     AccountSwitchMethod: Optional[Literal["MAS", "MAAEND"]] = Field(
         default=None, description="账号切换方式"
+    )
+    TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame"]] = Field(
+        default=None, description="任务切换方式"
     )
 
 
@@ -1581,12 +1722,15 @@ class HSRConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="HSR 脚本名称")
     M7APath: Optional[str] = Field(default=None, description="M7A 路径")
     SRAPath: Optional[str] = Field(default=None, description="SRA 路径")
+    SRAProfile: Optional[str] = Field(
+        default=None,
+        description="SRA 配置档案 id（%APPDATA%/SRA/configs 下的文件名，不含扩展名）；空串表示自动",
+    )
 
 
 class HSRConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
-    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
     ForceResolution1920x1080: Optional[bool] = Field(
         default=None, description="是否强制 1920x1080"
@@ -1644,6 +1788,14 @@ class HSRUserConfig_Info(BaseModel):
         default=None, description="游戏服务器"
     )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签列表")
 
@@ -1875,12 +2027,29 @@ class HSRManagedField(BaseModel):
     readonly: bool = Field(default=False, description="是否只读")
 
 
+class HSRManagedDroppedOverride(BaseModel):
+    key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
+    reason: Literal["unknown", "type"] = Field(
+        ...,
+        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+    )
+    value: Any = Field(default=None, description="用户保存的覆盖值")
+    message: str = Field(default="", description="人类可读说明")
+
+
 class HSRManagedForm(BaseModel):
     key: Optional[str] = Field(default=None, description="任务键")
     engine: Literal["M7A", "SRA"] = Field(..., description="表单引擎")
     fields: List[HSRManagedField] = Field(default_factory=list, description="表单字段")
     source: Optional[str] = Field(default=None, description="字段来源")
-    warnings: List[str] = Field(default_factory=list, description="表单警告")
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="表单级人类可读提示（如缺少配置说明文件），不含失效覆盖记录",
+    )
+    dropped_overrides: List[HSRManagedDroppedOverride] = Field(
+        default_factory=list,
+        description="在当前原生配置中失效、运行时会被忽略的 Managed.Options 覆盖值",
+    )
 
 
 class HSRManagedTask(BaseModel):
@@ -1910,6 +2079,35 @@ class HSRManagedConfigData(BaseModel):
 
 class HSRManagedConfigOut(OutBase):
     data: Optional[HSRManagedConfigData] = Field(default=None, description="托管配置")
+
+
+class HSRSRAProfile(BaseModel):
+    id: str = Field(..., description="档案 id（文件名，不含扩展名）")
+    path: str = Field(..., description="档案文件路径")
+    selected: bool = Field(default=False, description="是否为当前生效的档案")
+
+
+class HSRSRAProfilesData(BaseModel):
+    engine: Literal["SRA"] = Field(default="SRA", description="原生脚本引擎")
+    root: str = Field(..., description="档案目录（%APPDATA%/SRA/configs）")
+    available: bool = Field(
+        default=False, description="档案目录是否可读且至少有一份档案"
+    )
+    unavailable_reason: Optional[str] = Field(default=None, description="不可用原因")
+    configured: str = Field(default="", description="脚本配置的档案 id；空串表示自动")
+    auto_id: str = Field(..., description="自动模式会选中的档案 id")
+    selected: str = Field(..., description="当前实际生效的档案 id")
+    fallback: bool = Field(
+        default=False, description="配置的档案不存在、已回退到自动选择"
+    )
+    fallback_reason: Optional[str] = Field(default=None, description="回退说明")
+    profiles: List[HSRSRAProfile] = Field(default_factory=list, description="可选档案")
+
+
+class HSRSRAProfilesOut(OutBase):
+    data: Optional[HSRSRAProfilesData] = Field(
+        default=None, description="SRA 配置档案列表"
+    )
 
 
 class HSRDirectConfigImportIn(BaseModel):
@@ -2526,6 +2724,10 @@ class MaaFWProjectUpdateOut(OutBase):
 class MaaFWAgentEnvPrepareIn(BaseModel):
     path: str = Field(..., description="MFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(default=None, description="脚本 ID，仅用于日志定位")
+    force: bool = Field(
+        default=False,
+        description="忽略指纹缓存强制重新准备，供用户手动重试使用",
+    )
 
 
 class MaaFWAgentEnvInfo(BaseModel):
@@ -2561,6 +2763,13 @@ class MaaFWAgentEnvPrepareData(BaseModel):
     venvPath: Optional[str] = Field(default=None, description="Runner 虚拟环境路径")
     maafwVersion: Optional[str] = Field(
         default=None, description="实际解析到的 MaaFramework 版本"
+    )
+    cached: bool = Field(
+        default=False,
+        description="是否命中指纹缓存，命中时本次未做实际准备",
+    )
+    preparedAt: Optional[str] = Field(
+        default=None, description="缓存命中时，上一次实际完成准备的时间"
     )
 
 
@@ -2685,6 +2894,9 @@ class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
     status: Literal["DONE", "ERROR"] = Field(..., description="状态")
     jsonFile: str = Field(..., description="对应JSON文件")
+    result: Optional[str] = Field(
+        default=None, description="运行结果文本，可能带运行阶段前缀"
+    )
 
 
 class PullCountStatistics(BaseModel):
@@ -2723,7 +2935,16 @@ class HistoryData(BaseModel):
 
 class ScriptCreateIn(BaseModel):
     type: Literal[
-        "MAA", "SRC", "General", "Okww", "OkNte", "MaaEnd", "M9A", "MaaFW", "HSR", "BetterGI"
+        "MAA",
+        "SRC",
+        "General",
+        "Okww",
+        "OkNte",
+        "MaaEnd",
+        "M9A",
+        "MaaFW",
+        "HSR",
+        "BetterGI",
     ] = Field(
         ...,
         description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本",
@@ -2746,9 +2967,7 @@ class ScriptCreateOut(OutBase):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
-    ] = Field(
-        ..., description="脚本配置数据"
-    )
+    ] = Field(..., description="脚本配置数据")
 
 
 class ScriptGetIn(BaseModel):
@@ -2789,9 +3008,7 @@ class ScriptUpdateIn(BaseModel):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
-    ] = Field(
-        ..., description="脚本更新数据"
-    )
+    ] = Field(..., description="脚本更新数据")
 
 
 class ScriptDeleteIn(BaseModel):
@@ -2972,6 +3189,255 @@ class EmulatorSearchResult(BaseModel):
 class EmulatorSearchOut(OutBase):
     emulators: List[EmulatorSearchResult] = Field(
         default_factory=list, description="搜索到的模拟器列表"
+    )
+
+
+# ---- Emulator 2.0 ----------------------------------------------------------
+# 一条配置纳管多条模拟器路径, 实例合并成一张设备表。设备号由本配置统一编排,
+# 脚本绑定用的就是它; 模拟器自己的实例索引另外给出, 两者不一定对得上。
+
+
+class Emulator2SearchIn(BaseModel):
+    emulatorId: Optional[str] = Field(
+        default=None, description="配置ID, 携带时会标出已添加过的路径"
+    )
+
+
+class Emulator2SearchItem(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    version: str = Field(default="", description="探测到的版本号")
+    installPath: str = Field(..., description="安装目录")
+    alias: str = Field(default="", description="安装别名, 默认取目录名")
+    supported: bool = Field(..., description="能否加入 Emulator 2.0")
+    reason: str = Field(
+        ...,
+        description=(
+            "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
+            "unsupported 暂不支持 / already_added 已添加 / "
+            "not_found 找不到模拟器程序 / probe_failed 版本认不出"
+        ),
+    )
+    instanceCount: Optional[int] = Field(default=None, description="实例数量")
+
+
+class Emulator2SearchOut(OutBase):
+    emulators: List[Emulator2SearchItem] = Field(
+        default_factory=list, description="搜索结果, 不可添加的也会列出并说明原因"
+    )
+
+
+class Emulator2DevicesIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+
+
+class Emulator2PathAddIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    installPath: str = Field(..., description="模拟器安装目录")
+    alias: Optional[str] = Field(default=None, description="安装别名")
+
+
+class Emulator2SlotAssignment(BaseModel):
+    slot: str = Field(..., description="设备号")
+    nativeIndex: str = Field(..., description="模拟器自己的实例索引")
+
+
+class Emulator2PathAddOut(OutBase):
+    ok: bool = Field(default=False, description="是否添加成功")
+    reason: str = Field(default="", description="失败原因枚举, 与搜索结果同一套")
+    pathId: str = Field(default="", description="路径标识, 由安装目录派生")
+    alias: str = Field(default="", description="安装别名")
+    type: str = Field(default="", description="模拟器类型")
+    version: str = Field(default="", description="探测到的版本号")
+    assignedSlots: List[Emulator2SlotAssignment] = Field(
+        default_factory=list, description="本次新分配的设备号"
+    )
+    revivedSlots: List[str] = Field(
+        default_factory=list, description="重新添加同一路径时沿用的原设备号"
+    )
+
+
+class Emulator2PathRemoveIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    pathId: str = Field(..., description="路径标识")
+
+
+class Emulator2AffectedScript(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    name: str = Field(..., description="脚本名称")
+    slot: str = Field(..., description="绑定的设备号")
+    running: bool = Field(default=False, description="是否正在运行")
+
+
+class Emulator2PathRemovePreviewOut(OutBase):
+    slots: List[str] = Field(default_factory=list, description="将会失效的设备号")
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="受影响的脚本"
+    )
+
+
+class Emulator2PathRemoveOut(OutBase):
+    ok: bool = Field(default=False, description="是否移除成功")
+    tombstonedSlots: List[str] = Field(
+        default_factory=list,
+        description="已失效并保留的设备号, 不会再分配给其他设备",
+    )
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="受影响的脚本"
+    )
+
+
+class Emulator2InstanceCreateIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    pathId: str = Field(..., description="在哪条模拟器安装下新建")
+    name: Optional[str] = Field(
+        default=None, description="新实例名称, 留空由模拟器自己命名"
+    )
+
+
+class Emulator2InstanceCreateOut(OutBase):
+    ok: bool = Field(default=False, description="是否新建成功")
+    reason: str = Field(default="", description="失败原因枚举")
+    slot: str = Field(default="", description="新实例分到的设备号")
+    nativeIndex: str = Field(default="", description="模拟器自己的实例索引")
+
+
+class Emulator2InstanceDeleteIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要删除的设备号")
+
+
+class Emulator2InstanceDeletePreviewOut(OutBase):
+    ok: bool = Field(default=False, description="设备号是否有效")
+    reason: str = Field(default="", description="失败原因枚举")
+    affectedScripts: List[Emulator2AffectedScript] = Field(
+        default_factory=list, description="绑定了该设备号的脚本"
+    )
+
+
+class Emulator2InstanceDeleteOut(OutBase):
+    ok: bool = Field(default=False, description="是否删除成功")
+    reason: str = Field(default="", description="失败原因枚举")
+
+
+class Emulator2SettingField(BaseModel):
+    """一个设置项的值和它的来历。
+
+    ``state`` 必须四态分开：``.config`` 里没有 ``cpuCount`` 的实例照样跑在雷电默认的
+    6 核上，把「默认值」显示成「已保存」就是在声称用户设过一个他没设过的值。
+    """
+
+    value: Optional[int] = Field(default=None, description="当前值, 未设置时为 null")
+    state: str = Field(
+        default="unset",
+        description="saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出",
+    )
+
+
+class Emulator2SettingsIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slot: str = Field(..., description="设备号")
+
+
+class Emulator2SettingsOut(OutBase):
+    slot: str = Field(default="", description="设备号")
+    settings: Dict[str, Emulator2SettingField] = Field(
+        default_factory=dict, description="四项设置的当前值与状态"
+    )
+
+
+class Emulator2SettingsApplyIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slot: str = Field(..., description="设备号")
+    changes: Dict[str, int] = Field(
+        ..., description="要写入的字段; 只提交用户改过的, 其余键原样保留"
+    )
+    expected: Dict[str, Optional[int]] = Field(
+        default_factory=dict,
+        description="表单打开时看到的值; 对不上说明文件被改过, 拒绝覆盖",
+    )
+
+
+class Emulator2SettingsApplyOut(OutBase):
+    ok: bool = Field(default=False, description="是否写入成功")
+    conflicts: List[str] = Field(
+        default_factory=list, description="编辑期间被改动的字段名"
+    )
+    applied: Dict[str, int] = Field(default_factory=dict, description="真正落盘的字段")
+
+
+class Emulator2GuardCaptureOut(OutBase):
+    slots: List[str] = Field(default_factory=list, description="记下基准的设备号")
+    count: int = Field(default=0, description="记下基准的设备台数")
+
+
+class Emulator2StableModeIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    slots: List[str] = Field(
+        default_factory=list, description="要处理的设备号; 留空表示全部"
+    )
+
+
+class Emulator2SettingsApplyAllIn(BaseModel):
+    emulatorId: str = Field(..., description="模拟器配置ID")
+    changes: Dict[str, int] = Field(..., description="要写到全部实例上的字段")
+
+
+class Emulator2BatchResult(BaseModel):
+    slot: str = Field(..., description="设备号")
+    ok: bool = Field(default=False, description="该设备是否写入成功")
+    message: str = Field(default="", description="失败原因")
+
+
+class Emulator2SettingsApplyAllOut(OutBase):
+    results: List[Emulator2BatchResult] = Field(
+        default_factory=list, description="逐台结果"
+    )
+    okCount: int = Field(default=0, description="成功台数")
+    failCount: int = Field(default=0, description="失败台数")
+
+
+class Emulator2PathItem(BaseModel):
+    pathId: str = Field(..., description="路径标识")
+    installPath: str = Field(..., description="安装目录")
+    alias: str = Field(default="", description="安装别名")
+    type: str = Field(default="", description="模拟器类型")
+    version: str = Field(default="", description="版本号")
+    slots: List[str] = Field(default_factory=list, description="该路径占用的设备号")
+
+
+class Emulator2DeviceItem(BaseModel):
+    slot: str = Field(..., description="设备号, 脚本绑定用它")
+    pathId: str = Field(..., description="所属路径标识")
+    alias: str = Field(default="", description="所属安装的别名")
+    realType: str = Field(
+        default="", description="设备的真实模拟器类型, 不是配置的类型"
+    )
+    nativeIndex: str = Field(..., description="模拟器自己的实例索引")
+    availability: str = Field(
+        default="ok",
+        description="ok 正常 / missing 这次没枚举到 / unavailable 该安装暂时不可达",
+    )
+    title: str = Field(default="", description="实例名称")
+    status: int = Field(default=5, description="设备状态码")
+    adbAddress: str = Field(default="", description="ADB 地址")
+    settings: Dict[str, Emulator2SettingField] = Field(
+        default_factory=dict,
+        description="已保存设置, 下次启动使用; 不是运行中实例的当前配置",
+    )
+    stableMode: bool = Field(
+        default=False, description="稳定模式是否已生效(所有干扰项都处在安全状态)"
+    )
+    stableUnsafe: List[str] = Field(
+        default_factory=list, description="还没进入安全状态的项"
+    )
+
+
+class Emulator2DevicesOut(OutBase):
+    paths: List[Emulator2PathItem] = Field(
+        default_factory=list, description="已纳管的模拟器路径"
+    )
+    devices: List[Emulator2DeviceItem] = Field(
+        default_factory=list, description="合并后的设备列表"
     )
 
 

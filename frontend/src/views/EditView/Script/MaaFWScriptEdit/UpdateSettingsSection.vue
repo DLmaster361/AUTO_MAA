@@ -81,12 +81,9 @@
           />
           <div class="form-hint" :class="{ 'form-hint--warning': isCdkMissingForMirror }">
             {{ t('edit.cdkHint') }}
-            <a
-              :href="MIRRORCHYAN_CDK_URL"
-              class="form-hint-link"
-              @click="handleExternalLink"
-              >{{ t('edit.cdkGetLink') }}</a
-            >
+            <a :href="MIRRORCHYAN_CDK_URL" class="form-hint-link" @click="handleExternalLink">{{
+              t('edit.cdkGetLink')
+            }}</a>
           </div>
         </a-form-item>
       </a-col>
@@ -119,7 +116,12 @@
       :message="updateError"
     />
     <template v-else-if="updateResult">
-      <a-alert class="update-alert" :type="updateResultType" show-icon :message="updateResult.message">
+      <a-alert
+        class="update-alert"
+        :type="updateResultType"
+        show-icon
+        :message="updateResult.message"
+      >
         <template v-if="updateResultDetail" #description>
           <span class="update-result-detail">{{ updateResultDetail }}</span>
         </template>
@@ -200,13 +202,11 @@ const emit = defineEmits<{
   'apply-update': []
 }>()
 
-const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(
-  () => [
-    { label: t('edit.autoUpdateModeOff'), value: 'Off' },
-    { label: t('edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
-    { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
-  ]
-)
+const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(() => [
+  { label: t('edit.autoUpdateModeOff'), value: 'Off' },
+  { label: t('edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
+  { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
+])
 
 const updateResultType = computed<'success' | 'warning' | 'info'>(() => {
   if (!props.updateResult) return 'info'

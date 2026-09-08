@@ -10,7 +10,7 @@ import { useAppInitialization } from './composables/useAppInitialization.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
-import DevDebugPanel from './components/DevDebugPanel.vue'
+import DebugPanel from './components/devtools/index.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
@@ -84,7 +84,7 @@ onMounted(async () => {
     </div>
 
     <!-- 开发环境调试面板 - 开发工具始终可用 -->
-    <DevDebugPanel />
+    <DebugPanel />
 
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">

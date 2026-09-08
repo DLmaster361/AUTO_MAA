@@ -155,7 +155,9 @@ def resolve_http_port(development_environment: bool) -> int:
 
     if is_supervised():
         if raw:
-            logger.info(f"受监督模式下端口由运行时注入，已忽略 AUTO_MAS_HTTP_PORT={raw}")
+            logger.info(
+                f"受监督模式下端口由运行时注入，已忽略 AUTO_MAS_HTTP_PORT={raw}"
+            )
         return _resolve_supervised_port()
 
     if raw:
@@ -187,9 +189,7 @@ def _resolve_supervised_port() -> int:
     if SUPERVISED_PORT_MIN <= port <= 65535:
         return port
 
-    logger.warning(
-        f"{SUPERVISED_PORT_ENV} 取值无效，回退 {DEFAULT_HTTP_PORT}: {raw!r}"
-    )
+    logger.warning(f"{SUPERVISED_PORT_ENV} 取值无效，回退 {DEFAULT_HTTP_PORT}: {raw!r}")
     return DEFAULT_HTTP_PORT
 
 
@@ -248,7 +248,7 @@ def main():
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、ArknightWin32、主定时器。
+            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -283,17 +283,23 @@ def main():
                 await Config.get_stage()
                 await Config.clean_old_history()
                 await Config.clean_maafw_agent_venvs()
+                await Config.clean_debug_diagnostics()
 
                 if IS_WINDOWS:
-                    for adapter in (
-                        "app.MaaFW.ArknightWin32",
-                    ):
+                    for adapter in ("app.MaaFW.ArknightWin32",):
                         await asyncio.to_thread(importlib.import_module, adapter)
 
                     from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
 
                     await ArknightWin32Toolkit.init()
                 await MainTimer.start()
+
+                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                from app.services.openclaw_qq import openclaw_qq_manager
+                from app.services.openclaw_weixin import openclaw_weixin_manager
+
+                await openclaw_weixin_manager.start()
+                await openclaw_qq_manager.start()
 
                 # 初始化 Koishi 系统客户端（如果已启用）
                 if Config.get("Notify", "IfKoishiSupport"):
@@ -352,6 +358,11 @@ def main():
                 await System.cancel_power_task()
 
             await MainTimer.stop()
+            from app.services.openclaw_qq import openclaw_qq_manager
+            from app.services.openclaw_weixin import openclaw_weixin_manager
+
+            await openclaw_weixin_manager.stop()
+            await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
@@ -378,6 +389,7 @@ def main():
         scripts_router,
         plan_router,
         emulator_router,
+        emulator2_router,
         queue_router,
         dispatch_router,
         history_router,
@@ -385,6 +397,8 @@ def main():
         setting_router,
         update_router,
         ocr_router,
+        openclaw_qq_router,
+        openclaw_weixin_router,
         qr_login_router,
         skland_qr_router,
     )
@@ -409,6 +423,7 @@ def main():
     app.include_router(scripts_router)
     app.include_router(plan_router)
     app.include_router(emulator_router)
+    app.include_router(emulator2_router)
     app.include_router(queue_router)
     app.include_router(dispatch_router)
     app.include_router(history_router)
@@ -416,10 +431,9 @@ def main():
     app.include_router(setting_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
-
-    # 可选补丁：米游社扫码登录
-    if qr_login_router is not None:
-        app.include_router(qr_login_router)
+    app.include_router(openclaw_qq_router)
+    app.include_router(openclaw_weixin_router)
+    app.include_router(qr_login_router)
 
     # 可选补丁：森空岛扫码登录
     if skland_qr_router is not None:

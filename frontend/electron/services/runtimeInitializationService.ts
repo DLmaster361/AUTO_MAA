@@ -231,6 +231,8 @@ export interface BootstrapProgressUpdate {
   status: InitializationStageStatus
   progress: number
   message: string
+  /** Runtime 没有可靠总量时为 true，界面改用持续活动进度而不是展示伪百分比。 */
+  indeterminate?: boolean
 }
 
 /** bootstrap 实际经过的三个界面段，按现有界面的固定先后顺序排列。 */
@@ -246,7 +248,7 @@ export const RUNTIME_TAKEOVER_STAGES: readonly InitializationRunStage[] = ['mirr
 export const RUNTIME_TAKEOVER_MESSAGE = '由 Runtime 接管'
 export const RUNTIME_DEVELOPMENT_SKIP_MESSAGE = '由 Runtime development 模式接管，跳过'
 
-/** 段刚开始时的粗略进度。Runtime 不给细粒度百分比时段内一直停在这个值。 */
+/** 兼容旧消费方的段起始值；indeterminate=true 时界面不得把它显示成精确百分比。 */
 const STAGE_STARTED_PROGRESS = 10
 
 /**
@@ -257,13 +259,20 @@ const STAGE_STARTED_PROGRESS = 10
  * `python.*` 都映射到 `python` 段，直接按事件重开段会让界面从「拉取源码」倒退回
  * 「安装 Python」。落后于当前段的事件仍会展示 Runtime 自己的文案，只是挂在当前段上。
  *
- * 进度百分比只用 Runtime 真给的 `percent`：实测整条成功 bootstrap 的 73 条 progress
- * 事件没有一条带 `percent` / `current` / `total`，依赖同步阶段更是一条 progress 都没有，
- * 所以这里不编造段内百分比，段开始 10%、段结束 100%。
+ * 进度百分比只用 Runtime 真给的 `percent`：没有可靠总量时用 `indeterminate` 明确告诉
+ * 界面展示持续活动状态。`progress=10` 只为兼容仍要求数字的旧消费方，不再作为精确百分比
+ * 呈现；这样既保留当前 IPC 形状，也不会让长耗时阶段看起来卡死在 10%。
+ *
+ * Runtime 会为 `uv.download` 发真实字节百分比，且写入末块时必定回报一次 100；但一个界面段
+ * 里装着好几个 Runtime stage（`uv.download` 之后还有校验、解压、`python.*`），段没结束就
+ * 不能让渲染层看到 100，所以 running 的百分比钳在 [10, 99]，100 只由段收口发出。段内进度
+ * 还要单调：镜像轮换会让下载从 0 重来，后续无 percent 的事件也不能把数字压回段起始值。
  */
 export class BootstrapProgressBridge {
   private index = -1
   private closed = false
+  /** 当前段已经发出过的最高进度；进新段时重置，保证段内只增不减。 */
+  private stageProgress = STAGE_STARTED_PROGRESS
 
   constructor(private readonly emit: (update: BootstrapProgressUpdate) => void) {}
 
@@ -275,7 +284,13 @@ export class BootstrapProgressBridge {
   /** 进入 bootstrap：三个没有对应物的段立刻各发一个完成。 */
   takeOver(): void {
     for (const stage of RUNTIME_TAKEOVER_STAGES) {
-      this.emit({ stage, status: 'completed', progress: 100, message: RUNTIME_TAKEOVER_MESSAGE })
+      this.emit({
+        stage,
+        status: 'completed',
+        progress: 100,
+        message: RUNTIME_TAKEOVER_MESSAGE,
+        indeterminate: false,
+      })
     }
   }
 
@@ -291,20 +306,29 @@ export class BootstrapProgressBridge {
     if (target > this.index) {
       this.closeStagesBefore(target)
       this.index = target
+      // 段刚开始时若已有真实百分比就照发，这是 dev 既有行为；只是同样受 [10, 99] 约束，
+      // 并作为本段单调递增的起点。
+      this.stageProgress =
+        percent === undefined ? STAGE_STARTED_PROGRESS : clampRunningPercent(percent)
       this.emit({
         stage: RUNTIME_BOOTSTRAP_STAGE_ORDER[target],
         status: 'started',
-        progress: STAGE_STARTED_PROGRESS,
+        progress: this.stageProgress,
         message,
+        indeterminate: percent === undefined,
       })
       return
     }
 
+    if (percent !== undefined) {
+      this.stageProgress = Math.max(this.stageProgress, clampRunningPercent(percent))
+    }
     this.emit({
       stage: RUNTIME_BOOTSTRAP_STAGE_ORDER[target],
       status: 'running',
-      progress: percent === undefined ? STAGE_STARTED_PROGRESS : clampPercent(percent),
+      progress: this.stageProgress,
       message,
+      indeterminate: percent === undefined,
     })
   }
 
@@ -320,7 +344,7 @@ export class BootstrapProgressBridge {
   fail(stage: InitializationRunStage, message: string): void {
     if (this.closed) return
     this.closed = true
-    this.emit({ stage, status: 'failed', progress: 0, message })
+    this.emit({ stage, status: 'failed', progress: 0, message, indeterminate: false })
   }
 
   /**
@@ -337,14 +361,16 @@ export class BootstrapProgressBridge {
         status: 'completed',
         progress: 100,
         message,
+        indeterminate: false,
       })
     }
   }
 }
 
-function clampPercent(percent: number): number {
+/** running 途中的百分比钳在 [段起始值, 99]：100 留给段收口，避免段内多个 stage 提前显示完成。 */
+function clampRunningPercent(percent: number): number {
   if (!Number.isFinite(percent)) return STAGE_STARTED_PROGRESS
-  return Math.min(100, Math.max(0, Math.round(percent)))
+  return Math.min(99, Math.max(STAGE_STARTED_PROGRESS, Math.round(percent)))
 }
 
 // ==================== 结果 ====================
@@ -478,8 +504,8 @@ export class RuntimeInitializationService {
   /**
    * 单步重试。
    *
-   * - 用户选了镜像源：镜像是全局选项，只能整条 `bootstrap` 重跑（映射不到就不传
-   *   `--mirror`，用 Runtime 自己的默认轮换）；
+   * - 用户选了镜像源：普通重试走整条 `bootstrap`，显式重建仍走重建命令并携带镜像
+   *   （映射不到就不传 `--mirror`，用 Runtime 自己的默认轮换）；
    * - 没选镜像源：走该段对应的下层命令，处置强度按 `mode` 决定。
    *
    * `mirror` / `pip` / `git` 三段在新链路没有对应物，直接按成功返回。
@@ -504,8 +530,10 @@ export class RuntimeInitializationService {
       return { success: true }
     }
 
-    if (mirrorKey?.trim()) {
-      const mirror = mapMirrorSelection(this.mirrorService, stage, mirrorKey)
+    const mirror = mirrorKey?.trim()
+      ? mapMirrorSelection(this.mirrorService, stage, mirrorKey)
+      : null
+    if (mirrorKey?.trim() && mode !== 'rebuild') {
       if (!mirror) {
         logger.info(`镜像源 ${mirrorKey} 在 Runtime 目录里没有对应源，按默认轮换重跑 bootstrap`)
       }
@@ -519,7 +547,7 @@ export class RuntimeInitializationService {
     }
 
     const bridge = new BootstrapProgressBridge(onProgress)
-    const outcome = await this.execute(command, null, bridge)
+    const outcome = await this.execute(command, mirror, bridge)
     if (outcome.success) {
       onProgress({ stage, status: 'completed', progress: 100, message: '完成' })
     } else {
@@ -806,6 +834,7 @@ export function emitDevelopmentSkipProgress(
       status: 'completed',
       progress: 100,
       message: RUNTIME_DEVELOPMENT_SKIP_MESSAGE,
+      indeterminate: false,
     })
   }
 }

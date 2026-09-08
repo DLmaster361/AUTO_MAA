@@ -22,7 +22,14 @@
 
 import re
 
-from app.utils.platform import secret
+from app.utils.platform.secret import dpapi_decrypt, dpapi_encrypt
+
+__all__ = [
+    "sanitize_log_message",
+    "format_exception_reason",
+    "dpapi_encrypt",
+    "dpapi_decrypt",
+]
 
 
 def sanitize_log_message(message: str) -> str:
@@ -84,45 +91,3 @@ def format_exception_reason(
         else:
             message = "程序内部异常"
     return f"{stage}（{exception_name}）：{message}"
-
-
-def dpapi_encrypt(
-    note: str, description: None | str = None, entropy: None | bytes = None
-) -> str:
-    """
-    使用Windows DPAPI加密数据
-
-    :param note: 数据明文
-    :type note: str
-    :param description: 描述信息
-    :type description: str
-    :param entropy: 随机熵
-    :type entropy: bytes
-    :return: 加密后的数据
-    :rtype: str
-    """
-
-    if note == "":
-        return ""
-    return secret.dpapi_encrypt(
-        note,
-        description,
-        entropy,
-    )
-
-
-def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
-    """
-    使用Windows DPAPI解密数据
-
-    :param note: 数据密文
-    :type note: str
-    :param entropy: 随机熵
-    :type entropy: bytes
-    :return: 解密后的明文
-    :rtype: str
-    """
-
-    if note == "":
-        return ""
-    return secret.dpapi_decrypt(note, entropy)

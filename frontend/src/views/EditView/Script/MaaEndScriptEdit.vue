@@ -391,6 +391,24 @@
                 />
               </a-form-item>
             </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.taskTransitionMethod') }}
+                    <a-tooltip :title="t('edit.taskTransitionHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="maaEndConfig.Run.TaskTransitionMethod"
+                  size="large"
+                  :options="taskTransitionMethodOptions"
+                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
         </div>
       </a-form>
@@ -466,6 +484,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     AccountSwitchMethod: 'MAS',
+    TaskTransitionMethod: 'NoAction',
   },
   Game: {
     ControllerType: '',
@@ -485,6 +504,7 @@ const rules = {
 
 const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
+const defaultMaaEndController = 'Win32-Front'
 
 const booleanOptions = [
   { label: t('edit.yes'), value: true },
@@ -494,6 +514,11 @@ const booleanOptions = [
 const accountSwitchMethodOptions = [
   { label: 'MAS 自建账号切换', value: 'MAS' },
   { label: 'MAAEND 内置账号切换', value: 'MAAEND' },
+]
+
+const taskTransitionMethodOptions = [
+  { label: t('edit.restartMaaendOnly'), value: 'NoAction' },
+  { label: t('edit.restartEndfield'), value: 'ExitGame' },
 ]
 
 const emulatorLoading = ref(false)
@@ -560,6 +585,17 @@ const loadMaaEndOptions = async () => {
 
     controllerOptions.value = response.controllers
     controllerProtocols.value = response.controllerTypes
+
+    if (!maaEndConfig.Game.ControllerType) {
+      const defaultController =
+        response.controllers.find(item => item.value === defaultMaaEndController)?.value ??
+        response.controllers.find(
+          item => item.value && response.controllerTypes[item.value] === 'Win32'
+        )?.value
+      if (defaultController) {
+        await handleControllerTypeChange(defaultController)
+      }
+    }
   } finally {
     maaEndOptionsLoading.value = false
   }

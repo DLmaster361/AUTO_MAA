@@ -76,10 +76,12 @@ export function useBettergiCustomGroups(options: BettergiCustomGroupOptions) {
       }
     }
     if (!Array.isArray(arr)) return []
-    return arr
-      .filter((x): x is Record<string, unknown> => !!x && typeof x.name === 'string')
-      // enabled 缺失时与后端 parse_custom_groups 默认一致视为启用（仅显式 false 禁用）
-      .map(x => ({ name: x.name as string, enabled: x.enabled !== false }))
+    return (
+      arr
+        .filter((x): x is Record<string, unknown> => !!x && typeof x.name === 'string')
+        // enabled 缺失时与后端 parse_custom_groups 默认一致视为启用（仅显式 false 禁用）
+        .map(x => ({ name: x.name as string, enabled: x.enabled !== false }))
+    )
   }
 
   const syncFromForm = () => {

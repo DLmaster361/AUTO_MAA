@@ -149,9 +149,7 @@ class LogCollect:
         # 完成推送
         self._deliver(self._results)
 
-    def _apply_postprocessors(
-        self, results: list[_ResultItem]
-    ) -> list[_ResultItem]:
+    def _apply_postprocessors(self, results: list[_ResultItem]) -> list[_ResultItem]:
         """对最终结果集应用后置处理器，时间戳随 (类型, 文本, 时间戳) 元组一并保留
 
         后置处理器直接接收并返回 ``list[(log_type, text, ts)]``，文本改写（如

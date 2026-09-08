@@ -3,7 +3,7 @@
  * 使用新的服务
  */
 
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent, app } from 'electron'
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
@@ -113,7 +113,8 @@ export function getLocalApiEndpoint(): string {
  *
  * 界面上的「重试」与「切换镜像后重试」用的都是下面这几个安装 handler，Runtime 链路下
  * 它们转成对应的下层命令（`environment ensure` / `workspace sync` / `dependencies sync`），
- * 选了镜像源则整条 `bootstrap` 带 `--mirror` 重跑。返回 null 表示灰度开关关闭，走旧链路。
+ * 普通重试选了镜像源则整条 `bootstrap` 带 `--mirror` 重跑；显式重建保留重建命令。
+ * 返回 null 表示灰度开关关闭，走旧链路。
  *
  * 逐步进度通道是按步骤分的，渲染进程只看进度数值不看段名，所以这里只转发本段的进度，
  * 否则整条 bootstrap 重跑时 `mirror` / `pip` / `git` 的完成进度会把当前步骤误标成完成。
@@ -165,7 +166,7 @@ export function resolveRuntimeInitContext(): RuntimeInitContext {
   return {
     // 灰度开关升级为三级来源后要按 appRoot 读持久化设置，不能再零参解析。
     mode: resolveRuntimeLaunchMode(getAppRoot()),
-    fallbackLogPath: path.join(path.dirname(app.getPath('exe')), 'debug', 'frontend.log'),
+    fallbackLogPath: path.join(getAppRoot(), 'debug', 'frontend.log'),
     mirrorKeys: listRuntimeMappableMirrorKeys(),
   }
 }
@@ -519,6 +520,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   ipcMain.handle('backend-status', () => {
     const backend = getBackendService()
     return backend.getStatus()
+  })
+
+  ipcMain.handle('check-runtime-backend-update', async () => {
+    return getBackendService().checkRuntimeBackendUpdate()
   })
 
   // ==================== Runtime 链路的后端更新 ====================

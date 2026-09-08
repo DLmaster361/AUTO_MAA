@@ -5777,6 +5777,22 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
+def _clear_readonly_and_retry(func, path, exc) -> None:
+    """`rmtree` 的重试钩子：Windows 上只读文件删不掉。
+
+    源目录里带 git 仓时必然踩到 —— git 的 pack 文件就是只读的。清理失败还会
+    把导入真正的失败原因盖掉，只留下一个 `Access is denied`。
+    """
+
+    if not isinstance(exc, PermissionError):
+        raise exc
+    try:
+        os.chmod(path, stat.S_IWRITE)
+    except OSError:
+        raise exc from None
+    func(path)
+
+
 def _safe_remove_tree(path: Path, store_root: Path) -> None:
     _assert_path_chain_within_root(path, store_root)
     resolved_root = store_root.resolve(strict=True)
@@ -5791,7 +5807,7 @@ def _safe_remove_tree(path: Path, store_root: Path) -> None:
         _assert_not_reparse(current)
         for name in [*directory_names, *file_names]:
             _assert_not_reparse(current / name)
-    shutil.rmtree(path)
+    shutil.rmtree(path, onexc=_clear_readonly_and_retry)
 
 
 def _build_agent_summary(agents: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:

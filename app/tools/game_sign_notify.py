@@ -32,11 +32,11 @@ from app.utils.logger import get_logger
 from .community_notify import (
     append_task_community_summary,
     detect_community_notification_format,
+    dispatch_community_notification,
     format_community_notification,
     format_community_task_summary,
     get_task_community_summary,
     mark_task_community_summary_consumed,
-    push_community_notification,
 )
 
 logger = get_logger("游戏社区通知兼容入口")
@@ -46,7 +46,7 @@ format_game_sign_task_summary = format_community_task_summary
 get_task_game_sign_summary = get_task_community_summary
 mark_task_game_sign_summary_consumed = mark_task_community_summary_consumed
 append_task_game_sign_summary = append_task_community_summary
-push_game_sign_notification = push_community_notification
+push_game_sign_notification = dispatch_community_notification
 
 
 def finalize_task_game_sign_notification(

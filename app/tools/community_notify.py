@@ -31,7 +31,7 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core import Config
-from app.core.notify import NotifyPayload, dispatch, global_target
+from app.core.notify import DispatchResult, NotifyPayload, dispatch, global_target
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏社区通知")
@@ -559,21 +559,29 @@ def build_community_notification_payload(
     )
 
 
-async def push_community_notification(
+async def dispatch_community_notification(
     results: list[dict[str, object]],
-) -> list[str]:
-    """推送手动或启动时触发的游戏社区结果通知。"""
+) -> DispatchResult:
+    """分发社区通知并保留完整渠道结果，供新旧入口共同使用。"""
     results = _notification_results(results)
     if not results:
-        return []
+        return DispatchResult()
 
     payload = build_community_notification_payload(results)
-    dispatch_result = await dispatch(
+    return await dispatch(
         payload,
         [global_target(include_system=True)],
         attempts=NOTIFICATION_SEND_ATTEMPTS,
         retry_delay=NOTIFICATION_RETRY_DELAY_SECONDS,
     )
+
+
+async def push_community_notification(
+    results: list[dict[str, object]],
+) -> list[str]:
+    """推送手动或启动时触发的社区通知，返回失败渠道。"""
+
+    dispatch_result = await dispatch_community_notification(results)
     return list(dispatch_result.failed)
 
 

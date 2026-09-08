@@ -301,7 +301,7 @@ class GlobalConfig_Display(BaseModel):
         description="无人值守时，检测不到任何真实显示输出则临时挂载虚拟显示器（需自行安装 Parsec 虚拟显示驱动）",
     )
     VirtualDisplayMode: Optional[str] = Field(
-        default=None, description="虚拟显示器的分辨率与刷新率，形如 1920x1080@60"
+        default=None, description="虚拟显示器的刷新率，分辨率固定 1920x1080；形如 1920x1080@60"
     )
 
 

@@ -410,5 +410,72 @@ class CheckOnlyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["source"], "mirrorchyan")
 
 
+class UpgradeRuntimeConstraintTest(unittest.IsolatedAsyncioTestCase):
+    """升级导入不得沿用当前版本的 runtimeConstraint。
+
+    runtimeConstraint 说的是「这份载荷需要哪个 MaaFramework」，是载荷的属性；
+    套到另一份载荷上，Store 的一致性闸门会当场拒掉。实测过的原话：MaaYYs
+    v3.10.2 自带 5.11.1、v3.15.2 自带 5.13.0b2，继承之后升级失败在
+    ``declared MaaFW constraint does not match bundled MaaFramework:
+    ==5.11.1 vs 5.13.0b2``——凡是顺带升了 MaaFramework 的项目都更新不了，
+    而这几乎是每一次真实更新。
+    """
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.options: dict[str, Any] = {}
+
+        def resolve_project(self, project_id, version=None, touch=False):
+            return {
+                "projectId": project_id,
+                "version": "v3.10.2",
+                "dataPath": "/store/p",
+                # 旧载荷推出来的约束，正是不该被带走的那一个。
+                "runtimeConstraint": "==5.11.1",
+                "manifest": {"runtime": {"constraint": "==5.11.1"}},
+            }
+
+        def update_project(self, source_path, project_id, version, **options):
+            self.options = dict(options)
+            return {"projectId": project_id, "version": "v3.15.2"}
+
+    async def _upgrade(self) -> "UpgradeRuntimeConstraintTest.FakeStore":
+        from app.task.MaaFW.tools.embedded.managed import ManagedServiceGateway
+
+        store = self.FakeStore()
+        gateway = ManagedServiceGateway(store, object(), None, None)
+        await gateway.upgrade_project(
+            {
+                "sourcePath": "/tmp/pkg.zip",
+                "projectId": "MaaYYs",
+                "currentVersion": "v3.10.2",
+                "version": "v3.15.2",
+            }
+        )
+        return store
+
+    async def test_current_constraint_is_not_carried_onto_the_new_payload(self) -> None:
+        store = await self._upgrade()
+
+        self.assertIsNone(store.options.get("runtime_constraint"))
+
+    async def test_explicit_constraint_from_the_caller_still_wins(self) -> None:
+        # 用户显式钉死运行时是另一回事，那是调用方的意图，要照办。
+        from app.task.MaaFW.tools.embedded.managed import ManagedServiceGateway
+
+        store = self.FakeStore()
+        gateway = ManagedServiceGateway(store, object(), None, None)
+        await gateway.upgrade_project(
+            {
+                "sourcePath": "/tmp/pkg.zip",
+                "projectId": "MaaYYs",
+                "version": "v3.15.2",
+                "runtimeConstraint": "==5.13.0b2",
+            }
+        )
+
+        self.assertEqual(store.options.get("runtime_constraint"), "==5.13.0b2")
+
+
 if __name__ == "__main__":
     unittest.main()

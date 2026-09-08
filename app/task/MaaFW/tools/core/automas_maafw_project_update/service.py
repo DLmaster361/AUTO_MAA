@@ -541,7 +541,17 @@ class MaaFWProjectUpdateService:
         source_config: dict[str, Any] | None = None,
         proxy: httpx.Proxy | None = None,
         send_log: Any = None,
+        prefer_full_package: bool = False,
+        version_only: bool = False,
     ) -> MaaFWProjectUpdateDiscovery | None:
+        """Discover a newer version.
+
+        prefer_full_package and version_only are passed straight
+        through: immutable-store consumers need a full archive (a delta would
+        import as a broken version), and a mere "check for updates" must not
+        redeem a Mirror 酱 download URL, which spends daily quota.
+        """
+
         effective_source_config = dict(source_config or {})
         if (
             project_path is not None
@@ -559,6 +569,8 @@ class MaaFWProjectUpdateService:
             source_config=effective_source_config,
             proxy=proxy,
             send_log=send_log,
+            prefer_full_package=prefer_full_package,
+            version_only=version_only,
         )
 
     async def check_update(

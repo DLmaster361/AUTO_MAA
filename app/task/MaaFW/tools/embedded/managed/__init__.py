@@ -1,18 +1,18 @@
-"""第三层（资源共享 managed）服务层 —— **已落库，尚未接线**。
+"""第三层（资源共享 managed）服务层。
 
 三层规划 §4 的第三层：MAS 管理不可变 Project Store 与精确 Runtime Pool，
-依赖去重与路由，lease / reference / pin / GC。**前置是第二层稳定**，
-而第二层（本次移植）尚未经过真机验证，因此本目录：
+依赖去重与路由，lease / reference / pin / GC。
 
-- 不被 ``task_manager`` 或任何 manager 引用
-- 不暴露任何 UI，``Project.Source = managed`` 这条轴根本没有加进 Config 模型
-- 与 ``tools/core/automas_maafw_project_store`` / ``automas_maafw_runtime_pool``
-  同样处于"落库不接线"状态（阶段 1 落库时也是如此）
+**已接线**：``MaaFWManagedConfig`` 是注册在案的脚本类型，``MaaFWEmbeddedManager``
+在托管形态下走 :class:`MaaFWManagedEnvironmentService` 准备环境，HTTP 侧有
+``/api/scripts/maafw/managed/*`` 一组端点。接线点见
+``tests/task/test_maafw_managed_wiring.py``。
 
 落库的是插件 ``automas_script_maafw_managed`` 中**零宿主耦合**的两个模块
-（``services`` 2,612 行 + ``environment_service`` 897 行）。该包另外三个文件
-（``plugin`` 5,606 / ``schema`` 805 / ``adapter`` 721，共 7,132 行）依赖
-``app.plugins`` 插件 HTTP 宿主层，按移植指南 §4 规则 6 不搬。
+（``services`` + ``environment_service``）。该包另外三个文件（``plugin`` /
+``schema`` / ``adapter``）依赖 ``app.plugins`` 插件 HTTP 宿主层，按移植指南
+§4 规则 6 不搬；它们承担的宿主侧职责改由树内实现：远程更新编排在
+``tools/embedded/managed_update.py``，HTTP 端点在 ``app/api/scripts.py``。
 """
 
 from __future__ import annotations

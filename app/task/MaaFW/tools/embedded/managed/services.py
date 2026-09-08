@@ -846,11 +846,13 @@ class ManagedServiceGateway:
             _optional_text(payload.get("currentVersion")),
         )
         current_version = _optional_text(current.get("version"))
-        runtime_constraint = (
-            _optional_text(payload.get("runtimeConstraint"))
-            or _optional_text(current.get("runtimeConstraint"))
-            or _manifest_runtime_constraint(current.get("manifest"))
-        )
+        # 只认调用方显式给的约束，**不从当前版本继承**。runtimeConstraint 描述的
+        # 是「这份载荷需要哪个 MaaFramework」，是载荷的属性而不是项目身份的属性；
+        # 套到另一份载荷上就是张冠李戴。继承过实测的后果：MaaYYs v3.10.2 自带
+        # 5.11.1、v3.15.2 自带 5.13.0b2，升级会被自己的一致性闸门拒成
+        # "==5.11.1 vs 5.13.0b2"——凡是顺带升了 MaaFramework 的项目都更新不了。
+        # 不给时由 Store 从新导入的包自行推导。
+        runtime_constraint = _optional_text(payload.get("runtimeConstraint"))
         project_reference = _project_script_reference(
             _optional_text(payload.get("projectReference"))
         )

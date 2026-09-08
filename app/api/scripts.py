@@ -803,6 +803,22 @@ def _managed_projection(manifest: dict) -> MaaFWManagedProjection:
     )
 
 
+def _managed_payload_bytes(summary: Any) -> int:
+    """从 Store 的 summary 里取该版本的载荷体积。
+
+    体积在 ``summary.size.projectedBytes``——不是 ``summary.payloadSizeBytes``，
+    后者只存在于 manifest 的 ``projection`` 段。读错键不会报错，界面上一律显示
+    0 B，看起来像"托管什么都没占"。
+    """
+
+    if not isinstance(summary, Mapping):
+        return 0
+    size = summary.get("size")
+    if not isinstance(size, Mapping):
+        return 0
+    return int(size.get("projectedBytes") or 0)
+
+
 def _managed_gateway():
     """带 project_update 的托管服务网关；与运行时那条用的是同一个构造。"""
 
@@ -1124,7 +1140,7 @@ async def list_managed_maafw_versions(
             current=bool(item.get("current")),
             pinned=bool(item.get("pinned")),
             references=list(item.get("references") or []),
-            sizeBytes=int(((item.get("summary") or {}).get("payloadSizeBytes")) or 0),
+            sizeBytes=_managed_payload_bytes(item.get("summary")),
         )
         for item in records
     ]
@@ -1222,12 +1238,18 @@ async def get_managed_maafw_inventory() -> MaaFWManagedInventoryOut:
     items: list[MaaFWManagedProjectItem] = []
     total = 0
     for project in projects:
-        size = int(project.get("sizeBytes") or 0)
+        # 项目层没有现成的体积，按它的各版本累加；当前版本的键是 currentVersion。
+        summaries = project.get("versionSummaries")
+        size = sum(
+            _managed_payload_bytes(entry.get("summary"))
+            for entry in (summaries if isinstance(summaries, list) else [])
+            if isinstance(entry, Mapping)
+        )
         total += size
         items.append(
             MaaFWManagedProjectItem(
                 projectId=str(project.get("projectId") or ""),
-                current=project.get("current"),
+                current=project.get("currentVersion"),
                 versionCount=int(project.get("versionCount") or 0),
                 sizeBytes=size,
             )

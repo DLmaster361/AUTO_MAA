@@ -111,7 +111,8 @@ class VersionRouteTest(unittest.IsolatedAsyncioTestCase):
                 "references": ["maafw-project:m9a@v4.6.0"],
                 "lastUsedAt": "2026-09-08T00:00:00Z",
                 "manifest": {"createdAt": "2026-09-07T00:00:00Z"},
-                "summary": {"payloadSizeBytes": 74_711_040},
+                # 形状取自真实 Store：体积在 summary.size.projectedBytes。
+                "summary": {"size": {"projectedBytes": 74_711_040}},
             },
             {"version": "v4.5.0", "current": False, "pinned": True},
         ]
@@ -160,9 +161,26 @@ class InventoryAndGcRouteTest(unittest.IsolatedAsyncioTestCase):
             "root": r"D:\store",
             "runRoot": r"D:\runs",
         }
+        # 项目层没有 current / sizeBytes 两个键：当前版本叫 currentVersion，
+        # 体积要按 versionSummaries 逐版本累加。
         store.list_projects.return_value = [
-            {"projectId": "m9a", "current": "v4.6.0", "versionCount": 2, "sizeBytes": 100},
-            {"projectId": "kes", "current": "v1.1.11", "versionCount": 1, "sizeBytes": 52},
+            {
+                "projectId": "m9a",
+                "currentVersion": "v4.6.0",
+                "versionCount": 2,
+                "versionSummaries": [
+                    {"version": "v4.6.0", "summary": {"size": {"projectedBytes": 60}}},
+                    {"version": "v4.5.0", "summary": {"size": {"projectedBytes": 40}}},
+                ],
+            },
+            {
+                "projectId": "kes",
+                "currentVersion": "v1.1.11",
+                "versionCount": 1,
+                "versionSummaries": [
+                    {"version": "v1.1.11", "summary": {"size": {"projectedBytes": 52}}}
+                ],
+            },
         ]
         with patch.object(scripts_api, "_managed_store", return_value=store):
             out = await scripts_api.get_managed_maafw_inventory()
@@ -178,6 +196,74 @@ class InventoryAndGcRouteTest(unittest.IsolatedAsyncioTestCase):
         store.collect_garbage.assert_called_once_with(dry_run=True)
         self.assertIn("预览完成", out.message)
         self.assertIn("1 项", out.message)
+
+
+class StoreReportingKeysTest(unittest.IsolatedAsyncioTestCase):
+    """体积在 summary.size.projectedBytes，当前版本在 currentVersion。
+
+    这两个键都曾经读错过（``summary.payloadSizeBytes`` / ``current``）：Store 返回
+    的字典里没有那两个键，取到 None 后被 ``or 0`` 兜成 0，界面上看起来就是
+    "托管一点空间都没占""没有当前版本"，而后端一句错都不报。下面的样本是从真实
+    Store（m9a@v4.6.0）里取的形状。
+    """
+
+    VERSION = {
+        "version": "v4.6.0",
+        "current": True,
+        "pinned": False,
+        "references": [],
+        "manifest": {"createdAt": "2026-09-08T21:10:11.918492Z"},
+        "summary": {
+            "size": {
+                "inputBytes": 684_311_569,
+                "sourceTreeBytes": 684_311_569,
+                "projectedBytes": 74_653_605,
+                "savedBytes": 609_657_964,
+                "savedPercent": 89.09,
+            }
+        },
+    }
+    PROJECT = {
+        "projectId": "m9a",
+        "currentVersion": "v4.6.0",
+        "versionCount": 1,
+        "versionSummaries": [{"version": "v4.6.0", "summary": VERSION["summary"]}],
+    }
+
+    def test_payload_size_comes_from_summary_size(self) -> None:
+        self.assertEqual(
+            scripts_api._managed_payload_bytes(self.VERSION["summary"]), 74_653_605
+        )
+
+    def test_missing_or_malformed_summary_degrades_to_zero(self) -> None:
+        for summary in (None, {}, {"size": None}, {"size": {}}, "nope"):
+            with self.subTest(summary=summary):
+                self.assertEqual(scripts_api._managed_payload_bytes(summary), 0)
+
+    async def test_version_row_reports_the_real_size(self) -> None:
+        store = MagicMock()
+        store.list_versions.return_value = [self.VERSION]
+        with patch.object(scripts_api, "_managed_store", return_value=store):
+            result = await scripts_api.list_managed_maafw_versions(
+                MaaFWManagedVersionsIn(projectId="m9a")
+            )
+
+        self.assertEqual(result.data.versions[0].sizeBytes, 74_653_605)
+
+    async def test_inventory_reports_current_version_and_totals(self) -> None:
+        store = MagicMock()
+        store.storage_info.return_value = {
+            "storeId": "store-1",
+            "root": "R",
+            "runRoot": "S",
+        }
+        store.list_projects.return_value = [self.PROJECT]
+        with patch.object(scripts_api, "_managed_store", return_value=store):
+            result = await scripts_api.get_managed_maafw_inventory()
+
+        self.assertEqual(result.data.projects[0].current, "v4.6.0")
+        self.assertEqual(result.data.projects[0].sizeBytes, 74_653_605)
+        self.assertEqual(result.data.totalBytes, 74_653_605)
 
 
 class ManagedUpdateDispatchTest(unittest.IsolatedAsyncioTestCase):

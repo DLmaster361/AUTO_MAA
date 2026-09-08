@@ -138,11 +138,24 @@ class ManagedRemoteUpdateIsWiredTest(unittest.TestCase):
         # 的自动更新会在「缺少服务」上失败，而失败是被吞掉只记日志的。
         from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
 
+        import inspect
+
         gateway = MaaFWEmbeddedManager._resolve_managed_gateway()
         self.assertIsNotNone(gateway.project_update)
-        self.assertTrue(hasattr(gateway.project_update, "discover_update"))
-        self.assertTrue(hasattr(gateway.project_update, "download_package"))
-        self.assertTrue(hasattr(gateway.project_update, "release_download_package"))
+        for name in ("discover_update", "download_package", "release_download_package"):
+            self.assertTrue(hasattr(gateway.project_update, name), name)
+
+        # 光有方法不够：网关按参数是否被签名接受来决定传不传。prefer_full_package
+        # 少一个，托管更新就会被网关自己拒掉（真发生过：服务方法没暴露它，只有
+        # 底层模块函数有）；version_only 少一个，一次「检查更新」会去换下载地址，
+        # 白扣一次 Mirror 酱当日额度。
+        parameters = inspect.signature(gateway.project_update.discover_update).parameters
+        self.assertIn("prefer_full_package", parameters)
+        self.assertIn("version_only", parameters)
+        self.assertIn(
+            "proxy",
+            inspect.signature(gateway.project_update.download_package).parameters,
+        )
 
     def test_update_runs_before_the_environment_is_prepared(self) -> None:
         """顺序反了不会报错，只是这一轮仍然跑旧版本。

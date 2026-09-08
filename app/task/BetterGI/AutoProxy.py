@@ -571,12 +571,13 @@ class AutoProxyTask(TaskExecuteBase):
         result: dict[str, bool] = {"success": False, "started": False}
         done_event = asyncio.Event()
         done_marker = f'配置组 "{group_name}" 执行结束'
+        # [ERR]/任务执行异常 是 TaskRunner 在每个子任务 catch 里打印的「任务级」可恢复异常，
+        # BGI 捕获后不 rethrow、跳过该步继续跑后续项，配置组仍能到达"执行结束"。若把它们当 fatal，
+        # 会在 BGI 还想继续时强杀（见 _BGI_BUILTIN_FATAL 注释）。仅保留真正致命的标记。
         fail_markers = (
             "执行配置组任务时失败",
             "任务启动失败",
-            "任务执行异常",
             "[FTL]",
-            "[ERR]",
         )
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
@@ -711,16 +712,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 单组 --startGroups 的成功/失败判定取自 BetterGI 配置组日志：
         #   成功: 配置组 "MAS切换账号" 执行结束
-        #   失败: 执行配置组任务时失败 / 任务启动失败 / 任务执行异常 / [FTL] / [ERR]
+        #   失败: 执行配置组任务时失败 / 任务启动失败 / [FTL]
         switch_group_done = f'配置组 "{account_switch.GROUP_NAME}" 执行结束'
-        # 单组 --startGroups 场景下 [ERR] 即该配置组执行失败（无后续组可续跑），与一条龙判定中
-        # [ERR] 是「任务级可恢复、跳过继续跑」的语义不同，故此处按失败处理。
+        # 配置组内部仍由多个任务项组成，单个项 [ERR]/任务执行异常 是 TaskRunner 捕获后可恢复的
+        # 「任务级」异常，BGI 跳过该项继续跑、配置组仍能到达"执行结束"。与一条龙 check_log 一致，
+        # 不把 [ERR] 当 fatal，避免 BGI 本可续跑时被强杀。仅保留真正致命的标记。
         switch_group_fail = (
             "执行配置组任务时失败",
             "任务启动失败",
-            "任务执行异常",
             "[FTL]",
-            "[ERR]",
         )
 
         async def on_switch_log(log_content: list[str], latest_time: datetime) -> None:

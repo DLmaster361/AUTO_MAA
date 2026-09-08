@@ -254,6 +254,49 @@ def main():
             让前端等待就绪的耗时只包含核心配置初始化。
             """
 
+            def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
+                """给 fastapi_mcp 的 $ref 解析加递归深度上限。
+
+                库实现（openapi.utils.resolve_schema_references）在模型互相
+                $ref 引用时会无限展开（A→B→A…），递归 ~1000 层即 RecursionError，
+                导致整个后台初始化失败（MainTimer / 通知管理器等后续服务全部跳过）。
+                这里以相同逻辑但带深度上限的实现替换；超限的 $ref 原样保留，
+                仅影响 MCP 工具 schema 的展示完整度，不再炸初始化。
+                需同时替换 utils 与 convert 两处按名绑定的引用。
+                """
+                import fastapi_mcp.openapi.convert as _fm_convert
+                from fastapi_mcp.openapi import utils as _fm_utils
+
+                def resolve_with_depth_limit(schema_part, reference_schema, _depth=0):
+                    schema_part = schema_part.copy()
+                    if "$ref" in schema_part and _depth < max_depth:
+                        ref_path = schema_part["$ref"]
+                        # 标准 OpenAPI 引用格式："#/components/schemas/ModelName"
+                        if ref_path.startswith("#/components/schemas/"):
+                            model_name = ref_path.split("/")[-1]
+                            components = reference_schema.get("components") or {}
+                            schemas = components.get("schemas") or {}
+                            if model_name in schemas:
+                                ref_schema = schemas[model_name].copy()
+                                schema_part.pop("$ref")
+                                schema_part.update(ref_schema)
+                    for key, value in schema_part.items():
+                        if isinstance(value, dict):
+                            schema_part[key] = resolve_with_depth_limit(
+                                value, reference_schema, _depth + 1
+                            )
+                        elif isinstance(value, list):
+                            schema_part[key] = [
+                                resolve_with_depth_limit(item, reference_schema, _depth + 1)
+                                if isinstance(item, dict)
+                                else item
+                                for item in value
+                            ]
+                    return schema_part
+
+                _fm_utils.resolve_schema_references = resolve_with_depth_limit
+                _fm_convert.resolve_schema_references = resolve_with_depth_limit
+
             app.state.background_status = "running"
             try:
                 import importlib
@@ -265,6 +308,7 @@ def main():
                     fastapi_mcp = await asyncio.to_thread(
                         importlib.import_module, "fastapi_mcp"
                     )
+                    _patch_fastapi_mcp_ref_recursion()
 
                     mcp = await asyncio.to_thread(
                         fastapi_mcp.FastApiMCP,

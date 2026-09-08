@@ -134,11 +134,15 @@ def _select_auto_collect_routes(
         selected_set = set(selected)
         return [
             route
-            for index, route in enumerate(MAAEND_AUTO_COLLECT_ROUTE_OPTIONS[option_name])
+            for index, route in enumerate(
+                MAAEND_AUTO_COLLECT_ROUTE_OPTIONS[option_name]
+            )
             if route in selected_set
             and (
-                mode == "Concentrated" and cycle_index == 0
-                or mode == "Distributed" and index % 3 == cycle_index
+                mode == "Concentrated"
+                and cycle_index == 0
+                or mode == "Distributed"
+                and index % 3 == cycle_index
             )
         ]
 
@@ -297,7 +301,9 @@ class AutoProxyTask(TaskExecuteBase):
         records = self._daily_task_records()
         if records.get(name) == self.curdate:
             return True
-        return name in _MAAEND_SANITY_TASK_NAMES and records.get("Sanity") == self.curdate
+        return (
+            name in _MAAEND_SANITY_TASK_NAMES and records.get("Sanity") == self.curdate
+        )
 
     def _quick_task_daily_once_done(self, task_name: str) -> bool:
         """判断快速配置中的逻辑任务是否已在当天完成。"""
@@ -351,9 +357,7 @@ class AutoProxyTask(TaskExecuteBase):
     def _daily_once_skip_reason(self) -> str | None:
         """判断当前用户是否所有阶段都因每日一次规则而无需启动。"""
 
-        mode_results = [
-            self._mode_skip_reason(mode) for mode in MAAEND_RUN_MOOD_BOOK
-        ]
+        mode_results = [self._mode_skip_reason(mode) for mode in MAAEND_RUN_MOOD_BOOK]
         if any(reason is None or missing for reason, missing in mode_results):
             return None
         daily_once_done = (
@@ -362,8 +366,7 @@ class AutoProxyTask(TaskExecuteBase):
             else self._daily_once_task_done
         )
         if not any(
-            daily_once_done(task_name)
-            for task_name in self._daily_once_task_names()
+            daily_once_done(task_name) for task_name in self._daily_once_task_names()
         ):
             return None
         return "每日仅执行一次的任务今日已完成，跳过该用户"
@@ -784,11 +787,10 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.maaend_process_manager.kill()
                 await System.kill_process(self.maaend_exe_path)
                 # 任务切换方式为重启游戏时，关闭游戏或模拟器供下一阶段重新启动
-                if (
-                    self.script_config.get("Run", "TaskTransitionMethod") == "ExitGame"
-                    and any(
-                        not self.run_book[mode] for mode in mode_order[mode_index + 1 :]
-                    )
+                if self.script_config.get(
+                    "Run", "TaskTransitionMethod"
+                ) == "ExitGame" and any(
+                    not self.run_book[mode] for mode in mode_order[mode_index + 1 :]
                 ):
                     await self.kill_game_process()
 
@@ -1264,7 +1266,10 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = "检测到 MaaEnd 正在更新，正在等待更新进程退出"
                 if_maaend_updating = True
 
-            if if_maaend_updating and not await self.maaend_process_manager.is_running():
+            if (
+                if_maaend_updating
+                and not await self.maaend_process_manager.is_running()
+            ):
                 logger.info("MaaEnd 更新进程已退出，后台检测释放日志锁")
                 self.wait_event.set()
                 return

@@ -194,9 +194,7 @@ const modeOptions = computed(() =>
   getTaskModeOptions(props.isCycleQueue ? null : [TaskCreateIn.mode.AUTO_PROXY])
 )
 
-const cyclePreview = computed(() =>
-  props.status === '运行' ? (props.cycleNextList ?? []) : []
-)
+const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。

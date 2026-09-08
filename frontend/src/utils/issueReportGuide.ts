@@ -8,10 +8,7 @@ const getZipFileName = (zipPath: string | undefined, fallbackName: string): stri
   return zipPath.split(/[\\/]/).pop() || fallbackName
 }
 
-export function showIssueReportGuide(
-  zipPath: string | undefined,
-  fallbackName: string
-): void {
+export function showIssueReportGuide(zipPath: string | undefined, fallbackName: string): void {
   const fileName = getZipFileName(zipPath, fallbackName)
 
   Modal.info({

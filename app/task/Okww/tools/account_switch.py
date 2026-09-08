@@ -74,6 +74,7 @@ def _write_diagnostic(text: str) -> None:
         except OSError:
             pass
 
+
 # ── 鸣潮客户端窗口识别（与 Okww/AutoProxy 的 _WUWA_CLIENT_PROCESS 一致）──
 _WUWA_CLASS = "UnrealWindow"
 _WUWA_PROCESS = "Client-Win64-Shipping.exe"
@@ -111,6 +112,7 @@ _LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
 # 掩码账号形如 123****5678
 _MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
 _MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
+
 
 @lru_cache(maxsize=1)
 def _user32_dpi_api():
@@ -187,8 +189,7 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
         if not wait or time.monotonic() >= deadline:
             break
         logger.info(
-            "鸣潮游戏进程已启动但窗口暂未就绪，"
-            f"{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
+            f"鸣潮游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
         time.sleep(_WINDOW_POLL_INTERVAL)
     raise RuntimeError(
@@ -205,7 +206,9 @@ def _activate_window(hwnd: int) -> None:
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+        else win32con.SW_SHOW
+        if not win32gui.IsWindowVisible(hwnd)
+        else None
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
@@ -239,9 +242,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
     if width <= 0 or height <= 0:
         raise RuntimeError("鸣潮游戏窗口尺寸异常")
     if abs(width / height - 16 / 9) > 0.02:
-        logger.warning(
-            f"鸣潮窗口非 16:9（{width}x{height}），账号切换坐标可能偏移"
-        )
+        logger.warning(f"鸣潮窗口非 16:9（{width}x{height}），账号切换坐标可能偏移")
     return width, height
 
 
@@ -315,9 +316,7 @@ def _click_box(
         pyautogui.moveTo(*original_position)
 
 
-def _click_point(
-    hwnd: int, px: int, py: int, *, after_sleep: float = 0.3
-) -> None:
+def _click_point(hwnd: int, px: int, py: int, *, after_sleep: float = 0.3) -> None:
     _click_box(hwnd, (px, py, 1, 1), after_sleep=after_sleep)
 
 
@@ -430,9 +429,7 @@ def _frame_signature(frame: np.ndarray) -> int:
     return hash(small.tobytes())
 
 
-def _wait_for_actionable_state(
-    hwnd: int, on_log: Callable[[str], None]
-) -> None:
+def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None:
     """等待进入可执行的登录态（登录页或已登录主菜单）。
 
     游戏窗口刚出现时可能仍停在启动过渡帧（警告弹窗、加载条、游戏内更新、自动登录等），
@@ -467,7 +464,9 @@ def _wait_for_actionable_state(
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:
-            on_log("鸣潮仍在启动/游戏内更新或加载过渡帧中，等待进入登录页或已登录主菜单...")
+            on_log(
+                "鸣潮仍在启动/游戏内更新或加载过渡帧中，等待进入登录页或已登录主菜单..."
+            )
         iter_count += 1
         time.sleep(_IN_GAME_POLL_INTERVAL)
     on_log(
@@ -508,12 +507,15 @@ def _switch_to_login(hwnd: int, on_log: Callable[[str], None]) -> None:
             round(0.63 * _FRAME_HEIGHT),
             after_sleep=3,
         )
-    if _wait_ocr_text(
-        hwnd,
-        _LOGIN_PAGE_TEXTS,
-        roi=_LOGIN_ROI,
-        timeout=60,
-    ) is None:
+    if (
+        _wait_ocr_text(
+            hwnd,
+            _LOGIN_PAGE_TEXTS,
+            roi=_LOGIN_ROI,
+            timeout=60,
+        )
+        is None
+    ):
         # 不能在等待超时后假报「已返回登录界面」：盲点可能误触登录进入游戏，
         # 此时画面无掩码账号，继续选号必然失败且更难排查，必须显式失败留证。
         raise RuntimeError(
@@ -580,9 +582,7 @@ def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
     raise RuntimeError("等待登录完成超时（登录页未消失）")
 
 
-def _select_and_login(
-    hwnd: int, suffix: str, on_log: Callable[[str], None]
-) -> None:
+def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> None:
     pattern = re.compile(rf"\d+\*+{re.escape(suffix)}")
     max_retries = 3
     for attempt in range(1, max_retries + 1):
@@ -629,9 +629,7 @@ def _save_error_screenshot(hwnd: int) -> None:
         screenshot_path = screenshot_dir / (
             f"switch-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
         )
-        _capture_window_image(hwnd, activate=False).save(
-            screenshot_path, format="PNG"
-        )
+        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
         logger.warning(f"账号切换错误截图已保存: {screenshot_path}")
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始切换异常

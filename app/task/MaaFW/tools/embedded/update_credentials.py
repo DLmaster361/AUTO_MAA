@@ -90,9 +90,7 @@ def resolve_update_credentials(script_config: Any) -> MaaFWUpdateCredentials:
     if source not in UPDATE_SOURCES:
         source = DEFAULT_UPDATE_SOURCE
     cdk = _read_text(script_config, "Update", "MirrorChyanCDK")
-    channel = (
-        _read_text(script_config, "Update", "Channel") or DEFAULT_UPDATE_CHANNEL
-    )
+    channel = _read_text(script_config, "Update", "Channel") or DEFAULT_UPDATE_CHANNEL
     return MaaFWUpdateCredentials(source=source, cdk=cdk, channel=channel)
 
 

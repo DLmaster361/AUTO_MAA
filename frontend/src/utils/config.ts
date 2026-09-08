@@ -23,6 +23,9 @@ export interface FrontendConfig {
   // 首页布局
   homeLayout?: HomeLayoutConfig
 
+  // 首页快速启动最近选择
+  homeQuickStartSelectedTaskIds?: string[]
+
   // 后端全局配置缓存（用于应用启动前读取）
   Function?: {
     IfEnableTelemetry?: boolean

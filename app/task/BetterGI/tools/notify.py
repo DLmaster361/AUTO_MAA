@@ -42,7 +42,9 @@ def _step_duration(step: dict) -> str:
         b = datetime.strptime(step["end"].split(".")[0], _STEP_TIME_FMT)
     except (KeyError, ValueError, AttributeError):
         return "—"
-    total = (b.hour - a.hour) * 3600 + (b.minute - a.minute) * 60 + (b.second - a.second)
+    total = (
+        (b.hour - a.hour) * 3600 + (b.minute - a.minute) * 60 + (b.second - a.second)
+    )
     if total < 0:
         # 跨零点（如 23:59:30 → 00:00:30）：时间戳只有时分秒，差值为负即补一天
         total += 86400

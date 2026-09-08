@@ -595,11 +595,11 @@ class AutoProxyTask(TaskExecuteBase):
                     self._push_dispatch_log(line), launch_loop
                 )
 
-            await async_start_game_via_launcher(
-                launcher_path, on_log=_push_launch_log
-            )
+            await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
             wait_time = int(self.script_config.get("Game", "WaitTime"))
-            await self._push_dispatch_log(f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）...")
+            await self._push_dispatch_log(
+                f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）..."
+            )
             await asyncio.sleep(wait_time)
             await self._push_dispatch_log("游戏启动完成")
             return
@@ -645,9 +645,7 @@ class AutoProxyTask(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(
-                    level="error", message=f"{error_message}: {e}"
-                ),
+                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
@@ -743,14 +741,10 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 account_id = (self.cur_user_config.get("Info", "Id") or "").strip()
                 if not account_id:
-                    await self._push_dispatch_log(
-                        "未配置账号，跳过账号切换"
-                    )
+                    await self._push_dispatch_log("未配置账号，跳过账号切换")
                 else:
                     try:
-                        await self._push_dispatch_log(
-                            "正在强制切换异环登录账号..."
-                        )
+                        await self._push_dispatch_log("正在强制切换异环登录账号...")
                         # 账号切换在后台线程内同步执行，on_log 契约是同步回调；
                         # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
                         # 调度回事件循环，否则进度不会推送到调度台且产生未等待协程告警。
@@ -761,9 +755,7 @@ class AutoProxyTask(TaskExecuteBase):
                                 self._push_dispatch_log(line), switch_loop
                             )
 
-                        await async_switch_account(
-                            account_id, on_log=_push_switch_log
-                        )
+                        await async_switch_account(account_id, on_log=_push_switch_log)
                         await self._push_dispatch_log(
                             f"异环账号切换成功：****{account_id[-4:]}"
                         )
@@ -953,7 +945,9 @@ class AutoProxyTask(TaskExecuteBase):
             if self.log_collect is not None:
                 self.log_collect.close(oknte_resolve)
         except Exception:
-            logger.opt(exception=True).warning("OK-NTE log_box 收尾推送失败（oknte_resolve）")
+            logger.opt(exception=True).warning(
+                "OK-NTE log_box 收尾推送失败（oknte_resolve）"
+            )
             # 采集失败状态显式写入报告，避免节点详情缺失却仍呈现为正常结果
             self.cur_user_item.push_log.append(
                 (LogType.NORMAL, "⚠️ 节点采集失败", time.time())

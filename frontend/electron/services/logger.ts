@@ -1,6 +1,7 @@
 import log from 'electron-log'
 import * as path from 'path'
 import { app } from 'electron'
+import { isDevelopmentEnvironment } from './instanceConfig'
 
 /**
  * 日志级别类型
@@ -29,7 +30,11 @@ function fileFormat(params: { data: unknown[]; level: string; message: { date: D
  * 控制台日志格式化函数
  * 格式：<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <custom-color>{module}</custom-color> | <level>{message}</level>
  */
-function consoleFormat(params: { data: unknown[]; level: string; message: { date: Date } }): string[] {
+function consoleFormat(params: {
+  data: unknown[]
+  level: string
+  message: { date: Date }
+}): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'
@@ -95,7 +100,11 @@ export function initializeLogger(): void {
     console.error('日志初始化失败: electron.app 不可用')
     return
   }
-  const appPath = path.dirname(app.getPath('exe'))
+  // 必须和 environmentService 的 getAppRoot() 同口径：日志窗读的是 `<appRoot>/debug`，
+  // 开发环境下 exe 是 node_modules 里的 electron.exe，写到那儿日志页永远读不到。
+  const appPath = isDevelopmentEnvironment()
+    ? path.dirname(app.getAppPath())
+    : path.dirname(app.getPath('exe'))
 
   // 设置日志级别
   log.transports.file.level = 'info'

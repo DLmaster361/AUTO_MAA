@@ -123,8 +123,7 @@ def test_send_uses_a_new_message_sequence_for_each_notification():
 
     asyncio.run(run())
     bodies = [
-        call.kwargs["body"]
-        for call in manager._send_message_with_token.await_args_list
+        call.kwargs["body"] for call in manager._send_message_with_token.await_args_list
     ]
     assert [body["msg_seq"] for body in bodies] == [1, 2]
 

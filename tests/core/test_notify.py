@@ -116,9 +116,7 @@ def test_dispatch_reports_named_webhook_failure() -> None:
     )
 
     with patch("app.core.notify.Notify", notify):
-        result = _run(
-            dispatch(NotifyPayload(title="标题", text="正文"), [target])
-        )
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
 
     assert list(result.failed) == ["全局 Webhook 值班群"]
 
@@ -137,9 +135,7 @@ def test_dispatch_continues_after_system_failure() -> None:
     )
 
     with patch("app.core.notify.Notify", notify):
-        result = _run(
-            dispatch(NotifyPayload(title="标题", text="正文"), [target])
-        )
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
 
     assert list(result.failed) == ["测试系统"]
     assert list(result.succeeded) == ["测试邮件", "测试 ServerChan"]
@@ -150,7 +146,10 @@ def test_dispatch_skips_disabled_webhook_channel() -> None:
     from app.core.notify import _webhooks
 
     webhooks = _webhooks(
-        {"hook-1": _Webhook(enabled=True, name="启用"), "hook-2": _Webhook(enabled=False, name="禁用")}
+        {
+            "hook-1": _Webhook(enabled=True, name="启用"),
+            "hook-2": _Webhook(enabled=False, name="禁用"),
+        }
     )
     assert [uid for uid, _ in webhooks] == ["hook-1"]
 
@@ -158,9 +157,7 @@ def test_dispatch_skips_disabled_webhook_channel() -> None:
     target = NotifyTarget(name="测试", webhooks=webhooks)
 
     with patch("app.core.notify.Notify", notify):
-        result = _run(
-            dispatch(NotifyPayload(title="标题", text="正文"), [target])
-        )
+        result = _run(dispatch(NotifyPayload(title="标题", text="正文"), [target]))
 
     assert result.attempted == 1
     assert list(result.succeeded) == ["测试 Webhook 启用"]

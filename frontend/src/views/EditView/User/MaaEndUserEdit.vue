@@ -661,9 +661,7 @@ const handleImportMaaEndConfig = async () => {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
     const importTarget = formData.Info.Mode === '脚本' ? '脚本共享' : '用户独立'
-    message.success(
-      t('edit.importedP0ConfigurationFile', { p0: importTarget })
-    )
+    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
   } finally {

@@ -64,7 +64,6 @@ class BackendHealthOut(BaseModel):
     commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
 
 
-
 def _resolve_injected_identity(env_name: str) -> str | None:
     """受监督时读取监督器注入的期望身份值。
 

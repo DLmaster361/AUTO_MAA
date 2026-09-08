@@ -21,7 +21,13 @@ def test_new_path_is_used_under_data_dir(tmp_path: Path, monkeypatch) -> None:
     result = _sra_temp_path("script-uid", "user-uid", "Daily")
 
     assert result == (
-        tmp_path / "data" / "hsr" / "sra-config" / "script-uid" / "user-uid" / "Daily.json"
+        tmp_path
+        / "data"
+        / "hsr"
+        / "sra-config"
+        / "script-uid"
+        / "user-uid"
+        / "Daily.json"
     )
     assert not (tmp_path / "runtime").exists()
 

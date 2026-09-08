@@ -89,7 +89,8 @@ async def push_proxy_result(
             text=message_text,
             html=template.render(message),
             signature_sep=signature_sep,
-            system_title=message.get("system_title") or title.replace("报告", "已完成！"),
+            system_title=message.get("system_title")
+            or title.replace("报告", "已完成！"),
             system_message=counts,
             system_ticker=counts,
             system_timeout=10,

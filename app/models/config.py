@@ -326,6 +326,9 @@ class EmulatorConfig(ConfigBase):
                     "general",
                     "mumu",
                     "ldplayer",
+                    # Emulator 2.0: 一条配置管多条模拟器路径, 路径写在 Info_Paths,
+                    # Info_Path 保持空串(EmulatorPathValidator 允许空串)
+                    "emulator2",
                     # "nox",  # 以下都是骗你的, 根本没有写~~
                     # "memu",
                     # "blueStacks",
@@ -337,6 +340,24 @@ class EmulatorConfig(ConfigBase):
         self.Info_Path = ConfigItem(
             "Info", "Path", "", EmulatorPathValidator(self.Info_Type)
         )
+        ## Emulator 2.0 纳管的模拟器路径列表
+        ## [{"pathId", "installPath", "alias", "type", "version"}]
+        self.Info_Paths = ConfigItem("Info", "Paths", "[]", JSONValidator(list))
+        ## Emulator 2.0 的设备号槽位表
+        ## [{"slot", "pathId", "nativeIndex", "state": "active"|"tombstone"}]
+        ## 槽位号在本配置内单调递增分配, 移除路径写墓碑, 号码永不复用
+        self.Info_Slots = ConfigItem("Info", "Slots", "[]", JSONValidator(list))
+        ## Emulator 2.0 的稳定模式：开着就把会干扰截图识别的模拟器功能压住,
+        ## 启动实例前顺带确保一次, 这样新建的实例也会跟着进入安全状态。
+        ## 关掉只是不再确保, **不会把那些项改回去**——不知道用户原本想要什么值。
+        ## Emulator 2.0 的配置守卫：以 MAS 存的这份设置为准, 启动前与关闭后各核验一次,
+        ## 对不上就写回去。与旧雷电那套「开机拍快照关机还原」不是一回事, 见 utils/emulator2/guard.py
+        self.Info_ConfigGuard = ConfigItem(
+            "Info", "ConfigGuard", False, BoolValidator()
+        )
+        ## 守卫的基准: {设备号: {字段: 值}}, 只记用户显式设过的字段
+        self.Info_Baselines = ConfigItem("Info", "Baselines", "{}", JSONValidator(dict))
+        self.Info_StableMode = ConfigItem("Info", "StableMode", False, BoolValidator())
         ## 老板键快捷键配置
         self.Info_BossKey = ConfigItem(
             "Info", "BossKey", "[ ]", JSONValidator(list), legacy_group="Data"
@@ -584,9 +605,7 @@ def _tag_remained_days(config: ConfigBase) -> dict:
         tag_color = "green"
     return {
         "text": (
-            f"剩余天数：{remained_day}天"
-            if remained_day >= 0
-            else "剩余天数：无期限"
+            f"剩余天数：{remained_day}天" if remained_day >= 0 else "剩余天数：无期限"
         ),
         "color": tag_color,
     }
@@ -596,9 +615,7 @@ def _tag_notes(config: ConfigBase) -> dict:
     """备注标签。"""
     notes = config.get("Info", "Notes")
     return {
-        "text": (
-            f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
-        ),
+        "text": (f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."),
         "color": "pink",
     }
 
@@ -618,9 +635,7 @@ class MaaUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", ScriptUserModeValidator())
         ## 关卡模式
         self.Info_StageMode = ConfigItem(
             "Info",
@@ -1408,9 +1423,7 @@ class SrcUserConfig(ConfigBase):
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", ScriptUserModeValidator())
         ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
@@ -3092,9 +3105,7 @@ class OkNteUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", ScriptUserModeValidator()
-        )
+        self.Info_Mode = ConfigItem("Info", "Mode", "脚本", ScriptUserModeValidator())
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )

@@ -72,9 +72,7 @@ const normalizeMaaEndOptionArray = <T extends string>(
   fallback: readonly T[]
 ): T[] => {
   if (!Array.isArray(value)) return [...fallback]
-  return value.filter(
-    (item): item is T => typeof item === 'string' && fallback.includes(item as T)
-  )
+  return value.filter((item): item is T => typeof item === 'string' && fallback.includes(item as T))
 }
 
 export function useScriptApi() {
@@ -122,9 +120,7 @@ export function useScriptApi() {
   }
 
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
-  const getScripts = async (
-    manageLoading: boolean = true
-  ): Promise<ScriptDetail[]> => {
+  const getScripts = async (manageLoading: boolean = true): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
       error.value = null
@@ -835,9 +831,7 @@ export function useScriptApi() {
                             ? okwwUserData.Info.Password
                             : '',
                         Mode:
-                          okwwUserData.Info?.Mode !== undefined
-                            ? okwwUserData.Info.Mode
-                            : '脚本',
+                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '脚本',
                         IfQuickConfig: isOkwwUser
                           ? okwwUserData.Info?.IfQuickConfig !== undefined
                             ? okwwUserData.Info.IfQuickConfig
@@ -1385,12 +1379,14 @@ export function useScriptApi() {
 
   const prepareMaaFWAgentEnv = async (
     path: string,
-    scriptId?: string
+    scriptId?: string,
+    force = false
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
     try {
       return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
         path,
         scriptId,
+        force,
       })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)

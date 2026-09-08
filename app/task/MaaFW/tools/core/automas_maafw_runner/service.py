@@ -245,12 +245,18 @@ class MaaFWRunnerService:
         managed_shared_agent_dependencies_complete: bool | None = None,
         managed_python_agent_indexes: list[int] | tuple[int, ...] | None = None,
         progress: ProjectEnvironmentProgressCallback | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> dict[str, Any]:
         """Prewarm the exact Runner pool identity and project Agent runtimes.
 
         The preflight lease is always released before returning. A later run
         resolves the same canonical requirements, reuses the prepared runtime,
         and acquires its own execution-scoped lease.
+
+        ``cancel_event`` reaches the runtime install step only: setting it kills
+        the running uv subprocess. Agent venv preparation is not interruptible,
+        so a caller that cancels should wait for the thread with a bounded grace
+        period rather than assume it stops at once.
         """
 
         environment: MaaFWRunnerEnvironment | None = None
@@ -271,6 +277,7 @@ class MaaFWRunnerService:
                 import_paths=import_paths,
                 send_log=send_log,
                 progress=progress,
+                cancel_event=cancel_event,
             )
             _report_project_progress(
                 progress,

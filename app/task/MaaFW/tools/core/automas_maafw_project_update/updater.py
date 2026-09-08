@@ -481,15 +481,17 @@ async def update_maafw_project_if_needed(
         # projectFingerprint，而从未经 MAS 更新过的项目根本没有那份 manifest，
         # 于是「首次更新」必然被拒——这就是自举死锁。探测是只读的，不建目录。
         prefer_full = not has_trusted_update_baseline(project_path)
-        discovery, version_check, skipped_reason = (
-            await _discover_project_update_detailed(
-                interface_model,
-                current_version=current_version,
-                source_config=merged_source_config,
-                proxy=proxy,
-                send_log=send_update_log,
-                prefer_full_package=prefer_full,
-            )
+        (
+            discovery,
+            version_check,
+            skipped_reason,
+        ) = await _discover_project_update_detailed(
+            interface_model,
+            current_version=current_version,
+            source_config=merged_source_config,
+            proxy=proxy,
+            send_log=send_update_log,
+            prefer_full_package=prefer_full,
         )
     except Exception as exc:
         message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
@@ -542,10 +544,7 @@ async def update_maafw_project_if_needed(
     )
 
     if not discovery.installable:
-        reason = (
-            discovery.unavailable_reason
-            or "更新源没有返回可安装的下载地址"
-        )
+        reason = discovery.unavailable_reason or "更新源没有返回可安装的下载地址"
         message = (
             f"发现 MaaFW 项目更新 {current_version} -> {discovery.version}，"
             f"但没有可安装的更新包: {reason}"
@@ -689,16 +688,18 @@ async def discover_maafw_project_update(
     ``skipped_reason`` ...).
     """
 
-    discovery, _version_check, _skipped_reason = (
-        await _discover_project_update_detailed(
-            interface_model,
-            current_version=current_version,
-            source_config=source_config,
-            proxy=proxy,
-            send_log=send_log,
-            prefer_full_package=prefer_full_package,
-            version_only=version_only,
-        )
+    (
+        discovery,
+        _version_check,
+        _skipped_reason,
+    ) = await _discover_project_update_detailed(
+        interface_model,
+        current_version=current_version,
+        source_config=source_config,
+        proxy=proxy,
+        send_log=send_log,
+        prefer_full_package=prefer_full_package,
+        version_only=version_only,
     )
     return discovery
 
@@ -902,7 +903,9 @@ def _attach_version_check(
     discovery.provider_error_code = version_check.provider_error_code
     if discovery.installable:
         label = (
-            "Mirror酱" if discovery.package_source == "mirrorchyan" else "GitHub Release"
+            "Mirror酱"
+            if discovery.package_source == "mirrorchyan"
+            else "GitHub Release"
         )
         discovery.message = (
             f"发现新版本 {current_version} -> {discovery.version}，将从 {label} 下载"
@@ -932,7 +935,6 @@ def _cdk_result_fields(
         "cdk_message": version_check.cdk_message,
         "cdk_expired_time": version_check.cdk_expired_time,
     }
-
 
 
 def persist_maafw_update_plan(
@@ -1629,9 +1631,7 @@ async def _check_github_release_update(
 
     shell_hint = str(source_config.get("project_shell_hint") or "").strip()
     if not shell_hint:
-        shell_hint = _shell_from_rid_value(
-            str(interface_model.mirrorchyan_rid or "")
-        )
+        shell_hint = _shell_from_rid_value(str(interface_model.mirrorchyan_rid or ""))
     download_url, selection_reason = _select_github_release_asset(
         data,
         r"\.zip$",

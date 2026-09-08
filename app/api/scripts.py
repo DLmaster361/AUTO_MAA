@@ -232,6 +232,7 @@ SCRIPT_BOOK = {
     "OkNteConfig": OkNteConfig,
     "HSRConfig": HSRConfig,
     "BetterGIConfig": BetterGIConfig,
+    "ZzzOdConfig": ZzzOdConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -244,6 +245,7 @@ USER_BOOK = {
     "OkNteConfig": OkNteUserConfig,
     "HSRConfig": HSRUserConfig,
     "BetterGIConfig": BetterGIUserConfig,
+    "ZzzOdConfig": ZzzOdUserConfig,
 }
 
 
@@ -1422,6 +1424,734 @@ async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
+        )
+
+
+@router.get(
+    "/zzzod/instances",
+    tags=["ZZZ-OD"],
+    summary="获取 zzz-od 实例（账号）列表",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def get_zzzod_instances_api(scriptId: str) -> ZzzOdInstancesOut:
+    """返回 zzz-od 实例列表（供「快速导入」选择来源实例）。"""
+
+    try:
+        data = [
+            ZzzOdInstanceOut(**item) for item in Config.get_zzzod_instances(scriptId)
+        ]
+        return ZzzOdInstancesOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个实例",
+            data=data,
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+def _zzzod_instances_response(instances: list[dict]) -> ZzzOdInstancesOut:
+    """把服务层实例列表包装为统一响应（供直控实例管理各操作复用）。"""
+
+    data = [ZzzOdInstanceOut(**item) for item in instances]
+    return ZzzOdInstancesOut(
+        code=200,
+        status="success",
+        message=f"共 {len(data)} 个实例",
+        data=data,
+    )
+
+
+@router.post(
+    "/zzzod/instances/add",
+    tags=["ZZZ-OD"],
+    summary="新建一条龙实例（直控实例管理）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def add_zzzod_instance_api(
+    body: ZzzOdInstanceAddIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """创建实例（最小空闲槽，避开原生与跨脚本 MAS 绑定槽），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.add_zzzod_instance(body.scriptId, body.name)
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/rename",
+    tags=["ZZZ-OD"],
+    summary="重命名一条龙实例（直控实例管理）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def rename_zzzod_instance_api(
+    body: ZzzOdInstanceRenameIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """只改注册表 name（实例目录不变），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.rename_zzzod_instance(
+                body.scriptId, body.instanceIdx, body.name
+            )
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/active-in-od",
+    tags=["ZZZ-OD"],
+    summary="切换实例是否参与「全部实例」运行（直控实例管理）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def set_zzzod_instance_active_in_od_api(
+    body: ZzzOdInstanceFlagIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """切换 active_in_od 标志位，返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.set_zzzod_instance_active_in_od(
+                body.scriptId, body.instanceIdx, body.activeInOd
+            )
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/set-active",
+    tags=["ZZZ-OD"],
+    summary="把所选实例设为当前活跃（直控「选择即运行」）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def set_zzzod_active_instance_api(
+    body: ZzzOdInstanceActiveIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """把目标实例设为注册表 active（其余清 False），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.set_zzzod_instance_active(body.scriptId, body.instanceIdx)
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/force-login",
+    tags=["ZZZ-OD"],
+    summary="切换实例「运行前切换账号」（直控实例管理；一条龙原生能力）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def set_zzzod_instance_force_login_api(
+    body: ZzzOdInstanceForceLoginIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """切换实例条目的 force_login_before_run（一条龙自己消费），返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.set_zzzod_instance_force_login(
+                body.scriptId, body.instanceIdx, body.forceLogin
+            )
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/instances/run-mode",
+    tags=["ZZZ-OD"],
+    summary="设置运行实例（直控；one_dragon.yml 全局 instance_run）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def set_zzzod_instance_run_mode_api(
+    body: ZzzOdInstanceRunModeIn = Body(...),
+) -> OutBase:
+    """白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。"""
+
+    try:
+        Config.set_zzzod_instance_run_mode(body.scriptId, body.instanceRun)
+        return OutBase()
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/zzzod/instances/delete",
+    tags=["ZZZ-OD"],
+    summary="删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）",
+    response_model=ZzzOdInstancesOut,
+    status_code=200,
+)
+async def delete_zzzod_instance_api(
+    body: ZzzOdInstanceDeleteIn = Body(...),
+) -> ZzzOdInstancesOut:
+    """删除注册表条目与实例目录，返回更新后的实例列表。"""
+
+    try:
+        return _zzzod_instances_response(
+            Config.delete_zzzod_instance(body.scriptId, body.instanceIdx)
+        )
+    except Exception as e:
+        return ZzzOdInstancesOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/zzzod/teams",
+    tags=["ZZZ-OD"],
+    summary="获取预备编队列表（名称 + 绑定配队方案）",
+    response_model=ZzzOdTeamsOut,
+    status_code=200,
+)
+async def get_zzzod_teams_api(
+    scriptId: str,
+    userId: str,
+    instanceIdx: int | None = None,
+) -> ZzzOdTeamsOut:
+    """读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。"""
+
+    try:
+        data = await Config.get_zzzod_teams(scriptId, userId, instance_idx=instanceIdx)
+        return ZzzOdTeamsOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            teams=[ZzzOdTeamItemOut(**t) for t in data["teams"]],
+            autoBattle=data["autoBattle"],
+            agentOptions=data["agentOptions"],
+        )
+    except Exception as e:
+        return ZzzOdTeamsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            teams=[],
+            autoBattle=[],
+        )
+
+
+@router.post(
+    "/zzzod/teams/save",
+    tags=["ZZZ-OD"],
+    summary="整表保存预备编队（名称 + 绑定配队方案；成员按行保留）",
+    response_model=ZzzOdTeamsSaveOut,
+    status_code=200,
+)
+async def save_zzzod_teams_api(script: ZzzOdTeamsSaveIn = Body(...)) -> ZzzOdTeamsSaveOut:
+    """直控传 instanceIdx 直接写原生实例，缺省写用户绑定槽。"""
+
+    try:
+        saved = await Config.save_zzzod_teams(
+            script.scriptId,
+            script.userId,
+            script.teams,
+            instance_idx=script.instanceIdx,
+        )
+        return ZzzOdTeamsSaveOut(
+            code=200,
+            status="success",
+            message="编队已保存",
+            teams=[
+                ZzzOdTeamItemOut(
+                    idx=i,
+                    name=str(item.get("name") or ""),
+                    autoBattle=str(item.get("auto_battle") or ""),
+                    agents=[str(a) for a in item.get("agent_id_list") or []],
+                )
+                for i, item in enumerate(saved)
+            ],
+        )
+    except Exception as e:
+        return ZzzOdTeamsSaveOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            teams=[],
+        )
+
+
+@router.get(
+    "/zzzod/catalog",
+    tags=["ZZZ-OD"],
+    summary="获取一条龙任务目录",
+    response_model=ZzzOdCatalogOut,
+    status_code=200,
+)
+async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
+    """静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。"""
+
+    try:
+        # 统一走 _zzzod_root 哨兵校验（空串在此解析成 cwd 的边界被封住）
+        root = Config.get_zzzod_root(scriptId)
+        from app.task.ZzzOd.tools import (
+            get_task_app_fields,
+            get_task_app_jump,
+            list_app_catalog,
+        )
+
+        data = [
+            ZzzOdCatalogItemOut(
+                **item,
+                configurable=get_task_app_fields(str(item["app_id"])) is not None,
+                jump=get_task_app_jump(str(item["app_id"])),
+            )
+            for item in list_app_catalog(root)
+        ]
+        return ZzzOdCatalogOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个任务",
+            data=data,
+        )
+    except Exception as e:
+        return ZzzOdCatalogOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/zzzod/app-config",
+    tags=["ZZZ-OD"],
+    summary="获取任务级配置（字段元数据 + 当前值）",
+    response_model=ZzzOdAppConfigOut,
+    status_code=200,
+)
+async def get_zzzod_app_config_api(
+    scriptId: str,
+    userId: str,
+    appId: str,
+    instanceIdx: int | None = None,
+) -> ZzzOdAppConfigOut:
+    """返回任务可配置字段、选项与当前值（直控传 instanceIdx 读原生实例，否则读绑定槽）。"""
+
+    try:
+        data = await Config.get_zzzod_app_config(
+            scriptId, userId, appId, instance_idx=instanceIdx
+        )
+        return ZzzOdAppConfigOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            appId=data["appId"],
+            fields=[ZzzOdAppConfigFieldOut(**f) for f in data["fields"]],
+        )
+    except Exception as e:
+        return ZzzOdAppConfigOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            appId=appId,
+            fields=[],
+        )
+
+
+@router.get(
+    "/zzzod/options",
+    tags=["ZZZ-OD"],
+    summary="获取任务计划的动态选项（副本级联树/配队方案/挑战配置）",
+    response_model=ZzzOdTaskOptionsOut,
+    status_code=200,
+)
+async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOptionsOut:
+    """静态读取安装目录（compendium 数据 + 配置目录扫描），与一条龙原生 GUI 选项同源。"""
+
+    try:
+        data = await Config.get_zzzod_task_options(scriptId, appId)
+        return ZzzOdTaskOptionsOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            appId=data["appId"],
+            trainCategories=data["trainCategories"],
+            lostVoidMissions=data["lostVoidMissions"],
+            autoBattle=data["autoBattle"],
+            challenge=data["challenge"],
+        )
+    except Exception as e:
+        return ZzzOdTaskOptionsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            appId=appId,
+        )
+
+
+@router.post(
+    "/zzzod/app-config/save",
+    tags=["ZZZ-OD"],
+    summary="保存任务级配置（绑定槽；直控传 instanceIdx 直接写原生实例）",
+    response_model=ZzzOdAppConfigOut,
+    status_code=200,
+)
+async def save_zzzod_app_config_api(
+    script: ZzzOdAppConfigSaveIn = Body(...),
+) -> ZzzOdAppConfigOut:
+    """字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。"""
+
+    try:
+        data = await Config.save_zzzod_app_config(
+            script.scriptId,
+            script.userId,
+            script.appId,
+            script.values,
+            instance_idx=script.instanceIdx,
+        )
+        return ZzzOdAppConfigOut(
+            code=200,
+            status="success",
+            message="配置已保存",
+            appId=script.appId,
+            fields=[
+                ZzzOdAppConfigFieldOut(
+                    field=str(k), title=str(k), value=str(v), options=[]
+                )
+                for k, v in data.items()
+            ],
+        )
+    except Exception as e:
+        return ZzzOdAppConfigOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            appId=script.appId,
+            fields=[],
+        )
+
+
+@router.get(
+    "/zzzod/native-config",
+    tags=["ZZZ-OD"],
+    summary="获取实例原生配置（直控页面表单数据）",
+    response_model=ZzzOdNativeConfigOut,
+    status_code=200,
+)
+async def get_zzzod_native_config_api(
+    scriptId: str, instanceIdx: int
+) -> ZzzOdNativeConfigOut:
+    """读取所选实例 game_account.yml 与 _group.yml（含默认值合并与任务目录并入）。"""
+
+    try:
+        data = await Config.get_zzzod_native_config(scriptId, instanceIdx)
+        return ZzzOdNativeConfigOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            instanceIdx=data["instanceIdx"],
+            instanceName=data["instanceName"],
+            account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
+            tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
+            instanceRun=data["instanceRun"],
+        )
+    except Exception as e:
+        return ZzzOdNativeConfigOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            instanceIdx=instanceIdx,
+            instanceName="",
+            account=[],
+            tasks=[],
+            instanceRun="仅运行当前",
+        )
+
+
+@router.post(
+    "/zzzod/native-config/save",
+    tags=["ZZZ-OD"],
+    summary="保存实例原生配置（直控模式直接写回一条龙原始 YAML）",
+    response_model=ZzzOdNativeConfigOut,
+    status_code=200,
+)
+async def save_zzzod_native_config_api(
+    script: ZzzOdNativeConfigIn = Body(...),
+) -> ZzzOdNativeConfigOut:
+    """白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。"""
+
+    try:
+        await Config.save_zzzod_native_config(
+            script.scriptId,
+            script.instanceIdx,
+            script.account,
+            [t.model_dump() for t in script.tasks]
+            if script.tasks is not None
+            else None,
+            script.instanceRun,
+        )
+        data = await Config.get_zzzod_native_config(
+            script.scriptId, script.instanceIdx
+        )
+        return ZzzOdNativeConfigOut(
+            code=200,
+            status="success",
+            message="配置已保存到一条龙原生配置",
+            instanceIdx=data["instanceIdx"],
+            instanceName=data["instanceName"],
+            account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
+            tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
+            instanceRun=data["instanceRun"],
+        )
+    except Exception as e:
+        return ZzzOdNativeConfigOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            instanceIdx=script.instanceIdx,
+            instanceName="",
+            account=[],
+            tasks=[],
+            instanceRun="仅运行当前",
+        )
+
+
+@router.get(
+    "/zzzod/backups",
+    tags=["ZZZ-OD"],
+    summary="列出配置备份（onedragon=一条龙原生配置 / mas=MAS 用户槽）",
+    response_model=ZzzOdBackupListOut,
+    status_code=200,
+)
+async def list_zzzod_backups_api(
+    scriptId: str, userId: str, target: str = "onedragon"
+) -> ZzzOdBackupListOut:
+    """按时间倒序返回历史备份（运行/会话前自动归档，内容无变化跳过）。"""
+
+    try:
+        data = await Config.list_zzzod_backups(scriptId, userId, target)
+        return ZzzOdBackupListOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 份备份",
+            data=[ZzzOdBackupItemOut(**item) for item in data],
+        )
+    except Exception as e:
+        return ZzzOdBackupListOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/zzzod/launchers",
+    tags=["ZZZ-OD"],
+    summary="获取一条龙两种启动器的安装情况与默认项",
+    response_model=ZzzOdLauncherOut,
+    status_code=200,
+)
+async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
+    """渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。"""
+
+    try:
+        data = Config.get_zzzod_launchers(scriptId)
+        return ZzzOdLauncherOut(code=200, status="success", message="", **data)
+    except Exception as e:
+        return ZzzOdLauncherOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            original_available=False,
+            integrated_available=False,
+        )
+
+
+@router.post(
+    "/zzzod/backup/restore",
+    tags=["ZZZ-OD"],
+    summary="把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）",
+    response_model=ZzzOdBackupRestoreOut,
+    status_code=200,
+)
+async def restore_zzzod_backup_api(
+    script: ZzzOdBackupRestoreIn = Body(...),
+) -> ZzzOdBackupRestoreOut:
+    """onedragon：恢复一条龙原生配置（MAS 槽不触碰）；mas：恢复槽并全量回填本页字段。"""
+
+    try:
+        slot = await Config.restore_zzzod_backup(
+            script.scriptId, script.userId, script.time, target=script.target
+        )
+        return ZzzOdBackupRestoreOut(
+            code=200,
+            status="success",
+            message=f"已恢复备份 {script.time}",
+            slot=slot,
+            target=script.target,
+        )
+    except Exception as e:
+        return ZzzOdBackupRestoreOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            slot=-1,
+            target=script.target,
+        )
+
+
+@router.post(
+    "/zzzod/backup/ensure",
+    tags=["ZZZ-OD"],
+    summary="按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）",
+    response_model=ZzzOdBackupEnsureOut,
+    status_code=200,
+)
+async def ensure_zzzod_backup_api(
+    script: ZzzOdBackupEnsureIn = Body(...),
+) -> ZzzOdBackupEnsureOut:
+    """onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
+    mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。"""
+
+    try:
+        data = await Config.ensure_zzzod_backup(
+            script.scriptId, script.userId, target=script.target
+        )
+        return ZzzOdBackupEnsureOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        return ZzzOdBackupEnsureOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            created=False,
+            time="",
+        )
+
+
+@router.post(
+    "/zzzod/import",
+    tags=["ZZZ-OD"],
+    summary="基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）",
+    response_model=ZzzOdImportOut,
+    status_code=200,
+)
+async def import_zzzod_config_api(
+    script: ZzzOdImportIn = Body(...),
+) -> ZzzOdImportOut:
+    """把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
+    导入前状态可在「配置恢复」中找回。"""
+
+    try:
+        data = await Config.import_zzzod_config(
+            script.scriptId, script.userId, script.instanceIdx
+        )
+        return ZzzOdImportOut(
+            code=200,
+            status="success",
+            message="已基于所选实例生成用户配置",
+            **data,
+        )
+    except Exception as e:
+        return ZzzOdImportOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            instanceIdx=-1,
+            instanceName="",
+            importedAccountCount=0,
+            importedTaskCount=0,
+            slot=-1,
+        )
+
+
+@router.get(
+    "/zzzod/backup/preview",
+    tags=["ZZZ-OD"],
+    summary="读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）",
+    response_model=ZzzOdBackupPreviewOut,
+    status_code=200,
+)
+async def get_zzzod_backup_preview_api(
+    scriptId: str, userId: str, time: str, target: str = "onedragon"
+) -> ZzzOdBackupPreviewOut:
+    """mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。"""
+
+    # target 是 Literal 响应字段：非法值进 try 后成功/异常两条分支都会因
+    # 响应模型校验失败抛 ValidationError → 裸 500；在入口用 400 拦截
+    if target not in ("onedragon", "mas"):
+        raise HTTPException(status_code=400, detail=f"不支持的备份类别: {target}")
+
+    try:
+        data = Config.get_zzzod_backup_preview(
+            scriptId, userId, time, target=target
+        )
+        return ZzzOdBackupPreviewOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        # 响应模型 info/account/tasks/instances 全部 required（...）；除填
+        # account/tasks/instances 外还要填 info，否则 Pydantic 校验失败抛
+        # ValidationError → 裸 500。错误信息塞进 info 的首项展示给用户。
+        return ZzzOdBackupPreviewOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,  # type: ignore[arg-type]
+            info=[ZzzOdPreviewField(key="error", value=str(e))],
+            account=[],
+            tasks=[],
+            instances=[],
         )
 
 

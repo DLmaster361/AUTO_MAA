@@ -15,9 +15,9 @@
 - [与通用脚本 web 配置推送日志的分工](#与通用脚本-web-配置推送日志的分工重要)
 - [日志类型与推送时机语义](#日志类型与推送时机语义)
 - [推送详情开关](#推送详情开关在专项侧不在-log-box)
-- [表达式引擎自定义算子](#表达式引擎自定义算子)
+- [表达式引擎自定义函数](#表达式引擎自定义函数)
 - [专项喂参示例](#专项喂参示例mas-进程宿主)
-- [推送落地](#推送落地聚合与追加通用工具)
+- [推送落地](#推送落地聚合通用工具)
 - [脚本宿主示例](#脚本宿主示例用户脚本子进程)
 - [常见坑](#常见坑)
 
@@ -48,7 +48,7 @@ from app.log_box import log_box, LogType
 
 log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
-- **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text)`
+- **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text, ts)`
   直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
 - **宿主 = 用户脚本子进程**（`from app.log_box import log_box`）：不注入 sink，
   box 把处理结果渲染为 `@@LOGBOX@@` 受控 stdout 标记回传，MAS 侧
@@ -132,10 +132,12 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 消费（从源头决定是否产生数据），而不是在聚合层做事后过滤：
 
 - **通用脚本**：`PushLogEnabled`（web UI 配置）控制是否采集并聚合推送日志。
-- **OK-WW专项**：用户级 `Notify.PushLogEnabled`（用户编辑页「是否采集节点详情」，与快速配置同排）
-  ——关闭时 **AutoProxy 侧不创建 log_box**（不读日志、不翻译、不匹配），该用户 push_log 为空，
-  报告聚合（`build_user_result_text`）自然只有结果行、不含其节点详情。参考实现：`app/task/Okww/AutoProxy.py`
-  的 `prepare()` 按开关启停 + `final_task()` 判空收尾。
+- **OK-WW专项**：用户级 `Notify.PushLogMode`（关闭/逐条/汇总三态，旧版布尔
+  `PushLogEnabled` 已由迁移逻辑统一转为三态）——「关闭」时 **AutoProxy 侧不创建
+  log_box**（不读日志、不翻译、不匹配），该用户 push_log 为空，报告聚合
+  （`build_user_result_text`）自然只有结果行、不含其节点详情；「逐条/汇总」决定
+  报告中节点详情的呈现形态（见下文「推送落地」）。参考实现：
+  `app/task/Okww/AutoProxy.py` 的 `prepare()` 按模式启停 + `final_task()` 判空收尾。
 
 **给未来适配器的模式**：开关 = 专项自己的配置项，在专项**是否创建/启用 log_box** 的
 入口（如 AutoProxy `prepare()`）消费——关闭即不创建（省采集开销），**不要**在 log_box
@@ -143,36 +145,76 @@ log_box（会失去可视化 UI），log_box 也不要反向暴露 web 配置（
 放 log_box 只会强塞专项语义。
 
 
-## 表达式引擎自定义算子
+## 表达式语法（权威文档在前端目录）
+
+`collect(regex, expr)` / `collect_scope(..., expr)` 的提取表达式与通用脚本
+web 推送配置用的是**同一套表达式引擎**，完整语法文档维护在
+`frontend/src/views/EditView/Script/docs/`（web 配置界面内嵌「说明文档」的
+同源文件，随前端一起分发）：
+
+- [expression-doc.md](../../../../frontend/src/views/EditView/Script/docs/expression-doc.md) — 表达式指南（函数 / 正则 / 混合模式，**首选入口**）
+- [regex-doc.md](../../../../frontend/src/views/EditView/Script/docs/regex-doc.md) — 正则语法
+- multiline-doc.md / split-doc.md — 多行聚合与分割
+
+专项内建规则最常用的语义速查（详见上方文档）：
+
+| 语法 | 语义 |
+| --- | --- |
+| `$()`（空） | 返回整行（可多次复用），常接函数链 `.cutby("定位",0,1)` 截取 |
+| `$(正则)` | 取捕获组中的非空组（多组以 `\n` 拼接）；无捕获组 → 空串 |
+| `+` / `;` | 同行拼接 / 换行拼接；一行内所有 `$()` 必须全命中该行才输出 |
+| 函数链 | `.cut/.get/.cutby/.subby/.replace/.trim/.upper/.lower`；定位失败时跳过、返回原文（不报错） |
+
+> `$()` 内正则默认 DOTALL（`.` 跨行）；单行内提取用 `[^\n]+`。
+> 文档里 missing 语义「找不到定位文本跳过处理」同样适用于专项规则——规则
+> 匹配正则先行过滤、表达式只做提取，失败面最小。
+
+## 规则调试 API（debug_pattern）
+
+`app.utils.LogPatternExtractor.debug_pattern` 是规则调试的现成入口（web 推送
+配置的 🐛 调试按钮即基于它，与「日志提取」功能共用同一引擎）。专项排查
+规则命中/提取问题直接用它，**不要手工拼 RegexMatcher**：
 
 ```python
-from app.utils.expression import register_process, Process
+from app.utils.LogPatternExtractor import debug_pattern
 
-@register_process
-class Translate(Process):
-    name = "translate"
-    def run(self, text: str, args: list) -> str:
-        ...
+config = {"type": "regex", "match": r"...", "extract": r"..."}  # split/multiline 同理
+error, is_multiline, results = debug_pattern(config, log_text)
+# error: 配置级错误（正则/表达式语法错误等），None=通过
+# results: 逐行 {"idx", "hit", "extracted", "line"}——含未命中行，
+#          对整份日志一次跑完即可看清「哪些行命中、各自提取了什么」
 ```
 
-`@register_process` 把自定义 `Process` 子类登记进引擎 REGISTRY，表达式可调用
-`.translate(...)`；对 web 前端面板不暴露。在 `$()` 表达式中按算子名调用：
+与 `apply_patterns` 的差异：apply_patterns 只回首个命中且不含未命中信息，
+调试场景一律用 debug_pattern（入口统一 strip、不受 enabled 开关影响）。
+
+## 表达式引擎自定义函数
+
+表达式函数链（`.cut(...)` 等）的实现在 `app/utils/expression/functions.py`：每个函数
+接收 `(text, args)` 返回处理后的字符串，注册在模块级 `FUNCTIONS` 字典中，由
+`apply_function(name, args, text)` 按名调用。新增自定义函数 = 往 `FUNCTIONS` 加一条
+「名字 → `fn(text, args)`」映射，表达式里即可按 `.名字(...)` 调用；对 web 前端面板
+不暴露。
 
 ```python
-@register_process
-class Suffix(Process):
-    name = "suffix"
-    def run(self, text, args):
-        return text + (str(args[0]) if args else "")
+# app/utils/expression/functions.py
+def fn_suffix(text: str, args: list[Arg]) -> str:
+    """suffix(str) — 追加后缀"""
+    return text + (str(args[0]) if args else "")
 
-# 表达式中调用算子：$((\d+)).suffix(" 剩余电量")，作用于捕获组文本
+FUNCTIONS["suffix"] = fn_suffix  # 注册后表达式可用 .suffix(" 剩余电量")
+```
+
+在 `$()` 表达式中按函数名调用（作用于捕获组文本）：
+
+```python
 col.collect(r"current_stamina (\d+)", r'$((\d+)).suffix(" 剩余电量")')
 ```
 
-> **为什么不能用 `.process(fn)` 直接传 Python 函数**：规则是「参数」形态
-> （正则 + 表达式字符串），脚本子进程宿主跨进程只传规则参数、不传函数体
-> （契约不含闭包/状态）；自定义处理一律用 `@register_process` 具名注入，
-> 规则字符串可序列化、跨宿主一致、编译期函数名校验。
+> **为什么函数是具名注册而不是匿名传入**：规则是「参数」形态（正则 + 表达式
+> 字符串），脚本子进程宿主跨进程只传规则参数、不传函数体（契约不含闭包/状态）；
+> 自定义处理一律具名登记进 `FUNCTIONS`，规则字符串可序列化、跨宿主一致、
+> 编译期函数名校验。
 
 ## 专项喂参示例（MAS 进程宿主）
 
@@ -198,56 +240,57 @@ for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态�
 > 用 `collect(*rule)` 展开即可。
 
 后处理示例：按节点解析最终状态（失败 > 跳过 > 成功），裸节点名 = 开始标记默认成功
-（需消费并返回 `(log_type, text)` 元组，以保留日志类型）：
+（需消费并返回 `(log_type, text, ts)` 元组，日志类型与时间戳随元组一并保留）：
 
 ```python
 import re
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
 def resolve(results):
-    """输入/输出均为 (log_type, text) 元组，日志类型随元组一并保留"""
-    lines = [text for _, text in results]
+    """输入/输出均为 (log_type, text, ts) 元组，日志类型与时间戳随元组一并保留"""
     order, states = [], {}
-    for line in lines:
-        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", line)
-        status, node = (m.group(1), m.group(2)) if m else ("✅ 成功", line)
+    for _log_type, text, ts in results:
+        m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", text)
+        status, node = (m.group(1), m.group(2)) if m else ("✅ 成功", text)
         rank = _STATUS_RANK[status]
         if node in states:
             order.remove(node)  # 保留最后一次出现顺序
         order.append(node)
-        if rank > states.get(node, (0, ""))[0]:
-            states[node] = (rank, status)
+        if rank > states.get(node, (0, "", 0.0))[0]:
+            states[node] = (rank, status, ts)
     # 规则通常统一产出普通类型，节点级失败由文本「❌ 失败:」体现，
     # 直接以 LogType.NORMAL 输出即可（无需按节点重建类型映射）
-    return [(LogType.NORMAL, f"{states[node][1]}: {node}") for node in order]
+    return [
+        (LogType.NORMAL, f"{states[node][1]}: {node}", states[node][2])
+        for node in order
+    ]
 ```
 
 > 节点级失败用 `LogType.NORMAL` + 文本「❌ 失败:」始终展示；推送时机由全局
 > `SendTaskResultTime` 控制（见上文「日志类型与推送时机语义」）。
 
-## 推送落地：聚合与追加（通用工具）
+## 推送落地：聚合（通用工具）
 
-push_log 落进 `cur_user_item.push_log`（`list[(log_type, text)]`）后，后续聚合与
-追加统一走 `app/tools/push_log.py`，专项**不要**自行拼接实现：
+push_log 落进 `cur_user_item.push_log`（`list[tuple]`，元素为 `(log_type, text)`
+或 `(log_type, text, ts)`）后，聚合统一走 `app/tools/push_log.py` 的
+`build_user_result_text`，专项**不要**自行拼接实现：
 
 - `build_user_result_text(users, has_uncompleted)`：按用户交错组装「用户结果行 +
   该用户节点详情」报告文本——每个用户先输出 `用户名: 用户result` 结果行，随后
-  紧跟该用户采集的节点（每条独占一行），多账号任务时各用户节点归属清晰；
-  「失败」类型条目仅在任务存在未完成用户时纳入（与 MAS 原生推送策略一致）。
-  专项在 `manager.final_task` 汇总时**用它替代原 result 拼接**（节点并入 result，
-  `push_log` 字段置空），不要再单独平铺所有用户节点。
-- `append_push_log(message_text, push_log, separator="\n")`：把推送日志追加到通知
-  正文，**默认以单个换行分隔**；专项（如 `tools/notify.py`）按默认调用即可，无需
-  传 `separator`，push_log 为空时原样返回正文（节点并入 result 后此处自然为空）。
+  紧跟该用户的节点详情，多账号任务时各用户节点归属清晰；「失败」类型条目仅在
+  任务存在未完成用户时纳入（与 MAS 原生推送策略一致）。节点详情按用户级
+  `push_log_mode`（`Notify.PushLogMode`）三态呈现：关闭 = 不输出；逐条 = 逐条带
+  采集时间戳（HH:MM）前缀；汇总 = 按（账号, 状态）聚合为一行；未设置模式的用户
+  （如通用脚本）保持逐条原样输出。
+- 注入端点 = **专项 `manager.final_task` 汇总**：用它替代原 result 拼接，产物写入
+  报告的 `result` 字段，随后 `push_notification("代理结果")` 交
+  `app/task/notify_core.py` 的 `push_proxy_result` 推送。现行参考实现：okww 与
+  ZzzOd 的 manager/notify（采集结果全部并入 result，通知侧不再单独追加节点）。
 
 ```python
-# manager.final_task：按用户交错组装（节点并入 result，push_log 置空）
+# manager.final_task：按用户交错组装（节点并入 result）
 has_uncompleted = len(error_user) + len(wait_user) > 0
 user_result_text = build_user_result_text(self.script_info.user_list, has_uncompleted)
-message = {"result": user_result_text, "push_log": "", ...}
-
-# tools/notify.py：追加（push_log 为空，append_push_log 原样返回正文）
-message_text = append_push_log(message_text, message.get("push_log"))
 ```
 
 ## 脚本宿主示例（用户脚本子进程）

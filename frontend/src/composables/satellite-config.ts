@@ -28,6 +28,7 @@ const filenameToScriptType: Record<string, ScriptType> = {
   'hsr.png': 'HSR',
   'maafw.png': 'MaaFW',
   'bettergi.ico': 'BetterGI',
+  'zzz-od.ico': 'ZzzOd',
 }
 
 const iconFilenames: ScriptType[] = [
@@ -40,6 +41,7 @@ const iconFilenames: ScriptType[] = [
   'HSR',
   'MaaFW',
   'BetterGI',
+  'ZzzOd',
 ]
 
 export const satelliteModules: SatelliteModule[] = iconFilenames

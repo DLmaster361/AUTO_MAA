@@ -204,6 +204,8 @@ const handleChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
+  /* 描述文案可能含 \n 换行（如 ZZZ-OD 直控的约束说明），按原文换行渲染 */
+  white-space: pre-line;
 }
 
 .config-mode-alert {

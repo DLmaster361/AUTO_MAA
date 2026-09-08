@@ -8,8 +8,9 @@
                 "MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen)",
                 "MFW 项目支持在脚本运行前或运行后自动更新，可在项目配置中选择时机；升级后已有脚本默认为「运行前更新」，不需要可在项目配置中改为「不更新」 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 新增绿票商店开关：开启后每月单独启动一次 MAA 自动购买绿票商店，用户配置页可查看本月状态并手动重置 by [@qiyinxi](https://github.com/qiyinxi)",
+                "新增绝区零一条龙（ZZZ-OD）专项适配：支持用户独立模式与直控模式 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
-                "OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、自动点击开始游戏（替代直启客户端避免卡界面，兼容旧客户端路径与启动器更新流程），失败均留存诊断截图，并新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
+                "OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、避免卡界面，新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou)",
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
@@ -17,7 +18,8 @@
                 "通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "首页 快速启动支持多选并记住上次选择，可一次启动多个任务 by [@Craun718](https://github.com/Craun718)",
-                "MAA专项 托管结束后保存 MAA 写入配置文件的每日状态（如借战赚信用与访问好友的当天执行记录），同一天多次托管不再重复执行 by [@1w1w11w1](https://github.com/1w1w11w1)"
+                "MAA专项 托管结束后保存 MAA 写入配置文件的每日状态（如借战赚信用与访问好友的当天执行记录），同一天多次托管不再重复执行 by [@1w1w11w1](https://github.com/1w1w11w1)",
+                "全局设置 新增「虚拟显示器」：显示器断开或关闭后 Windows 只保留一块占位的幻影屏，它照旧上报一个看着正常的分辨率，但背后没有任何输出，游戏渲染与截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后 MAS 在检测到没有任何真实显示输出时临时挂一块 1920x1080 的虚拟显示器，任务结束即拆除；程序若被强制结束，下次启动会自动清理上次遗留的虚拟显示器。刷新率可选 60Hz 或更省 GPU 的 30Hz，并提供驱动检测（需自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动） by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "程序优化": [
                 "启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)",

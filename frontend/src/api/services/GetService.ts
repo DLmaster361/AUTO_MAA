@@ -58,6 +58,7 @@ import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
 import type { VersionOut } from '../models/VersionOut';
+import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -670,6 +671,37 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检测虚拟显示驱动
+     * 三段式检测虚拟显示驱动。
+     *
+     * 前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+     * 会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+     * 拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkVirtualDisplayApiSettingVirtualDisplayCheckPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/check',
+        });
+    }
+    /**
+     * 查询虚拟显示驱动状态
+     * 只查驱动装没装、能不能调，不改变桌面拓扑。
+     *
+     * 设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+     * 而存下来的状态只会变陈旧。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static virtualDisplayStatusApiSettingVirtualDisplayStatusPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/status',
         });
     }
     /**

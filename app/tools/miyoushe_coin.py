@@ -47,7 +47,6 @@ from app.utils.security import format_exception_reason
 
 from .community_contract import CommunitySignResult
 
-
 logger = get_logger("米游币每日任务")
 
 _SIGN_URL = "https://bbs-api.mihoyo.com/apihub/app/api/signIn"
@@ -240,7 +239,10 @@ def _post_headers(device_id: str) -> dict[str, str]:
 def _response_data(payload: Mapping[str, object], stage: str) -> Mapping[str, object]:
     retcode = payload.get("retcode", 0)
     if retcode in (-100, 10001):
-        raise ValueError("米游社登录凭据已失效")
+        raise ValueError(
+            f"{stage}认证未通过（错误码 {retcode}），"
+            "当前凭据可能已失效或不支持社区任务"
+        )
     if retcode == 1034:
         raise ValueError("米游币任务触发人机验证")
     if retcode not in (0, None):
@@ -460,6 +462,12 @@ async def run_miyoushe_coin_tasks(
 ) -> dict[str, object]:
     """按账号级服务端进度完成四类已确认米游币任务。"""
 
+    cookies = dict(cookies)
+    # 与参考 BBSCookies 的社区请求一致：优先使用 v2，内部别名不发给上游。
+    if cookies.get("stoken_v2"):
+        cookies["stoken"] = cookies["stoken_v2"]
+    cookies.pop("stoken_v1", None)
+    cookies.pop("stoken_v2", None)
     resolved_proxy = proxy if proxy is not None else Config.proxy
     try:
         async with httpx.AsyncClient(
@@ -475,6 +483,11 @@ async def run_miyoushe_coin_tasks(
                     status="已签到",
                     reward="新增 0 米游币",
                 )
+
+            if not cookies.get("stoken"):
+                raise ValueError("当前凭据缺少社区任务所需的 stoken")
+            if cookies["stoken"].startswith("v2_") and not cookies.get("mid"):
+                raise ValueError("社区任务的 v2 stoken 缺少配套 mid")
 
             posts: tuple[_MiyoushePost, ...] | None = None
             for task in pending:

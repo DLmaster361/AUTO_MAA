@@ -6,18 +6,19 @@ revisions below. They are used only in the daily-note cards.
 - `arknights.png`: `gxy12345/arknights-plugin`
   (`3b6683cfe72a8379c8b3e4659c932cef572d7dae`),
   `resources/common/icon/amiya.png`, MIT, Copyright (c) 2023 gxy12345.
-- `zenless.png`: `ZZZure/ZZZ-Plugin`
+- `zenless.png` (retained original stamina asset, no longer used as the game
+  identity): `ZZZure/ZZZ-Plugin`
   (`a8a7037be8a5810624b6cf17a506512b65128ea4`),
   `resources/note/images/IconStamina.png`, GNU AGPL-3.0.
-- `endfield.jpg`, `genshin.jpg`, and `star-rail.jpg`:
+- `endfield.jpg`, `genshin.jpg`, `star-rail.jpg`, and `zenless.jpg`:
   `yoshino-xiao7/A-game_checkin`
   (`f8611120b433ece71fbce160a0950f5690386559`),
-  `resources/reward/icons/game/{endfield,genshin,star-rail}.jpg`,
+  `resources/reward/icons/game/{endfield,genshin,star-rail,zenless}.jpg`,
   MIT as declared by `package.json`.
 
 The selected Endfield and Miyoushe-specific fixed revisions do not contain a
 redistributable bitmap asset with a confirmed license, so the MIT game-icon
-assets above are used for those three fallback cards. Protocol and rendering
+assets above are used for those fallback cards. Protocol and rendering
 behavior were separately reviewed against the game-specific reference
 projects recorded in the development report. The source project names,
 revisions, paths, and license information are preserved here; no reference
@@ -27,6 +28,16 @@ The following card background files were supplied by the requester for this
 change on 2026-09-04. Their original source and redistribution license were not
 included with the files. Copyright remains with the respective rights holders;
 redistribution permission must be confirmed before a public release.
+
+On 2026-09-07 the requester identified these backgrounds as public materials
+from the respective game Wikis and selected the AUTO-MAS documentation site
+for distribution. Specific Wiki page URLs and image license records have not
+yet been provided; public accessibility alone does not establish a license.
+The original PNGs and their provenance remain here for traceability, but are
+excluded from the application build. WebP derivatives are maintained in
+`AUTO-MAS-docs/public/community-notes/`, together with their source
+notice and conversion manifest, and served at
+`https://doc.auto-mas.top/community-notes/` after the docs are published.
 
 - `arknights-background.png`: SHA-256
   `22AA487DA66082F0B932D691EA8073238752477A684751F04363211F6B620AF7`.

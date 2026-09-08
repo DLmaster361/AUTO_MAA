@@ -59,7 +59,8 @@
         "from": "src/assets",
         "to": "assets",
         "filter": [
-          "**/*"
+          "**/*",
+          "!community-notes/*-background.png"
         ]
       }
     ],

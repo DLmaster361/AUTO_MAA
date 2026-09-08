@@ -12,6 +12,20 @@
 #       skland-daily-attendance Copyright © 2023-2025 enpitsuLin
 #       https://github.com/enpitsuLin/skland-daily-attendance
 
+#   QR login protocol compatibility knowledge:
+#       rhodes-headquarters Copyright (c) 2023 enpitsulin (MIT License)
+#       https://github.com/AEtherside/rhodes-headquarters
+#
+#       zmd-plugin (scan login protocol reference)
+#       https://github.com/Anon-deisu/zmd-plugin
+
+#   Attendance reward response parsing adapted from:
+#       arknights-plugin Copyright (c) 2023 gxy12345 (MIT License)
+#       https://github.com/gxy12345/arknights-plugin
+#
+#       multi-game-auto-sign Copyright (c) 2023 xxyz30 (MIT License)
+#       https://github.com/Kilaers/multi-game-auto-sign
+
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
@@ -39,7 +53,7 @@ import json
 import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, Dict
+from typing import Awaitable, Callable
 from urllib import parse
 
 import httpx
@@ -60,15 +74,15 @@ _cache_time: datetime | None = None
 
 SKLAND_APP_CODE = "4ca99fa6b56cc2ba"
 SKLAND_GRANT_CODE_URL = "https://as.hypergryph.com/user/oauth2/v2/grant"
-SKLAND_PASSWORD_LOGIN_URL = (
-    "https://as.hypergryph.com/user/auth/v1/token_by_phone_password"
-)
 SKLAND_CRED_CODE_URL = "https://zonai.skland.com/web/v1/user/auth/generate_cred_by_code"
 SKLAND_REFRESH_URL = "https://zonai.skland.com/web/v1/auth/refresh"
 SKLAND_BINDING_URL = "https://zonai.skland.com/api/v1/game/player/binding"
 SKLAND_ARKNIGHTS_SIGN_URL = "https://zonai.skland.com/api/v1/game/attendance"
 SKLAND_ENDFIELD_SIGN_URL = "https://zonai.skland.com/web/v1/game/endfield/attendance"
 SKLAND_SIGN_INTERVAL = 1.0
+SKLAND_SCAN_CREATE_URL = "https://as.hypergryph.com/general/v1/gen_scan/login"
+SKLAND_SCAN_STATUS_URL = "https://as.hypergryph.com/general/v1/scan_status"
+SKLAND_SCAN_TOKEN_URL = "https://as.hypergryph.com/user/auth/v1/token_by_scan_code"
 
 logger = get_logger("森空岛签到任务")
 
@@ -77,6 +91,59 @@ def _get_arknights_game_id(character: dict[str, object]) -> object:
     """读取方舟绑定对象的游戏 ID，兼容旧响应中的 channelMasterId。"""
 
     return character.get("gameId") or character.get("channelMasterId")
+
+
+def _format_skland_arknights_awards(payload: object) -> str:
+    """格式化明日方舟签到返回的奖励列表。"""
+
+    if not isinstance(payload, dict):
+        return ""
+    awards = payload.get("awards") or []
+    if not isinstance(awards, list):
+        return ""
+
+    parts: list[str] = []
+    for award in awards:
+        if not isinstance(award, dict):
+            continue
+        resource = award.get("resource")
+        name = ""
+        if isinstance(resource, dict):
+            name = str(resource.get("name") or "").strip()
+        elif resource not in (None, ""):
+            name = str(resource).strip()
+        if not name:
+            continue
+        count = award.get("count")
+        count_text = str(count).strip() if count not in (None, "") else "1"
+        parts.append(f"{name}×{count_text}")
+    return "、".join(parts)
+
+
+def _format_skland_endfield_awards(payload: object) -> str:
+    """格式化终末地签到返回的奖励项。"""
+
+    if not isinstance(payload, dict):
+        return ""
+    award_ids = payload.get("awardIds", [])
+    resource_map = payload.get("resourceInfoMap", {})
+    if not isinstance(award_ids, list) or not isinstance(resource_map, dict):
+        return ""
+
+    parts: list[str] = []
+    for award in award_ids:
+        if not isinstance(award, dict):
+            continue
+        award_id = award.get("id")
+        if not award_id or award_id not in resource_map:
+            continue
+        resource = resource_map[award_id]
+        if not isinstance(resource, dict) or not resource.get("name"):
+            continue
+        count = resource.get("count", 1)
+        count_text = str(count).strip() if count not in (None, "") else "1"
+        parts.append(f"{resource['name']}×{count_text}")
+    return "、".join(parts)
 
 
 def _create_skland_client(proxy: str | None = None) -> httpx.AsyncClient:
@@ -661,33 +728,131 @@ async def refresh_skland_session_credential(
     return parse_skland_credential({**credential, "token": data["token"]})
 
 
-async def login_skland_with_password(
-    phone: str,
-    password: str,
-    *,
+async def create_skland_qr_login(
     proxy: str | None = None,
-) -> str:
-    """一次性使用手机号和密码获取并校验森空岛凭据。"""
-
-    phone_value = str(phone or "").strip()
-    password_value = str(password or "")
-    if not phone_value or not password_value:
-        raise ValueError("手机号和密码不能为空")
+) -> dict[str, object]:
+    """创建森空岛扫码登录，返回 ticket、二维码内容与设备 ID。"""
 
     async with _create_skland_client(proxy) as client:
         device_id = await get_cached_device_id(proxy, client=client)
         response = await client.post(
-            SKLAND_PASSWORD_LOGIN_URL,
-            json={"phone": phone_value, "password": password_value},
+            SKLAND_SCAN_CREATE_URL,
+            json={},
             headers=_hypergryph_headers(device_id),
         )
         response_data = _parse_json_object(response)
-        if response_data.get("status") != 0:
-            message = response_data.get("msg") or response_data.get("message")
-            raise ValueError(f"森空岛账号密码登录失败: {message or '上游拒绝请求'}")
+        if not response.is_success or str(response_data.get("status")) != "0":
+            message = str(
+                response_data.get("msg") or response_data.get("message") or ""
+            ).strip()
+            raise ValueError(f"创建森空岛扫码登录失败: {message or '上游拒绝请求'}")
+        data = response_data.get("data")
+        if not isinstance(data, dict):
+            raise ValueError("森空岛扫码登录响应格式无效")
+        scan_id = str(data.get("scanId") or "").strip()
+        scan_url = str(data.get("scanUrl") or "").strip()
+        if not scan_id or not scan_url:
+            raise ValueError("森空岛扫码登录未返回有效二维码")
+        return {
+            "ticket": scan_id,
+            "qr_url": scan_url,
+            "device": device_id,
+        }
+
+
+async def check_skland_qr_status(
+    ticket: str,
+    device: str,
+    proxy: str | None = None,
+) -> dict[str, object]:
+    """轮询森空岛扫码状态，确认后返回短时 scanCode。"""
+
+    del device  # 当前 scan_status 上游不需要设备头；保留参数兼容本地调用契约。
+    if not str(ticket or "").strip():
+        raise ValueError("森空岛扫码 ticket 为空")
+
+    async with _create_skland_client(proxy) as client:
+        response = await client.get(
+            SKLAND_SCAN_STATUS_URL,
+            params={"scanId": ticket},
+        )
+        if not response.is_success:
+            raise ValueError(
+                f"查询森空岛扫码状态失败: HTTP {response.status_code}"
+            )
+        response_data = _parse_json_object(response)
+
+    raw_status_value = response_data.get("status")
+    raw_status = "" if raw_status_value is None else str(raw_status_value)
+    message = str(
+        response_data.get("msg") or response_data.get("message") or ""
+    ).strip()
+
+    if raw_status != "0":
+        if "未扫码" in message:
+            status = "Init"
+        elif "待确认" in message or "已扫码" in message:
+            status = "Scanned"
+        elif "失效" in message or "过期" in message:
+            status = "Expired"
+        elif "取消" in message or "拒绝" in message:
+            status = "Canceled"
+        else:
+            status = "Init"
+        return {
+            "status": status,
+            "scan_code": "",
+            "message": message,
+        }
+
+    data = response_data.get("data")
+    scan_code = (
+        str(data.get("scanCode") or "").strip()
+        if isinstance(data, dict)
+        else ""
+    )
+    if not scan_code:
+        raise ValueError("森空岛扫码已确认，但未返回 scanCode")
+    return {
+        "status": "Confirmed",
+        "scan_code": scan_code,
+        "message": "",
+    }
+
+
+async def finalize_skland_qr_login(
+    scan_code: str,
+    proxy: str | None = None,
+) -> str:
+    """用扫码确认结果换取完整森空岛凭据并序列化保存。"""
+
+    scan_code_value = str(scan_code or "").strip()
+    if not scan_code_value:
+        raise ValueError("森空岛扫码 scanCode 为空")
+
+    async with _create_skland_client(proxy) as client:
+        device_id = await get_cached_device_id(proxy, client=client)
+        response = await client.post(
+            SKLAND_SCAN_TOKEN_URL,
+            json={"scanCode": scan_code_value},
+            headers=_hypergryph_headers(device_id),
+        )
+        response_data = _parse_json_object(response)
+        if not response.is_success or str(response_data.get("status")) != "0":
+            message = str(
+                response_data.get("msg") or response_data.get("message") or ""
+            ).strip()
+            if "失效" in message or "过期" in message:
+                raise ValueError(
+                    "森空岛扫码凭证已失效，请重新扫码"
+                )
+            raise ValueError(
+                f"森空岛扫码换取 Token 失败: {message or '上游拒绝请求'}"
+            )
+
         data = response_data.get("data")
         if not isinstance(data, dict) or not data.get("token"):
-            raise ValueError("森空岛登录响应未返回有效 Token")
+            raise ValueError("森空岛扫码响应未返回有效 Token")
 
         oauth_token = str(data["token"])
         grant_code = await _get_grant_code(client, oauth_token, device_id)
@@ -867,7 +1032,14 @@ async def _run_skland_sign_in(
         characters = await get_binding_list(
             cred, sign_token, app_code_override="arknights"
         )
-        result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
+        reward_map: dict[str, str] = {}
+        result = {
+            "成功": [],
+            "重复": [],
+            "失败": [],
+            "总计": len(characters),
+            "奖励": reward_map,
+        }
 
         attendance_states = await asyncio.gather(
             *(
@@ -929,8 +1101,13 @@ async def _run_skland_sign_in(
                             f"{character_name} 签到失败: {rsp.get('message')}"
                         )
                 else:
+                    reward_text = _format_skland_arknights_awards(rsp.get("data"))
                     result["成功"].append(character_name)
-                    logger.info(f"{character_name} 签到成功")
+                    reward_map[character_name] = reward_text
+                    if reward_text:
+                        logger.info(f"{character_name} 签到成功: {reward_text}")
+                    else:
+                        logger.info(f"{character_name} 签到成功")
 
             except Exception as e:
                 result["失败"].append(character_name)
@@ -988,7 +1165,14 @@ async def _run_skland_sign_in(
                 )
                 role_items.append((character, role, character_name, game_name))
 
-        result = {"成功": [], "重复": [], "失败": [], "总计": len(role_items)}
+        reward_map: dict[str, str] = {}
+        result = {
+            "成功": [],
+            "重复": [],
+            "失败": [],
+            "总计": len(role_items),
+            "奖励": reward_map,
+        }
 
         for index, (_character, role, character_name, game_name) in enumerate(
             role_items
@@ -1008,30 +1192,15 @@ async def _run_skland_sign_in(
                     data = rsp.get("data") or {}
                     if not isinstance(data, dict):
                         data = {}
-                    award_ids = data.get("awardIds", [])
-                    resource_map = data.get("resourceInfoMap", {})
-                    awards = []
-                    award_list = award_ids if isinstance(award_ids, list) else []
-                    for award in award_list:
-                        if not isinstance(award, dict):
-                            continue
-                        award_id = award.get("id")
-                        if (
-                            award_id
-                            and isinstance(resource_map, dict)
-                            and award_id in resource_map
-                        ):
-                            resource = resource_map[award_id]
-                            if isinstance(resource, dict) and resource.get("name"):
-                                awards.append(
-                                    f"{resource['name']}x{resource.get('count', 1)}"
-                                )
-                    if awards:
-                        logger.info(
-                            f"[{game_name}] {character_name} 签到成功: {'、'.join(awards)}"
-                        )
+                    reward_text = _format_skland_endfield_awards(data)
                     result["成功"].append(character_name)
-                    logger.info(f"{character_name} 签到成功")
+                    reward_map[character_name] = reward_text
+                    if reward_text:
+                        logger.info(
+                            f"[{game_name}] {character_name} 签到成功: {reward_text}"
+                        )
+                    else:
+                        logger.info(f"{character_name} 签到成功")
             except Exception as e:
                 result["失败"].append(character_name)
                 _log_skland_exception("终末地签到失败", e)

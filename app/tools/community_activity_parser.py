@@ -288,6 +288,37 @@ def _future_status(
     return f"预计{duration}后{action}"
 
 
+def _expedition_status(
+    entries: list[Mapping[str, object]],
+    *,
+    accepted: int | None,
+    remaining_field: str,
+) -> str:
+    if accepted == 0 and not entries:
+        return "尚未派遣"
+    finished = sum(entry.get("status") == "Finished" for entry in entries)
+    if finished and finished == accepted:
+        return "奖励待领取"
+    ongoing = [entry for entry in entries if entry.get("status") == "Ongoing"]
+    remaining = [_as_int(entry.get(remaining_field)) for entry in ongoing]
+    # 列表或计时不完整时，不用部分派遣的时长声称全部派遣即将完成。
+    duration = (
+        max(value for value in remaining if value is not None)
+        if remaining
+        and all(value is not None for value in remaining)
+        and len(ongoing) + finished == accepted
+        else None
+    )
+    status = _future_status(
+        duration,
+        action="全部完成",
+        fallback="进行中" if ongoing else "状态未返回",
+    )
+    if finished:
+        return f"{finished}项奖励待领取；{status}"
+    return status
+
+
 def _status_item(name: str, status: str, *, period: str = "daily") -> dict[str, object]:
     return {
         "name": name,
@@ -505,7 +536,15 @@ def _parse_skland_arknights(
         ):
             tower_item = _activity_item(name, tower_reward.get(field))
             if tower_item is not None:
-                items.append(dict(tower_item, period="weekly"))
+                refresh = _remaining_seconds(
+                    tower_reward.get("termTs"), root.get("currentTs")
+                )
+                if refresh is not None:
+                    tower_item["status"] = _future_status(
+                        refresh, action="刷新", fallback=""
+                    )
+                # 保全派驻按上游结算周期刷新，不属于每周任务。
+                items.append(dict(tower_item, period="periodic"))
 
     status = root.get("status")
     status = status if isinstance(status, Mapping) else {}
@@ -524,7 +563,8 @@ def _parse_skland_arknights(
         ):
             # Widget 返回的是上次恢复时的基础值，按每 6 分钟恢复 1 点补齐当前值。
             elapsed = max(0, current_ts - last_add_ts)
-            current = min(maximum, current + elapsed // 360)
+            if current < maximum:
+                current = min(maximum, current + elapsed // 360)
             complete_recovery_ts = _as_int(
                 ap_value.get("completeRecoveryTime")
             )
@@ -620,10 +660,14 @@ def _parse_skland_arknights(
                 if isinstance(char_info, Mapping)
                 else ""
             )
-            training_state = _future_status(
-                training.get("remainSecs"),
-                action="完成训练",
-                fallback="训练中",
+            training_state = (
+                "训练已完成"
+                if _as_int(training.get("remainSecs")) == 0
+                else _future_status(
+                    training.get("remainSecs"),
+                    action="完成训练",
+                    fallback="训练中",
+                )
             )
             resources.append(
                 _status_resource(
@@ -774,7 +818,7 @@ def _parse_skland_endfield(
     if bp_pair is not None:
         item = _activity_item("通行证等级", bp_system, pair=bp_pair)
         if item is not None:
-            items.append(dict(item, period="weekly"))
+            items.append(dict(item, period="periodic"))
 
     seek_suspicion = detail.get("seekSuspicion")
     seek_pair = _named_progress(
@@ -789,7 +833,7 @@ def _parse_skland_endfield(
             pair=seek_pair,
         )
         if seek_item is not None:
-            items.append(dict(seek_item, period="weekly"))
+            items.append(dict(seek_item, period="periodic"))
 
     resources = []
     dungeon = detail.get("dungeon")
@@ -873,7 +917,8 @@ def _parse_miyoushe_genshin(
         else root.get("is_extra_task_reward_received")
     )
     if daily is not None and isinstance(reward_received, bool):
-        if daily["completed"] == daily["target"]:
+        # 历练点也可领取委托奖励，领取状态不能只依赖委托完成数。
+        if reward_received or daily["completed"] == daily["target"]:
             items[0] = dict(
                 daily,
                 status="奖励已领取" if reward_received else "奖励待领取",
@@ -904,14 +949,18 @@ def _parse_miyoushe_genshin(
             if recovery_time.get("reached") is True:
                 transformer_status = "可使用"
             else:
-                transformer_seconds = sum(
-                    (_as_int(recovery_time.get(field)) or 0) * multiplier
-                    for field, multiplier in (
-                        ("Day", 24 * 60 * 60),
-                        ("Hour", 60 * 60),
-                        ("Minute", 60),
-                        ("Second", 1),
+                time_parts = [
+                    _as_int(recovery_time.get(field))
+                    for field in ("Day", "Hour", "Minute", "Second")
+                ]
+                transformer_seconds = (
+                    sum(
+                        part * multiplier
+                        for part, multiplier in zip(time_parts, (86400, 3600, 60, 1))
+                        if part is not None
                     )
+                    if all(part is not None for part in time_parts)
+                    else None
                 )
                 transformer_status = _future_status(
                     transformer_seconds,
@@ -925,6 +974,31 @@ def _parse_miyoushe_genshin(
                 period="weekly",
             )
         )
+
+    week_active = root.get("week_active_progress")
+    if isinstance(week_active, Mapping):
+        if week_active.get("unlock") is False:
+            items.append(_status_item("砺行修远", "未解锁", period="periodic"))
+        elif week_active.get("is_active_period") is False:
+            items.append(_status_item("砺行修远", "本期未开放", period="periodic"))
+        else:
+            weekly_pair = _named_progress(
+                week_active,
+                current_names=("progress_current",),
+                target_names=("progress_total",),
+            )
+            period_pair = _named_progress(
+                week_active,
+                current_names=("period_progress_current",),
+                target_names=("period_progress_total",),
+            )
+            active_item = _activity_item(
+                "砺行修远", {}, pair=period_pair or weekly_pair
+            )
+            if active_item is not None:
+                if weekly_pair is not None:
+                    active_item["status"] = f"本周 {weekly_pair[0]} / {weekly_pair[1]}"
+                items.append(dict(active_item, period="periodic"))
 
     resources = []
     recoverable_resources = (
@@ -986,21 +1060,16 @@ def _parse_miyoushe_genshin(
         root,
         ("max_expedition_num", "total_expedition_num"),
     )
-    finished_expeditions = sum(
-        str(entry.get("status") or "") == "Finished"
-        for entry in expedition_entries
-    )
     expedition = _resource_item(
         "探索派遣",
         {
             "current": expedition_current,
             "total": expedition_target,
         },
-        status=(
-            "奖励待领取"
-            if expedition_entries
-            and finished_expeditions == len(expedition_entries)
-            else "进行中"
+        status=_expedition_status(
+            expedition_entries,
+            accepted=expedition_current,
+            remaining_field="remained_time",
         ),
     )
     if expedition is not None:
@@ -1043,13 +1112,23 @@ def _parse_miyoushe_hsr(
             },
         )
     items = [daily] if daily is not None else []
+    period_pair = _named_progress(
+        root,
+        current_names=("period_score",),
+        target_names=("period_max_score",),
+    )
     rogue_pair = _named_progress(
         root,
         current_names=("current_rogue_score",),
         target_names=("max_rogue_score",),
     )
-    if rogue_pair is not None:
-        rogue = _activity_item("模拟宇宙积分", root, pair=rogue_pair)
+    if period_pair is not None or rogue_pair is not None:
+        # 新版周期积分覆盖原模拟宇宙周积分；旧 Widget 仍保留原字段。
+        rogue = _activity_item(
+            "周期积分" if period_pair is not None else "模拟宇宙积分",
+            {},
+            pair=period_pair or rogue_pair,
+        )
         if rogue is not None:
             items.append(dict(rogue, period="weekly"))
 
@@ -1140,14 +1219,10 @@ def _parse_miyoushe_hsr(
             "探索派遣",
             {},
             pair=(expedition_current, expedition_target),
-            status=(
-                "奖励待领取"
-                if expedition_entries
-                and all(
-                    str(entry.get("status") or "") == "Finished"
-                    for entry in expedition_entries
-                )
-                else "进行中"
+            status=_expedition_status(
+                expedition_entries,
+                accepted=expedition_current,
+                remaining_field="remaining_time",
             ),
         )
         if expedition is not None:
@@ -1169,6 +1244,7 @@ def _state_task(
     value: object,
     *,
     complete: str,
+    incomplete: tuple[str, ...] = (),
     complete_status: str = "已完成",
     incomplete_status: str = "未完成",
 ) -> dict[str, object] | None:
@@ -1177,10 +1253,15 @@ def _state_task(
     state = str(value).strip()
     if not state:
         return None
-    completed = int(complete in state)
+    # CardSignNotDone 也含 Done，必须精确识别上游状态。
+    status = (
+        complete_status
+        if state == complete
+        else incomplete_status if state in incomplete else "状态未知"
+    )
     return _status_item(
         name,
-        complete_status if completed else incomplete_status,
+        status,
     )
 
 
@@ -1209,7 +1290,12 @@ def _parse_miyoushe_zzz(
         items.append(daily_item)
     if video_status is not None:
         items.append(_status_item("录像店经营", video_status))
-    card_task = _state_task("刮刮卡", root.get("card_sign"), complete="Done")
+    card_task = _state_task(
+        "刮刮卡/占卜",
+        root.get("card_sign"),
+        complete="CardSignDone",
+        incomplete=("CardSignNo", "CardSignNotDone"),
+    )
     if card_task is not None:
         items.append(card_task)
 
@@ -1296,6 +1382,35 @@ def _parse_miyoushe_zzz(
         )
         if temple_item is not None:
             resources.append(temple_item)
+    if isinstance(temple, Mapping):
+        for name, field, states in (
+            (
+                "随便观制作",
+                "bench_state",
+                {"BenchStateCanProduce": "可制作", "BenchStateProducing": "制作中"},
+            ),
+            (
+                "随便观售卖",
+                "shelve_state",
+                {
+                    "ShelveStateCanSell": "可上架",
+                    "ShelveStateSelling": "售卖中",
+                    "ShelveStateSoldOut": "已售罄",
+                },
+            ),
+            (
+                "邦布派遣",
+                "expedition_state",
+                {
+                    "ExpeditionStateInCanSend": "可派遣",
+                    "ExpeditionStateInProgress": "派遣中",
+                    "ExpeditionStateEnd": "奖励待领取",
+                },
+            ),
+        ):
+            state = temple.get(field)
+            if isinstance(state, str) and state:
+                resources.append(_status_resource(name, states.get(state, "状态未知")))
     return _build_snapshot(
         account_uid=account_uid,
         account_name=account_name,

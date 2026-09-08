@@ -2,6 +2,10 @@
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+#   ZZZ widget protocol reference: PizzaHelperUnited
+#   Copyright © 2024 and onwards Pizza Studio (AGPL-3.0-or-later)
+#   https://github.com/pizza-studio/PizzaHelperUnited
+
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
@@ -253,6 +257,34 @@ def _miyoushe_zzz_headers(
     )
 
 
+def _miyoushe_zzz_widget_headers(
+    target: CommunityActivityTarget,
+) -> tuple[tuple[str, str], ...]:
+    """使用已实跑的 PizzaHelperUnited 国服小组件请求头。"""
+
+    return _headers(
+        target,
+        (
+            "User-Agent",
+            "WidgetExtension/434 CFNetwork/1492.0.1 Darwin/23.3.0",
+        ),
+        ("Referer", "https://webstatic.mihoyo.com"),
+        ("Origin", "https://webstatic.mihoyo.com"),
+        ("Accept", "application/json, text/plain, */*"),
+        ("Accept-Language", "zh-CN,zh-Hans;q=0.9"),
+        ("Connection", "keep-alive"),
+        ("X-Requested-With", "com.mihoyo.hyperion"),
+        ("x-rpc-app_version", "2.40.1"),
+        ("x-rpc-client_type", "5"),
+        ("x-rpc-page", "3.1.3_#/rpg"),
+        ("x-rpc-language", "zh-cn"),
+        ("Sec-Fetch-Dest", "empty"),
+        ("Sec-Fetch-Site", "same-site"),
+        ("Sec-Fetch-Mode", "cors"),
+        include_device=False,
+    )
+
+
 def build_community_activity_requests(
     target: CommunityActivityTarget,
     *,
@@ -262,7 +294,7 @@ def build_community_activity_requests(
 
     规格不包含 Cookie、Token、Authorization 或请求体；认证签名由调用方的
     provider 适配器在执行请求时注入。原神和星穹铁道保留记录接口失败后的
-    Widget/记录接口回退。
+    Widget/记录接口回退，绝区零记录接口失败后回退到已确认的小组件接口。
 
     Args:
         target: 当前账号组和游戏角色的脱敏上下文。
@@ -409,6 +441,20 @@ def build_community_activity_requests(
                 requires_ds=True,
                 requires_device_id=True,
                 requires_device_fingerprint=True,
+            ),
+            CommunityActivityRequest(
+                target=target,
+                source=(
+                    f"{MIYOUSHE_RECORD_BASE_URL}"
+                    "/event/game_record_zzz/api/zzz/widget"
+                ),
+                method="GET",
+                headers=_miyoushe_zzz_widget_headers(target),
+                auth_scope="miyoushe",
+                signature_profile="miyoushe_params",
+                requires_ds=True,
+                requires_device_id=True,
+                requires_device_fingerprint=False,
             ),
         )
 

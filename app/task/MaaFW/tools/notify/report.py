@@ -7,11 +7,11 @@ from app.core.notify import (
     DispatchResult,
     NotifyPayload,
     dispatch,
+    dispatch_task_report,
     global_target,
     should_send_result,
     statistic_targets,
 )
-from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 通知工具")
@@ -52,7 +52,7 @@ async def _push_proxy_result(
 ) -> DispatchResult:
     """推送脚本级「代理结果」报告（全局渠道）。"""
 
-    if not should_send_result(message):
+    if not should_send_result(message, task_info=task_info):
         return DispatchResult()
 
     message_text = (
@@ -66,11 +66,6 @@ async def _push_proxy_result(
         f"已完成用户数: {message['completed_count']}, "
         f"未完成用户数: {message['uncompleted_count']}"
     )
-    summary_text = (
-        get_task_game_sign_summary(task_info)
-        if task_info is not None and message.get("game_sign_summary")
-        else ""
-    )
     return await dispatch_task_report(
         NotifyPayload(
             title=title,
@@ -83,7 +78,6 @@ async def _push_proxy_result(
         ),
         [global_target(include_system=True)],
         task_info,
-        summary_text=summary_text,
     )
 
 

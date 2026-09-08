@@ -22,6 +22,7 @@
 
 
 import asyncio
+import traceback
 from datetime import datetime
 from inspect import isawaitable
 from uuid import UUID
@@ -29,30 +30,29 @@ from uuid import UUID
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.core.community_scheduler import (
+    CommunityActivityInProgressError,
+    community_activity_flow,
+)
 from app.core.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
     run_community_sign_in,
 )
-from app.core.community_scheduler import (
-    CommunityActivityInProgressError,
-    community_activity_flow,
-)
 from app.models.schema import (
+    CommunityActivityOut,
+    CommunityActivityQueryIn,
+    CommunityActivityResourceOut,
+    CommunityActivitySnapshotOut,
+    CommunityActivityTaskOut,
     GameSignAccountCreateOut,
     GameSignAccountDeleteIn,
     GameSignAccountGetIn,
     GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
-    CommunityActivityOut,
-    CommunityActivityQueryIn,
-    CommunityActivityResourceOut,
-    CommunityActivitySnapshotOut,
-    CommunityActivityTaskOut,
     GameSignAccountUpdateIn,
     OutBase,
-    SklandLoginIn,
     TaygedoLoginIn,
     ToolsConfig,
     ToolsGetOut,
@@ -67,12 +67,20 @@ logger = get_logger("游戏社区 API")
 _PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
 _MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
 
+
 def _log_community_api_error(stage: str, error: Exception) -> None:
     """记录脱敏诊断，社区 API 不把异常细节直接返回给前端。"""
 
-    logger.warning(
-        format_exception_reason(error, stage=stage, include_message=False)
-    )
+    logger.warning(format_exception_reason(error, stage=stage, include_message=False))
+    if error.__traceback__ is not None:
+        # 保留定位信息，不记录局部变量、源码行或可能含凭据的异常原文。
+        frames = traceback.extract_tb(error.__traceback__)
+        logger.warning(
+            "社区调用位置: "
+            + " -> ".join(
+                f"{frame.filename}:{frame.lineno} in {frame.name}" for frame in frames
+            )
+        )
 
 
 def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
@@ -595,54 +603,3 @@ async def login_taygedo(
         )
 
     return OutBase(message="塔吉多登录成功，Token 已保存")
-
-
-@router.post(
-    "/sign/account/skland/login",
-    tags=["GameSign"],
-    summary="森空岛手机号密码登录",
-    response_model=OutBase,
-    status_code=200,
-)
-async def login_skland(
-    credential: SklandLoginIn = Body(...),
-) -> OutBase:
-    """一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。"""
-
-    try:
-        from app.tools.skland import (
-            login_skland_with_password,
-            validate_skland_credential,
-        )
-
-        serialized = await login_skland_with_password(
-            credential.phone.strip(),
-            credential.password.get_secret_value(),
-            proxy=Config.proxy,
-        )
-        parsed = validate_skland_credential(serialized)
-        if any(
-            not str(parsed.get(field) or "").strip()
-            for field in ("oauthToken", "token", "cred")
-        ):
-            raise ValueError("森空岛登录未返回完整凭据")
-        await Config.update_game_sign_account(
-            credential.accountId,
-            {"GameSignAccount": {"SklandToken": serialized}},
-        )
-    except ValueError as e:
-        _log_community_api_error("森空岛登录校验失败", e)
-        return OutBase(
-            code=400,
-            status="error",
-            message="森空岛登录失败，请检查手机号、密码或凭据格式",
-        )
-    except Exception as e:
-        _log_community_api_error("森空岛登录失败", e)
-        return OutBase(
-            code=500,
-            status="error",
-            message="森空岛登录失败，请检查手机号、密码、网络或风控状态",
-        )
-
-    return OutBase(message="森空岛登录成功，Token 已保存")

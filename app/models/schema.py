@@ -335,14 +335,6 @@ class TaygedoLoginIn(BaseModel):
     password: SecretStr = Field(..., min_length=1, description="塔吉多账号密码")
 
 
-class SklandLoginIn(BaseModel):
-    """森空岛一次性手机号密码登录请求。"""
-
-    accountId: str = Field(..., description="账号组 UUID")
-    phone: str = Field(..., min_length=1, description="鹰角网络通行证手机号")
-    password: SecretStr = Field(..., min_length=1, description="鹰角网络通行证密码")
-
-
 class ToolsConfig(BaseModel):
     ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
         default=None, description="明日方舟PC工具配置"

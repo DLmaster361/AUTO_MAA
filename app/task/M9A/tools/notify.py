@@ -26,12 +26,12 @@ from app.core.notify import (
     DispatchResult,
     NotifyPayload,
     dispatch,
+    dispatch_task_report,
     global_target,
     should_send_result,
     statistic_targets,
 )
 from app.models.config import M9AUserConfig
-from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
 from app.utils import get_logger
 
 logger = get_logger("M9A通知工具")
@@ -362,7 +362,7 @@ async def _push_proxy_result(
     title: str, message: dict, task_info: object | None
 ) -> DispatchResult:
     """推送全局代理结果通知"""
-    if not should_send_result(message):
+    if not should_send_result(message, task_info=task_info):
         logger.debug("当前 SendTaskResultTime 配置不满足推送条件，跳过")
         return DispatchResult()
 
@@ -377,11 +377,6 @@ async def _push_proxy_result(
         f"已完成用户数: {message['completed_count']}, "
         f"未完成用户数: {message['uncompleted_count']}"
     )
-    summary_text = (
-        get_task_game_sign_summary(task_info)
-        if task_info is not None and message.get("game_sign_summary")
-        else ""
-    )
     return await dispatch_task_report(
         NotifyPayload(
             title=title,
@@ -394,7 +389,6 @@ async def _push_proxy_result(
         ),
         [global_target(include_system=True)],
         task_info,
-        summary_text=summary_text,
     )
 
 

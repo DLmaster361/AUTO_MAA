@@ -36,15 +36,19 @@
 扫码流程（Passport App 优先，Passport Web 兼容回退）:
   1. Passport 创建二维码，返回二维码 URL + ticket
   2. 轮询状态，App 接口确认后直接取得 stoken，Web 接口从响应头或响应体获取 cookies
-  3. 保存时补充签到模块兼容的认证与 UID 别名
+  3. 使用 stoken 补取 LToken、CookieToken，保存兼容认证与 UID 别名
 
 旧 GameToken ticket 仅保留轮询兼容，不再用于新建二维码。
 
 参考项目:
   - https://github.com/thesadru/genshin.py (2026-06 最新)
+  - https://github.com/Marchen-orz/MiyoQian (Passport App QR 与 Token 派生)
 """
 
+import hashlib
 import json
+import random
+import time
 from http.cookies import CookieError, SimpleCookie
 from urllib.parse import parse_qs, urlparse
 
@@ -58,8 +62,12 @@ logger = get_logger("米游社扫码登录")
 
 # ---- Passport QR 登录 API（对齐 genshin.py） ----
 
-CREATE_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
-CHECK_QRCODE_URL = "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+CREATE_QRCODE_URL = (
+    "https://passport-api.miyoushe.com/account/ma-cn-passport/web/createQRLogin"
+)
+CHECK_QRCODE_URL = (
+    "https://passport-api.miyoushe.com/account/ma-cn-passport/web/queryQRLoginStatus"
+)
 # ---- Passport App QR 登录 API（替代已废弃的 Panda GameToken QR） ----
 PASSPORT_APP_CREATE_URL = (
     "https://passport-api.mihoyo.com/account/ma-cn-passport/app/createQRLogin"
@@ -67,10 +75,16 @@ PASSPORT_APP_CREATE_URL = (
 PASSPORT_APP_CHECK_URL = (
     "https://passport-api.mihoyo.com/account/ma-cn-passport/app/queryQRLoginStatus"
 )
-PASSPORT_APP_ID = "ddxf5dufpuyo"
+PASSPORT_APP_ID = "bll8iq97cem8"
 PASSPORT_APP_CLIENT_TYPE = "3"
-PASSPORT_APP_USER_AGENT = "HYPContainer/1.3.3.182"
-_PASSPORT_APP_TICKET_PREFIX = "passport-app:"
+PASSPORT_APP_VERSION = "2.90.1"
+PASSPORT_APP_USER_AGENT = "Mozilla/5.0 miHoYoBBS/2.90.1 Capture/2.2.0"
+_PASSPORT_APP_TICKET_PREFIX = "passport-bbs:"
+_LEGACY_PASSPORT_APP_TICKET_PREFIX = "passport-app:"
+_LEGACY_PASSPORT_APP_ID = "ddxf5dufpuyo"
+PASSPORT_LTOKEN_URL = (
+    "https://passport-api.mihoyo.com/account/auth/api/getLTokenBySToken"
+)
 # ---- GameToken QR 登录 API（参考项目已确认的请求/响应形状） ----
 GAME_TOKEN_CREATE_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/fetch"
 GAME_TOKEN_CHECK_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/query"
@@ -83,10 +97,8 @@ GAME_TOKEN_COOKIE_URL = (
 GAME_TOKEN_APP_ID = "2"
 _GAME_TOKEN_TICKET_PREFIX = "game-token:"
 # Passport 扫码不保证下发 stoken；缺少时用 login_ticket 换取多类型 Token 补全，
-# 只有拿到 stoken 才能走不受验证码限制的小组件接口查询活跃度。
-MULTI_TOKEN_URL = (
-    "https://api-takumi.mihoyo.com/auth/api/getMultiTokenByLoginTicket"
-)
+# stoken_v2 + mid 是部分小组件接口的必要凭据，可用性仍以上游实际响应为准。
+MULTI_TOKEN_URL = "https://api-takumi.mihoyo.com/auth/api/getMultiTokenByLoginTicket"
 
 # ---- 请求头（对齐 genshin.py QRCODE_HEADERS） ----
 
@@ -167,11 +179,7 @@ def _add_qr_cookie_aliases(cookie_parts: dict[str, str]) -> None:
     # 使后续便笺查询可以识别完整认证形态。
     for source, target in _QR_V2_COOKIE_PAIRS:
         value = cookie_parts.get(source)
-        if (
-            not cookie_parts.get(target)
-            and value
-            and value.startswith("v2_")
-        ):
+        if not cookie_parts.get(target) and value and value.startswith("v2_"):
             cookie_parts[target] = value
     for source, target in _QR_COOKIE_ALIASES.items():
         if not cookie_parts.get(target) and cookie_parts.get(source):
@@ -317,16 +325,114 @@ def _qr_headers(device: str) -> dict:
     return headers
 
 
-def _passport_app_qr_headers(device: str) -> dict[str, str]:
-    """构建 Passport App 扫码请求头。"""
+def _passport_app_qr_headers(
+    device: str,
+    *,
+    body: str = "{}",
+    app_id: str = PASSPORT_APP_ID,
+) -> dict[str, str]:
+    """构建与扫码所属应用一致的 Passport 请求头。"""
 
-    return {
-        "x-rpc-app_id": PASSPORT_APP_ID,
+    headers = {
+        "x-rpc-app_id": app_id,
         "x-rpc-client_type": PASSPORT_APP_CLIENT_TYPE,
         "x-rpc-device_id": device,
         "User-Agent": PASSPORT_APP_USER_AGENT,
         "Content-Type": "application/json",
     }
+    if app_id == _LEGACY_PASSPORT_APP_ID:
+        headers["User-Agent"] = "HYPContainer/1.3.3.182"
+        return headers
+
+    # MiyoQian 的米游社 App QR 使用 4X 签名；签名正文与实际发送字节一致。
+    timestamp = str(int(time.time()))
+    nonce = str(random.randint(100000, 200000))
+    digest = hashlib.md5(
+        (
+            f"salt=xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs&t={timestamp}&r={nonce}&b={body}&q="
+        ).encode()
+    ).hexdigest()
+    headers.update(
+        {
+            "x-rpc-app_version": PASSPORT_APP_VERSION,
+            "x-rpc-sdk_version": PASSPORT_APP_VERSION,
+            "x-rpc-account_version": PASSPORT_APP_VERSION,
+            "x-rpc-game_biz": "bbs_cn",
+            "DS": f"{timestamp},{nonce},{digest}",
+        }
+    )
+    return headers
+
+
+async def _supplement_qr_tokens(
+    cookie_parts: dict[str, str], device: str, proxy: str | None = None
+) -> None:
+    """按 Passport 协议补取缺少的 Token，派生失败不丢弃已取得的凭据。"""
+
+    from .miyoushe import PASSPORT_COOKIE_URL
+
+    _add_qr_cookie_aliases(cookie_parts)
+    stoken = cookie_parts.get("stoken_v2") or cookie_parts.get("stoken")
+    mid = cookie_parts.get("mid")
+    uid = next(
+        (
+            cookie_parts[key]
+            for key in ("stuid", "ltuid", "account_id", "login_uid")
+            if cookie_parts.get(key)
+        ),
+        "",
+    )
+    if not stoken or not mid or not uid:
+        return
+    pending = tuple(
+        (field, url)
+        for field, url in (
+            ("ltoken", PASSPORT_LTOKEN_URL),
+            ("cookie_token", PASSPORT_COOKIE_URL),
+        )
+        if not cookie_parts.get(field)
+    )
+    if not pending:
+        return
+
+    headers = {
+        "x-rpc-client_type": "1",
+        "x-rpc-device_id": device,
+        "x-rpc-game_biz": "bbs_cn",
+        "x-rpc-app_version": "2.63.1",
+        "User-Agent": "Hyperion/275 CFNetwork/1402.0.8 Darwin/22.2.0",
+    }
+    async with httpx.AsyncClient(
+        proxy=proxy or Config.proxy,
+        trust_env=False,
+        cookies={"stoken": stoken, "mid": mid, "stuid": uid},
+    ) as client:
+        for field, url in pending:
+            try:
+                response = await client.get(url, headers=headers, timeout=10.0)
+                response.raise_for_status()
+                payload = response.json()
+                data = payload.get("data") if isinstance(payload, dict) else None
+                if (
+                    not isinstance(payload, dict)
+                    or payload.get("retcode") not in (0, "0")
+                    or not isinstance(data, dict)
+                ):
+                    raise ValueError("Token 派生响应无效")
+                token = data.get(field)
+                if not isinstance(token, str) or not token.strip():
+                    raise ValueError("Token 派生响应缺少认证字段")
+                if field == "cookie_token" and str(data.get("uid") or "") != uid:
+                    raise ValueError("Token 派生账号不一致")
+            except (httpx.HTTPError, OSError, ValueError) as error:
+                logger.warning(
+                    format_exception_reason(
+                        error, stage=f"扫码补全 {field} 失败", include_message=False
+                    )
+                )
+                continue
+            cookie_parts[field] = token.strip()
+    _add_qr_cookie_aliases(cookie_parts)
 
 
 def _passport_app_qr_data(payload: object) -> tuple[str, str] | None:
@@ -411,12 +517,8 @@ def _game_token_qr_data(payload: object) -> tuple[str, str] | None:
     known_sdk_qr = host == "hk4e-sdk.mihoyo.com" and (
         "/qrcode/" in path or path.endswith("/qrcode.html")
     )
-    known_account_qr = (
-        host == "user.mihoyo.com" and path == "/qr_code_in_game.html"
-    )
-    if parsed.scheme.lower() != "https" or not (
-        known_sdk_qr or known_account_qr
-    ):
+    known_account_qr = host == "user.mihoyo.com" and path == "/qr_code_in_game.html"
+    if parsed.scheme.lower() != "https" or not (known_sdk_qr or known_account_qr):
         return None
 
     ticket = str(payload.get("ticket") or "").strip()
@@ -460,7 +562,7 @@ async def _create_passport_app_qr(
         response = await client.post(
             PASSPORT_APP_CREATE_URL,
             headers=_passport_app_qr_headers(device),
-            json={},
+            content="{}",
             timeout=15.0,
         )
         payload = response.json()
@@ -560,9 +662,12 @@ async def _check_passport_app_qr_status(
     ticket: str,
     device: str,
     proxy: str | None = None,
+    *,
+    app_id: str = PASSPORT_APP_ID,
 ) -> dict:
     """查询 Passport App 二维码并返回可保存的完整 stoken 凭据。"""
 
+    body = json.dumps({"ticket": ticket}, separators=(",", ":"))
     try:
         async with httpx.AsyncClient(
             proxy=proxy or Config.proxy,
@@ -570,8 +675,8 @@ async def _check_passport_app_qr_status(
         ) as client:
             response = await client.post(
                 PASSPORT_APP_CHECK_URL,
-                headers=_passport_app_qr_headers(device),
-                json={"ticket": ticket},
+                headers=_passport_app_qr_headers(device, body=body, app_id=app_id),
+                content=body,
                 timeout=30.0,
             )
             data = response.json()
@@ -636,14 +741,17 @@ async def _check_passport_app_qr_status(
             "status": "Error",
             "error": "扫码确认成功但响应未包含用户 UID",
         }
+    await _supplement_qr_tokens(cookie_parts, device, proxy)
     cookies_str = _serialize_cookie_parts(cookie_parts)
     cookie_parts.clear()
-    logger.info("Passport App QR 确认成功，已取得完整 stoken 凭据")
+    logger.info("Passport App QR 确认成功，已取得扫码凭据")
     return {"status": "Confirmed", "cookies_str": cookies_str}
 
 
 async def _check_game_token_qr_status(
-    ticket: str, device: str, proxy: str | None = None,
+    ticket: str,
+    device: str,
+    proxy: str | None = None,
 ) -> dict:
     """查询 GameToken 二维码并兑换为可保存的完整 Cookie。"""
 
@@ -772,8 +880,9 @@ async def _check_game_token_qr_status(
             "status": "Error",
             "error": "完整登录凭据缺少 stoken_v2 或配套 mid",
         }
+    await _supplement_qr_tokens(cookie_parts, device, proxy)
     cookies_str = _serialize_cookie_parts(cookie_parts)
-    logger.info("GameToken QR 确认成功，已换取完整凭据")
+    logger.info("GameToken QR 确认成功，已换取扫码凭据")
     return {"status": "Confirmed", "cookies_str": cookies_str}
 
 
@@ -792,19 +901,26 @@ async def check_qr_status(
         {status: "Init"|"Scanned"|"Confirmed"|"Expired"|"Error",
          cookies_str?, error?}
     """
-    if isinstance(ticket, str) and ticket.startswith(
-        _PASSPORT_APP_TICKET_PREFIX
-    ):
+    if isinstance(ticket, str) and ticket.startswith(_PASSPORT_APP_TICKET_PREFIX):
         return await _check_passport_app_qr_status(
-            ticket[len(_PASSPORT_APP_TICKET_PREFIX):],
+            ticket[len(_PASSPORT_APP_TICKET_PREFIX) :],
             device,
             proxy,
         )
     if isinstance(ticket, str) and ticket.startswith(_GAME_TOKEN_TICKET_PREFIX):
         return await _check_game_token_qr_status(
-            ticket[len(_GAME_TOKEN_TICKET_PREFIX):],
+            ticket[len(_GAME_TOKEN_TICKET_PREFIX) :],
             device,
             proxy,
+        )
+    if isinstance(ticket, str) and ticket.startswith(
+        _LEGACY_PASSPORT_APP_TICKET_PREFIX
+    ):
+        return await _check_passport_app_qr_status(
+            ticket[len(_LEGACY_PASSPORT_APP_TICKET_PREFIX) :],
+            device,
+            proxy,
+            app_id=_LEGACY_PASSPORT_APP_ID,
         )
 
     try:
@@ -867,7 +983,6 @@ async def check_qr_status(
                     "status": "Error",
                     "error": "扫码凭据缺少 stoken_v2 或配套 mid，登录链路未完成",
                 }
-            cookies_str = _serialize_cookie_parts(cookie_parts)
             if not _has_qr_auth_cookie(cookie_parts):
                 return {
                     "status": "Error",
@@ -875,6 +990,8 @@ async def check_qr_status(
                 }
             if not _has_qr_uid_cookie(cookie_parts):
                 return {"status": "Error", "error": "扫码确认成功但响应未包含用户 UID"}
+            await _supplement_qr_tokens(cookie_parts, device, proxy)
+            cookies_str = _serialize_cookie_parts(cookie_parts)
             logger.info(
                 f"QR 确认成功, 获取到 cookies: {bool(cookies_str)}, "
                 f"fields={sorted(cookie_parts)}"

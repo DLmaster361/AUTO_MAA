@@ -51,6 +51,8 @@ from Crypto.Util.Padding import pad
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
+from .game_sign_result import merge_community_sign_result
+
 logger = get_logger("塔吉多社区")
 
 TAYGEDO_BASE_URL = "https://bbs-api.tajiduo.com"
@@ -73,12 +75,17 @@ TAYGEDO_GAME_NAMES = {
 }
 # 1257 未在已核对的角色卡响应中确认，暂不查询该游戏。
 APP_VERSION = "1.1.0"
-# 角色列表和社区接口使用 1.1.0；用户中心登录、刷新和角色卡接口使用 1.2.5。
+# 游戏角色列表接口使用 1.1.0；用户中心登录、刷新、角色卡和社区签到接口使用 1.2.5。
 TAYGEDO_NATIVE_APP_VERSION = "1.2.5"
 TAYGEDO_COMMUNITY_IDS = ("1", "2")
+# 社区签到 ID 与已绑定游戏 ID 对应；未绑定的游戏不触发对应社区签到。
+TAYGEDO_COMMUNITY_GAME_IDS = {
+    "1": "1256",
+    "2": "1289",
+}
 TAYGEDO_COMMUNITY_NAMES = {
-    "1": "幻塔社区",
-    "2": "异环社区",
+    "1": "幻塔",
+    "2": "异环",
 }
 APP_USER_AGENT = "okhttp/4.12.0"
 TAYGEDO_LOGIN_APP_ID = "10551"
@@ -645,7 +652,7 @@ async def sign_taygedo(
     *,
     proxy: str | None = None,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     """执行一次塔吉多社区调用，并按刷新结果处理运行期访问 Token。"""
 
     runtime = _TaygedoRuntimeCredential()
@@ -686,7 +693,7 @@ async def _run_taygedo(
     runtime: _TaygedoRuntimeCredential,
     proxy: str | None = None,
     on_credential_update: Callable[[str], Awaitable[None]] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     """执行塔吉多社区签到、应用内游戏日常任务和云异环时长查询。"""
 
     refresh_error_reason: str | None = None
@@ -732,7 +739,7 @@ async def _run_taygedo(
                 exc,
             )
 
-    results: list[dict[str, str]] = []
+    results: list[dict[str, object]] = []
     access_token = str(credential.get("accessToken") or "").strip()
     uid = str(credential.get("uid") or "").strip()
     device_id = str(credential.get("deviceId") or "").strip()
@@ -779,11 +786,51 @@ async def _run_taygedo(
     ) -> tuple[list[tuple[str, str, str, str]], list[dict[str, str]]]:
         """并发执行一次社区和游戏日常动作，供鉴权恢复复用。"""
 
+        action_roles = cached_roles
+        action_lookup_complete = (
+            bool(cached_lookup_complete) if cached_roles is not None else None
+        )
+        if action_roles is None:
+            try:
+                action_roles, action_lookup_complete = await _get_taygedo_game_roles_with_status(
+                    action_access_token,
+                    action_uid,
+                    action_device_id,
+                    proxy=proxy,
+                )
+            except Exception as exc:
+                role_failure_reason = _log_taygedo_exception(
+                    "塔吉多角色发现失败",
+                    exc,
+                )
+                community_results = [
+                    (
+                        TAYGEDO_COMMUNITY_NAMES[community_id],
+                        "失败",
+                        role_failure_reason,
+                        "",
+                    )
+                    for community_id in TAYGEDO_COMMUNITY_IDS
+                ]
+                game_results = [
+                    {
+                        "account": account,
+                        "game": "应用内游戏",
+                        "platform": "塔吉多",
+                        "status": "失败",
+                        "reward": "",
+                        "reason": role_failure_reason,
+                    }
+                ]
+                return community_results, game_results
+
+        action_community_ids = _taygedo_community_ids_for_roles(action_roles)
         community_task = asyncio.create_task(
             _community_sign(
                 action_access_token,
                 action_uid,
                 action_device_id,
+                community_ids=action_community_ids,
                 proxy=proxy,
             )
         )
@@ -794,10 +841,8 @@ async def _run_taygedo(
                 action_device_id,
                 account,
                 proxy=proxy,
-                roles=cached_roles,
-                lookup_complete=(
-                    bool(cached_lookup_complete) if cached_roles is not None else None
-                ),
+                roles=action_roles,
+                lookup_complete=action_lookup_complete,
             )
         )
 
@@ -828,7 +873,7 @@ async def _run_taygedo(
                     failure_reason,
                     "",
                 )
-                for community_id in TAYGEDO_COMMUNITY_IDS
+                for community_id in action_community_ids
             ]
 
         try:
@@ -897,18 +942,34 @@ async def _run_taygedo(
                     exc,
                 )
 
+        combined_results: list[dict[str, object]] = [
+            dict(item) for item in game_results
+        ]
         for community_name, status, reason, reward in community_results:
-            results.append(
-                {
-                    "account": account,
-                    "game": community_name,
-                    "platform": "塔吉多",
-                    "status": status,
-                    "reward": reward,
-                    "reason": reason,
-                }
-            )
-        results.extend(game_results)
+            community_result: dict[str, object] = {
+                "account": account,
+                "game": community_name,
+                "platform": "塔吉多",
+                "status": status,
+                "reward": reward,
+                "reason": reason,
+            }
+            matched = [
+                index
+                for index, item in enumerate(combined_results)
+                if item.get("game") == community_name
+            ]
+            if not matched:
+                # 角色查询异常时保留社区诊断，不能因无法关联角色而隐藏失败。
+                combined_results.append(community_result)
+                continue
+            for index in matched:
+                combined_results[index] = merge_community_sign_result(
+                    combined_results[index],
+                    community_result,
+                    include_reward=index == matched[0],
+                )
+        results.extend(combined_results)
     elif refresh_error_reason is not None:
         results.extend(
             {
@@ -1578,9 +1639,13 @@ async def _get_game_sign_rewards(
         timeout=30.0,
     )
     data = _read_json(response, f"塔吉多游戏日常任务奖励({game_id})")
-    if not _is_code(data.get("code"), 0) or not isinstance(data.get("data"), dict):
+    payload = data.get("data")
+    if not _is_code(data.get("code"), 0) or not isinstance(payload, (dict, list)):
         raise _api_error(f"塔吉多游戏日常任务奖励({game_id})", response, data)
-    return data["data"]
+    # 已确认当前上游把整月奖励作为列表返回；统一包装为对象以复用解析层结构。
+    if isinstance(payload, list):
+        return {"items": payload}
+    return payload
 
 
 def _is_game_signed(state: Mapping[str, object]) -> bool:
@@ -1662,7 +1727,7 @@ def _native_headers(
         "platform": "android",
         "user-agent": APP_USER_AGENT,
     }
-    # 已核对的旧版角色列表/社区接口不携带 DS；角色卡的 1.2.5 原生协议才需要它。
+    # 旧版角色列表不携带 DS；角色卡与社区打卡使用 1.2.5 原生签名。
     if app_version == TAYGEDO_NATIVE_APP_VERSION:
         headers["ds"] = _make_login_ds()
     return headers
@@ -1801,14 +1866,30 @@ async def _attach_role_name(
     return credential
 
 
+def _taygedo_community_ids_for_roles(
+    roles: list[dict[str, str]] | None,
+) -> tuple[str, ...]:
+    """按已绑定游戏 ID 过滤需要签到的塔吉多社区。"""
+
+    if not roles:
+        return ()
+    game_ids = {str(role.get("gameId") or "") for role in roles}
+    return tuple(
+        community_id
+        for community_id in TAYGEDO_COMMUNITY_IDS
+        if TAYGEDO_COMMUNITY_GAME_IDS.get(community_id) in game_ids
+    )
+
+
 async def _community_sign(
     access_token: str,
     uid: str,
     device_id: str,
     *,
+    community_ids: tuple[str, ...] = TAYGEDO_COMMUNITY_IDS,
     proxy: str | None,
 ) -> list[tuple[str, str, str, str]]:
-    """并发执行塔吉多应用社区和异环社区签到。"""
+    """并发执行塔吉多应用内签到（随已绑定游戏附带触发）。"""
 
     async with httpx.AsyncClient(proxy=proxy, trust_env=False) as client:
 
@@ -1822,7 +1903,7 @@ async def _community_sign(
                             access_token,
                             uid,
                             device_id,
-                            app_version=APP_VERSION,
+                            app_version=TAYGEDO_NATIVE_APP_VERSION,
                         ),
                         "content-type": "application/x-www-form-urlencoded",
                     },
@@ -1853,7 +1934,7 @@ async def _community_sign(
             await asyncio.gather(
                 *(
                     sign_community(community_id)
-                    for community_id in TAYGEDO_COMMUNITY_IDS
+                    for community_id in community_ids
                 )
             )
         )

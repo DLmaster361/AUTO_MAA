@@ -386,6 +386,7 @@ def main():
         update_router,
         ocr_router,
         qr_login_router,
+        skland_qr_router,
     )
 
     app = FastAPI(
@@ -419,6 +420,10 @@ def main():
     # 可选补丁：米游社扫码登录
     if qr_login_router is not None:
         app.include_router(qr_login_router)
+
+    # 可选补丁：森空岛扫码登录
+    if skland_qr_router is not None:
+        app.include_router(skland_qr_router)
 
     app.mount(
         "/api/res/materials",

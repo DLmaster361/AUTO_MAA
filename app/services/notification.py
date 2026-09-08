@@ -246,7 +246,14 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
-    async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
+    async def WebhookPush(
+        self,
+        title: str,
+        content: str,
+        webhook: Webhook,
+        *,
+        image_base64: str = "",
+    ) -> None:
         """
         Webhook 推送通知
 
@@ -258,6 +265,8 @@ class Notification:
             通知内容
         webhook: Webhook
             Webhook配置对象
+        image_base64: str, optional
+            可选图片的纯 Base64 数据，供 OneBot 等协议使用
         """
         if not webhook.get("Info", "Enabled"):
             return
@@ -277,6 +286,7 @@ class Notification:
             template_vars = {
                 "title": title,
                 "content": content,
+                "image_base64": image_base64,
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "time": datetime.now().strftime("%H:%M:%S"),

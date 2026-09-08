@@ -16,7 +16,7 @@ import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
-import { useQrLogin } from './useQrLogin'
+import { useQrLogin, type QrLoginProvider } from './useQrLogin'
 import {
   buildUserTagsMap,
   getSignDetailAlias,
@@ -83,13 +83,12 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const asString = (value: unknown) => (typeof value === 'string' ? value : '')
 
-const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
-  useGameSignAccountApi()
+const { addAccount, updateAccount, loginTaygedo, deleteAccount } = useGameSignAccountApi()
 const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
-const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
+const credentialAction = ref<'taygedo-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
@@ -224,24 +223,23 @@ const taygedoLoginModalVisible = ref(false)
 const taygedoLoginAccountId = ref('')
 const taygedoLoginPhone = ref('')
 const taygedoLoginPassword = ref('')
-const sklandLoginModalVisible = ref(false)
-const sklandLoginAccountId = ref('')
-const sklandLoginPhone = ref('')
-const sklandLoginPassword = ref('')
+const qrLoginProvider = ref<QrLoginProvider>('miyoushe')
+
+const openMiyousheQrLogin = () => {
+  qrLoginProvider.value = 'miyoushe'
+  void startQrLogin()
+}
+
+const openSklandQrLogin = () => {
+  qrLoginProvider.value = 'skland'
+  void startQrLogin()
+}
 
 const closeTaygedoLoginModal = () => {
   taygedoLoginModalVisible.value = false
   taygedoLoginAccountId.value = ''
   taygedoLoginPhone.value = ''
   taygedoLoginPassword.value = ''
-  credentialAction.value = null
-}
-
-const closeSklandLoginModal = () => {
-  sklandLoginModalVisible.value = false
-  sklandLoginAccountId.value = ''
-  sklandLoginPhone.value = ''
-  sklandLoginPassword.value = ''
   credentialAction.value = null
 }
 
@@ -253,17 +251,8 @@ const openTaygedoLoginModal = () => {
   taygedoLoginModalVisible.value = true
 }
 
-const openSklandLoginModal = () => {
-  if (!editingAccount.value) return
-  sklandLoginAccountId.value = editingAccount.value.uid
-  sklandLoginPhone.value = ''
-  sklandLoginPassword.value = ''
-  sklandLoginModalVisible.value = true
-}
-
 const openEditModal = (account: AccountInstance) => {
   closeTaygedoLoginModal()
-  closeSklandLoginModal()
   editingAccount.value = { ...account }
   editModalVisible.value = true
 }
@@ -271,7 +260,6 @@ const openEditModal = (account: AccountInstance) => {
 const handleEditModalCancel = () => {
   closeQrModal()
   closeTaygedoLoginModal()
-  closeSklandLoginModal()
   editModalVisible.value = false
   editingAccount.value = null
 }
@@ -324,34 +312,7 @@ const handleTaygedoLogin = async () => {
   }
 }
 
-const handleSklandLogin = async () => {
-  const accountId = sklandLoginAccountId.value
-  const phone = sklandLoginPhone.value.trim()
-  const password = sklandLoginPassword.value
-  if (!accountId) return
-  if (!phone || !password) {
-    message.warning(t('gamesign.toast.needSklandCredential'))
-    return
-  }
-  credentialAction.value = 'skland-login'
-  try {
-    await loginSkland(accountId, phone, password)
-    await loadAccounts()
-    const updated = accounts.value.find(item => item.uid === accountId)
-    if (updated && editingAccount.value?.uid === accountId) {
-      editingAccount.value = { ...updated }
-    }
-    closeSklandLoginModal()
-  } catch {
-    // loginSkland 已展示错误提示，保留二级弹窗供用户重新输入。
-  } finally {
-    sklandLoginPhone.value = ''
-    sklandLoginPassword.value = ''
-    credentialAction.value = null
-  }
-}
-
-// ==================== 米游社扫码登录 ====================
+// ==================== 米游社 / 森空岛扫码登录 ====================
 // 会话状态机在 useQrLogin，弹窗在 QrLoginModal，这里只提供「存到哪个账号」
 // 和存完之后的本地同步。沿用原来的变量名，模板不用改。
 
@@ -365,9 +326,11 @@ const {
   cancel: closeQrModal,
 } = useQrLogin({
   getAccountId: () => editingAccount.value?.uid,
-  onSaved: async (accountId, cookiesStr, isStillCurrent) => {
-    if (editingAccount.value?.uid === accountId) {
-      editingAccount.value.MiyousheToken = cookiesStr
+  provider: () => qrLoginProvider.value,
+  onSaved: async (accountId, credential, isStillCurrent) => {
+    // 森空岛完整凭据由后端用 scanCode 保存，这里只刷新账号；米游社仍先回填 Cookie。
+    if (qrLoginProvider.value === 'miyoushe' && editingAccount.value?.uid === accountId) {
+      editingAccount.value.MiyousheToken = credential
     }
     await loadAccounts()
     if (!isStillCurrent()) return
@@ -732,7 +695,7 @@ onMounted(() => {
             class="credential-helper-btn"
             style="margin-top: 6px"
             :loading="qrLoading"
-            @click="startQrLogin"
+            @click="openMiyousheQrLogin"
           >
             <template #icon><QrcodeOutlined /></template>
             {{ t('gamesign.edit.qrLogin') }}
@@ -764,11 +727,12 @@ onMounted(() => {
             danger
             class="credential-helper-btn"
             style="margin-top: 6px"
-            :loading="credentialAction === 'skland-login'"
-            :disabled="credentialAction !== null"
-            @click="openSklandLoginModal"
+            :loading="qrLoading"
+            :disabled="qrLoading || credentialAction !== null"
+            @click="openSklandQrLogin"
           >
-            {{ t('gamesign.edit.passwordLogin') }}
+            <template #icon><QrcodeOutlined /></template>
+            {{ t('gamesign.edit.qrLogin') }}
           </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">{{
@@ -847,57 +811,6 @@ onMounted(() => {
       </div>
     </a-modal>
 
-    <!-- 森空岛账密获取 Token 弹窗 -->
-    <a-modal
-      v-model:open="sklandLoginModalVisible"
-      :title="t('gamesign.login.sklandTitle')"
-      :footer="null"
-      :width="420"
-      @cancel="closeSklandLoginModal"
-    >
-      <div class="modal-form">
-        <a-alert class="credential-disclaimer" type="warning" show-icon>
-          <template #message>{{ t('gamesign.login.disclaimerTitle') }}</template>
-          <template #description>{{ credentialPrivacyNotice }}</template>
-        </a-alert>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.currentAccount') }}</span>
-          <a-input :value="editingAccount?.Name || ''" disabled />
-        </div>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.sklandPhone') }}</span>
-          <a-input
-            v-model:value="sklandLoginPhone"
-            autocomplete="off"
-            :placeholder="t('gamesign.login.sklandPhonePlaceholder')"
-            allow-clear
-          />
-        </div>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.password') }}</span>
-          <a-input-password
-            v-model:value="sklandLoginPassword"
-            autocomplete="new-password"
-            :placeholder="t('gamesign.login.sklandPasswordPlaceholder')"
-            allow-clear
-          />
-        </div>
-        <a-space style="width: 100%; justify-content: flex-end">
-          <a-button @click="closeSklandLoginModal">{{ t('common.cancel') }}</a-button>
-          <a-button
-            type="primary"
-            danger
-            class="credential-helper-btn"
-            :loading="credentialAction === 'skland-login'"
-            :disabled="credentialAction !== null"
-            @click="handleSklandLogin"
-          >
-            {{ t('gamesign.login.submit') }}
-          </a-button>
-        </a-space>
-      </div>
-    </a-modal>
-
     <!-- 扫码登录弹窗 -->
     <QrLoginModal
       :open="qrModalVisible"
@@ -905,6 +818,7 @@ onMounted(() => {
       :status-text="qrStatusText"
       :qr-code-data-url="qrCodeDataUrl"
       :loading="qrLoading"
+      :provider="qrLoginProvider"
       @cancel="closeQrModal"
       @retry="startQrLogin"
     />

@@ -33,10 +33,6 @@ from app.models.config import HSRConfig, HSRUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.tools.community_notify import (
-    append_task_community_summary,
-)
-from app.tools.game_sign_notify import finalize_task_game_sign_notification
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4, UTC8
 
@@ -840,10 +836,6 @@ class HSRManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{task_mode}任务报告"
         )
-        task_result = append_task_community_summary(
-            self.task_info, self.script_info.result
-        )
-        has_community_summary = task_result != self.script_info.result
         result = {
             "title": f"{task_mode}任务报告",
             "script_name": self.script_info.name or "空白",
@@ -851,20 +843,16 @@ class HSRManager(TaskExecuteBase):
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": over_count,
             "uncompleted_count": uncompleted_count,
-            "result": task_result,
-            "game_sign_summary": has_community_summary,
+            "result": self.script_info.result,
         }
 
         try:
-            push_result = await push_notification(
+            await push_notification(
                 mode="代理结果",
                 title=title,
                 message=result,
                 user_config=None,
                 task_info=self.task_info,
-            )
-            finalize_task_game_sign_notification(
-                self.task_info, has_community_summary, push_result
             )
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 HSR 代理结果时出现异常: {e}")

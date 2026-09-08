@@ -13,6 +13,9 @@
 #
 #       Kuro_login Copyright (c) 2025 MX
 #       https://github.com/mxyooR/Kuro_login
+#
+#       Yunzai-Kuro-Plugin Copyright © 2024 TomyJan (MPL-2.0)
+#       https://github.com/TomyJan/Yunzai-Kuro-Plugin
 
 #   This file is part of AUTO-MAS.
 
@@ -42,6 +45,8 @@ from app.core import Config
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
+
+from .game_sign_result import merge_community_sign_result
 
 logger = get_logger("库街区社区")
 
@@ -319,6 +324,8 @@ def _kuro_role_failure_result(
 USER_INFO_URL = "https://api.kurobbs.com/user/mineV2"
 ROLE_LIST_URL = "https://api.kurobbs.com/user/role/findRoleList"
 SIGN_URL = "https://api.kurobbs.com/encourage/signIn/v2"
+SIGN_RECORD_URL = "https://api.kurobbs.com/encourage/signIn/queryRecordV2"
+COMMUNITY_SIGN_URL = "https://api.kurobbs.com/user/signIn"
 
 # 游戏配置
 GAME_CONFIG = {
@@ -373,9 +380,7 @@ def validate_kuro_credential(token: str) -> str:
 # ==================== 签到主流程 ====================
 
 
-async def kuro_sign_in(
-    token: str, proxy: str | None = None
-) -> list[dict[str, object]]:
+async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, object]]:
     """库街区社区签到
 
     Args:
@@ -429,14 +434,16 @@ async def kuro_sign_in(
         for failure in query_failures:
             game_id = str(failure["gameId"])
             game_name = GAME_CONFIG[game_id]["name"]
-            results.append({
-                "account": f"{nick_name}/{game_name}",
-                "game": game_name,
-                "platform": "库街区",
-                "status": "失败",
-                "reward": "",
-                "reason": str(failure["_queryError"]),
-            })
+            results.append(
+                {
+                    "account": f"{nick_name}/{game_name}",
+                    "game": game_name,
+                    "platform": "库街区",
+                    "status": "失败",
+                    "reward": "",
+                    "reason": str(failure["_queryError"]),
+                }
+            )
 
         signable_roles = [
             role
@@ -448,7 +455,9 @@ async def kuro_sign_in(
             logger.warning("未找到库街区绑定的游戏角色")
             return results
 
-        # 逐游戏执行社区签到
+        # 逐游戏执行签到；账号级库洛币打卡在收尾合并，不新增重复结果。
+        game_results_start = len(results)
+        community_result: dict[str, object] | None = None
         for index, role in enumerate(signable_roles):
             game_id = str(role.get("gameId", ""))
             server_id = role.get("serverId", "")
@@ -483,6 +492,10 @@ async def kuro_sign_in(
                     f"{game_cfg['name']}签到失败",
                     e,
                 )
+                community_result = {
+                    "status": _kuro_result_status(e),
+                    "reason": f"未执行，{reason}",
+                }
                 results.append(
                     _kuro_role_failure_result(
                         account,
@@ -525,7 +538,68 @@ async def kuro_sign_in(
             if index < len(signable_roles) - 1:
                 await asyncio.sleep(3)
 
+        if community_result is None:
+            try:
+                community_result = await _do_community_sign(
+                    token=token,
+                    dev_code=dev_code,
+                    distinct_id=distinct_id,
+                    game_id=str(signable_roles[0]["gameId"]),
+                    client=client,
+                )
+            except Exception as error:
+                community_result = {
+                    "status": _kuro_result_status(error),
+                    "reason": _log_kuro_exception("库街区社区打卡失败", error),
+                }
+        for index in range(game_results_start, len(results)):
+            results[index] = merge_community_sign_result(
+                results[index],
+                community_result,
+                include_reward=index == game_results_start,
+            )
+
     return results
+
+
+async def _do_community_sign(
+    *,
+    token: str,
+    dev_code: str,
+    distinct_id: str,
+    game_id: str,
+    client: httpx.AsyncClient,
+) -> dict[str, object]:
+    """执行账号级社区打卡，解析上游确认的库洛币奖励。"""
+    response = await client.post(
+        COMMUNITY_SIGN_URL,
+        headers=_kuro_request_headers(BBS_HEADERS, token, dev_code, distinct_id),
+        data={"gameId": game_id},
+        timeout=30.0,
+    )
+    payload = _safe_json(response)
+    _raise_kuro_response_error(response, payload, "社区打卡", allow_already_signed=True)
+    already_signed = _is_kuro_code(payload.get("code"), 1511)
+    if not already_signed and payload.get("success") is False:
+        raise ValueError("库街区社区打卡未成功")
+
+    data = payload.get("data")
+    rewards = data.get("gainVoList") if isinstance(data, dict) else None
+    coins = 0
+    if isinstance(rewards, list):
+        for reward in rewards:
+            if not isinstance(reward, dict) or not _is_kuro_code(
+                reward.get("gainTyp"), 2
+            ):
+                continue
+            amount = str(reward.get("gainValue") or "")
+            if amount.isascii() and amount.isdecimal():
+                coins += int(amount)
+    return {
+        "status": "已签到" if already_signed else "成功",
+        "reward": f"库洛币x{coins}" if coins > 0 else "",
+        "reason": "",
+    }
 
 
 async def _get_user_info(
@@ -540,7 +614,7 @@ async def _get_user_info(
     response = await client.post(
         USER_INFO_URL,
         headers=headers,
-        data="",
+        content="",
         timeout=30.0,
     )
     rsp = _safe_json(response)
@@ -584,7 +658,7 @@ async def _get_role_list(
             response = await client.post(
                 ROLE_LIST_URL,
                 headers=headers,
-                data=f"gameId={game_id}&userId={user_id}",
+                data={"gameId": game_id, "userId": user_id},
                 timeout=30.0,
             )
             rsp = _safe_json(response)
@@ -603,6 +677,65 @@ async def _get_role_list(
             all_roles.append({"gameId": game_id, "_queryError": reason})
 
     return all_roles
+
+
+async def _get_kuro_sign_reward(
+    token: str,
+    dev_code: str,
+    distinct_id: str,
+    game_id: str,
+    server_id: str,
+    role_id: str,
+    user_id: str,
+    client: httpx.AsyncClient,
+) -> str:
+    """查询库街区今日签到记录，把今日物品格式化为 `名称x数量`。"""
+
+    headers = _kuro_request_headers(GAME_HEADERS, token, dev_code, distinct_id)
+    body = {
+        "gameId": game_id,
+        "serverId": server_id,
+        "roleId": role_id,
+        "userId": user_id,
+    }
+
+    try:
+        response = await client.post(
+            SIGN_RECORD_URL,
+            headers=headers,
+            data=body,
+            timeout=30.0,
+        )
+        rsp = _safe_json(response)
+        _raise_kuro_response_error(response, rsp, "获取库街区签到奖励")
+    except Exception as e:
+        logger.debug(f"获取库街区签到奖励失败: {e}")
+        return ""
+
+    records = rsp.get("data")
+    if not isinstance(records, list):
+        return ""
+
+    today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+    rewards: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        sign_date = str(record.get("sigInDate") or "").strip()
+        if sign_date.split(" ", 1)[0] != today:
+            continue
+        name = str(record.get("goodsName") or "").strip()
+        if not name:
+            continue
+        try:
+            count = int(record.get("goodsNum", 1))
+        except (TypeError, ValueError):
+            count = 1
+        reward = f"{name}x{count}"
+        if reward not in rewards:
+            rewards.append(reward)
+
+    return "、".join(rewards)
 
 
 async def _do_sign(
@@ -624,7 +757,13 @@ async def _do_sign(
 
     # 库街区服务端按北京时间计月，本地时区可能不同，统一使用 UTC+8
     req_month = datetime.now(tz=UTC8).strftime("%m")
-    body = f"gameId={game_id}&serverId={server_id}&roleId={role_id}&userId={user_id}&reqMonth={req_month}"
+    body = {
+        "gameId": game_id,
+        "serverId": server_id,
+        "roleId": role_id,
+        "userId": user_id,
+        "reqMonth": req_month,
+    }
 
     response = await client.post(
         SIGN_URL,
@@ -644,14 +783,23 @@ async def _do_sign(
     )
 
     if _is_kuro_code(code, 200):
-        # 尝试获取奖励
-        reward = ""
-        data = rsp.get("data", {})
-        if isinstance(data, dict):
-            reward_name = data.get("rewardName", "")
-            reward_cnt = data.get("rewardCnt", 1)
-            if reward_name:
-                reward = f"{reward_name}x{reward_cnt}"
+        reward = await _get_kuro_sign_reward(
+            token,
+            dev_code,
+            distinct_id,
+            game_id,
+            server_id,
+            role_id,
+            user_id,
+            client,
+        )
+        if not reward:
+            data = rsp.get("data", {})
+            if isinstance(data, dict):
+                reward_name = data.get("rewardName", "")
+                reward_cnt = data.get("rewardCnt", 1)
+                if reward_name:
+                    reward = f"{reward_name}x{reward_cnt}"
         logger.info(f"{account} {game_cfg['name']} 签到成功")
         return {
             "account": account,
@@ -662,13 +810,23 @@ async def _do_sign(
             "reason": "",
         }
     elif _is_kuro_code(code, 1511):
+        reward = await _get_kuro_sign_reward(
+            token,
+            dev_code,
+            distinct_id,
+            game_id,
+            server_id,
+            role_id,
+            user_id,
+            client,
+        )
         # 今日已签到
         return {
             "account": account,
             "game": game_cfg["name"],
             "platform": "库街区",
             "status": "已签到",
-            "reward": "",
+            "reward": reward,
             "reason": "",
         }
     else:

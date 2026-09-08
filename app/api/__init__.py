@@ -40,6 +40,12 @@ try:
 except ImportError:
     qr_login_router = None
 
+# 可选补丁：森空岛扫码登录
+try:
+    from .skland_qr import router as skland_qr_router
+except ImportError:
+    skland_qr_router = None
+
 __all__ = [
     "core_router",
     "info_router",
@@ -54,4 +60,5 @@ __all__ = [
     "update_router",
     "ocr_router",
     "qr_login_router",
+    "skland_qr_router",
 ]

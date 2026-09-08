@@ -51,16 +51,16 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .community_activity_transport import (
-    CommunityActivityRequest,
-    CommunityActivityTarget,
-    CommunityActivityTransportError,
-)
 from .community_activity_roles import (
     CommunityActivityCapability,
     CommunityActivityRoleDiscovery,
     normalize_miyoushe_roles,
     normalize_skland_roles,
+)
+from .community_activity_transport import (
+    CommunityActivityRequest,
+    CommunityActivityTarget,
+    CommunityActivityTransportError,
 )
 
 if TYPE_CHECKING:
@@ -161,6 +161,12 @@ def _raise_business_error(
     code = _response_code(payload)
     if code is None or code == 0:
         return
+    if platform == "米游社" and abs(code) in _MIYOUSHE_RISK_CODES:
+        raise CommunityActivityTransportError(
+            f"米游社{game}查询受到验证限制（业务码 {code}），"
+            "上游未返回便笺数据",
+            status="limited",
+        )
     limited = abs(code) in _MIYOUSHE_RISK_CODES or code in {
         -100,
         10000,
@@ -417,6 +423,9 @@ class CommunityActivityProvider:
     _miyoushe_capabilities: MiyousheSessionCapabilities | None = field(
         default=None, init=False, repr=False
     )
+    _miyoushe_zzz_roles: frozenset[tuple[str, str]] | None = field(
+        default=None, init=False, repr=False
+    )
     _state_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
@@ -587,6 +596,10 @@ class CommunityActivityProvider:
         )
         _raise_business_error(payload, platform="米游社", game="角色列表")
         discovery = normalize_miyoushe_roles(payload)
+        self._miyoushe_zzz_roles = frozenset(
+            (role.role_uid, role.server)
+            for role in discovery.roles_for_game("绝区零")
+        )
         capabilities = self._miyoushe_capabilities
         if capabilities is None or capabilities.activity_ready:
             return discovery
@@ -734,6 +747,21 @@ class CommunityActivityProvider:
     async def _request_miyoushe(
         self, request: CommunityActivityRequest
     ) -> Mapping[str, object]:
+        if request.source.endswith("/zzz/widget"):
+            if self._miyoushe_zzz_roles is None:
+                await self._discover_miyoushe_roles(
+                    account_uid=request.target.account_uid,
+                    account_name=request.target.account_name,
+                )
+            # 小组件不接受角色参数，也不返回角色标识，不能把默认角色的
+            # 数据分配给多个角色；只有绑定列表能唯一确认归属时才回退。
+            if self._miyoushe_zzz_roles != {
+                (request.target.role_uid, request.target.server)
+            }:
+                raise CommunityActivityTransportError(
+                    "绝区零小组件无法唯一确认当前角色，已保留原便笺查询结果",
+                    status="limited",
+                )
         try:
             async with httpx.AsyncClient(
                 proxy=self.proxy, trust_env=False
@@ -1043,8 +1071,9 @@ class CommunityActivityProvider:
                 status="limited",
             )
         headers.setdefault("x-rpc-app_version", "2.99.1")
-        headers.setdefault("x-rpc-device_model", _MIYOUSHE_DEVICE_MODEL)
-        headers.setdefault("x-rpc-device_name", _MIYOUSHE_DEVICE_NAME)
+        if not request.source.endswith("/zzz/widget"):
+            headers.setdefault("x-rpc-device_model", _MIYOUSHE_DEVICE_MODEL)
+            headers.setdefault("x-rpc-device_name", _MIYOUSHE_DEVICE_NAME)
         headers.setdefault("User-Agent", _MIYOUSHE_DEVICE_USER_AGENT)
         if request.requires_device_id:
             headers["x-rpc-device_id"] = device_id

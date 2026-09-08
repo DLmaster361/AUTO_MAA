@@ -20,13 +20,18 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
-from collections.abc import Awaitable, Callable
+import base64
+import re
 from html import escape
+from html.parser import HTMLParser
+from io import BytesIO
+from pathlib import Path
 from typing import Literal
 
+from PIL import Image, ImageDraw, ImageFont
+
 from app.core import Config
-from app.services import Notify
+from app.core.notify import NotifyPayload, dispatch, global_target
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏社区通知")
@@ -77,19 +82,31 @@ def _result_account(item: dict[str, object]) -> str:
     return account_uid or "未知用户"
 
 
-def _result_identity(item: dict[str, object]) -> str:
-    """生成通知中的用户标识，森空岛优先显示游戏名和真实昵称。"""
+def _result_nickname(item: dict[str, object]) -> str:
+    """从已确认的账号展示格式中提取角色名，保留其它原始昵称。"""
 
-    account = _result_account(item)
-    platform = str(item.get("platform", "未知") or "未知")
-    game = str(item.get("game", "") or "").strip()
-    if platform != "森空岛" or not game:
-        return account
-
-    nickname = account.split("/", 1)[0].strip()
-    if nickname and nickname != "未知用户":
-        return f"{game}({nickname})"
-    return game
+    account = " ".join(_result_account(item).splitlines())
+    # 上游常用 昵称/昵称(UID)，昵称本身也可能带斜线。
+    repeated = re.fullmatch(r"(?P<name>.+)/(?P=name)\(\d+\)", account)
+    if repeated:
+        return repeated.group("name")
+    role = re.fullmatch(r"[^/]+/(.+)\(\d+\)", account)
+    if role:
+        return role.group(1).strip()
+    alias, separator, suffix = account.rpartition("/")
+    if (
+        separator
+        and alias
+        and suffix
+        in (
+            item.get("platform"),
+            item.get("game"),
+            "官服",
+            "B服",
+        )
+    ):
+        return alias
+    return account
 
 
 def _notification_results(
@@ -111,91 +128,300 @@ def _ordered_platforms(
     ]
 
 
-def _format_notification_item(item: dict[str, object]) -> str:
-    """格式化通知列表中的一条签到结果。"""
+def _result_detail(item: dict[str, object]) -> str:
+    """保留已签和失败原因，有奖励的成功结果省去重复状态文案。"""
 
-    platform = str(item.get("platform", "未知") or "未知")
     status = _result_status_text(item)
-    identity = _result_identity(item)
-    if platform == "森空岛":
-        return f"{identity}:{status}"
-
     game = str(item.get("game", "") or "").strip()
-    game_text = f" {game}" if game else ""
-    reward = str(item.get("reward", "") or "").strip()
-    reward_text = f" {reward}" if platform == "云异环" and reward else ""
-    return f"{identity}{game_text} {status}{reward_text}"
+    reward = str(item.get("reward", "") or "").strip().replace("×", "x")
+    if not reward:
+        return status
+    # 云异环的剩余时长属于状态，不能标成新领取的奖励。
+    duration_only = game == "云异环" and not reward.startswith("每日首登")
+    reward_text = reward if duration_only else f"📥{reward}"
+    if item.get("status") == "成功" and not duration_only:
+        return reward_text
+    return f"{status} {reward_text}"
 
 
-def format_community_notification(
+def _format_notification_item(item: dict[str, object]) -> str:
+    """生成各通知渠道共用的紧凑单行结果。"""
+
+    marker = "✅" if item.get("status") in _SUCCESS_STATUSES else "❌"
+    game = str(item.get("game") or item.get("platform") or "未知")
+    identity = _result_nickname(item)
+    detail = _result_detail(item)
+    return " ".join(f"{marker} [{game}] {identity} {detail}".splitlines())
+
+
+_FONT_CANDIDATES = (
+    Path("C:/Windows/Fonts/msyh.ttc"),
+    Path("C:/Windows/Fonts/simhei.ttf"),
+    Path("/System/Library/Fonts/PingFang.ttc"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+)
+_SYMBOL_FONT_CANDIDATES = (
+    Path("C:/Windows/Fonts/seguiemj.ttf"),
+    Path("/System/Library/Fonts/Apple Color Emoji.ttc"),
+    Path("/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf"),
+    Path("/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"),
+)
+_SYMBOL_FALLBACK = {"✅": "[OK]", "❌": "[X]", "📥": "[+]"}
+
+
+def _load_notification_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """加载可显示中文的通知字体，缺失时回退到 Pillow 内置字体。"""
+
+    for path in _FONT_CANDIDATES:
+        if path.is_file():
+            return ImageFont.truetype(str(path), size)
+    return ImageFont.load_default(size=size)
+
+
+def _load_notification_symbol_font(size: int) -> ImageFont.FreeTypeFont | None:
+    """加载通知符号字体，固定尺寸字体不可用时保留文字回退。"""
+
+    for path in _SYMBOL_FONT_CANDIDATES:
+        if path.is_file():
+            try:
+                return ImageFont.truetype(str(path), size)
+            except OSError:
+                continue
+    return None
+
+
+def _notification_text_runs(
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    symbol_font: ImageFont.FreeTypeFont | None,
+) -> list[tuple[str, ImageFont.FreeTypeFont | ImageFont.ImageFont]]:
+    """测量与绘制使用相同字体，避免中文字体缺少图标时产生方框。"""
+
+    runs = []
+    for part in re.split(r"([✅❌📥])", text):
+        if not part:
+            continue
+        if part in _SYMBOL_FALLBACK:
+            runs.append(
+                (part, symbol_font) if symbol_font else (_SYMBOL_FALLBACK[part], font)
+            )
+        else:
+            runs.append((part, font))
+    return runs
+
+
+def _wrap_notification_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+    *,
+    symbol_font: ImageFont.FreeTypeFont | None = None,
+) -> list[str]:
+    """按像素宽度换行，兼容中文这类没有空格分隔的长文本。"""
+
+    lines: list[str] = []
+    current = ""
+    for char in text:
+        if char == "\n":
+            lines.append(current)
+            current = ""
+            continue
+        candidate = current + char
+        candidate_width = sum(
+            draw.textlength(part, font=run_font)
+            for part, run_font in _notification_text_runs(
+                candidate, font=font, symbol_font=symbol_font
+            )
+        )
+        if current and candidate_width > max_width:
+            lines.append(current)
+            current = char
+        else:
+            current = candidate
+    lines.append(current)
+    return lines
+
+
+def _community_notification_rows(
     results: list[dict[str, object]],
     *,
-    output_format: NotificationBodyFormat = "markdown",
-) -> str:
-    """按社区分组生成通知正文，并显式支持文本与 Markdown。"""
+    include_signature: bool = True,
+) -> list[tuple[str, str]]:
+    """统一文本、Markdown、HTML 与图片中的平台分组和结果行。"""
 
     results = _notification_results(results)
     if not results:
-        return ""
+        return []
 
     grouped: dict[str, list[dict[str, object]]] = {}
     for item in results:
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)
 
-    lines: list[str] = []
+    rows: list[tuple[str, str]] = [("title", "【社区签到通知】")]
     for platform in _ordered_platforms(grouped):
         items = grouped[platform]
         total = len(items)
         success_count = sum(
             1 for item in items if item.get("status") in _SUCCESS_STATUSES
         )
-        marker = "✅" if total and success_count == total else "❌"
-        if lines:
-            lines.append("")
-        heading = f"{marker}{platform}({success_count}/{total}):"
-        if output_format == "markdown":
-            heading = f"### {heading}"
-        lines.extend([heading, ""])
+        platform = " ".join(platform.splitlines())
+        rows.append(("heading", f"• {platform}({success_count}/{total})："))
         for item in items:
-            prefix = "- " if output_format == "markdown" else "  "
-            lines.append(f"{prefix}{_format_notification_item(item)}")
-
-    lines.extend(["", "AUTO-MAS 敬上"])
-    return "\n".join(lines)
-
-
-def format_community_task_summary(results: list[dict[str, object]]) -> str:
-    """生成附加到 MAS 任务报告末尾的一行签到汇总。"""
-
-    results = _notification_results(results)
-    if not results:
-        return ""
-
-    grouped: dict[str, list[dict[str, object]]] = {}
-    for item in results:
-        platform = str(item.get("platform", "未知") or "未知")
-        grouped.setdefault(platform, []).append(item)
-
-    parts = []
-    previous_platform = None
-    for platform in _ordered_platforms(grouped):
-        for item in grouped[platform]:
-            platform_prefix = f"{platform}-" if platform != previous_platform else ""
-            label = f"{platform_prefix}{_result_identity(item)}"
-            status = _result_status_text(item)
-            if platform != "森空岛":
-                game = str(item.get("game", "") or "").strip()
-                if game:
-                    label = f"{label} {game}"
-            separator = ":" if platform == "森空岛" else " "
-            parts.append(f"{label}{separator}{status}")
-            previous_platform = platform
-
-    return "签到情况: " + " | ".join(parts)
+            rows.append(("item", _format_notification_item(item)))
+    if include_signature:
+        rows.append(("footer", "AUTO-MAS 敬上"))
+    return rows
 
 
-def get_task_community_summary(task_info: object) -> str:
+def _community_notification_image(results: list[dict[str, object]]) -> bytes:
+    """把社区签到结果渲染为适合聊天渠道展示的 PNG 图片。"""
+
+    width = 760
+    card_margin = 16
+    padding = 32
+    inner_width = width - (card_margin + padding) * 2
+    row_specs: list[tuple[str, list[str], int]] = []
+    total_height = card_margin * 2 + padding * 2
+    symbol_font = _load_notification_symbol_font(22)
+
+    with Image.new("RGB", (width, 100), "#f4f4f4") as measure_image:
+        measure = ImageDraw.Draw(measure_image)
+        for kind, text in _community_notification_rows(results):
+            if kind == "title":
+                size = 32
+                spacing = 16
+            elif kind == "heading":
+                size = 24
+                spacing = 14
+            elif kind == "footer":
+                size = 18
+                spacing = 16
+            else:
+                size = 22
+                spacing = 8
+            font = _load_notification_font(size)
+            lines = _wrap_notification_text(
+                measure,
+                text,
+                font,
+                inner_width,
+                symbol_font=symbol_font,
+            )
+            line_height = int(size * 1.55)
+            row_height = len(lines) * line_height
+            row_specs.append((kind, lines, row_height))
+            total_height += row_height + spacing
+
+    image = Image.new("RGB", (width, total_height), "#f4f4f4")
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle(
+        (card_margin, card_margin, width - card_margin, total_height - card_margin),
+        radius=18,
+        fill="#ffffff",
+    )
+
+    y = card_margin + padding
+    for kind, lines, row_height in row_specs:
+        if kind == "title":
+            font = _load_notification_font(32)
+            color = "#009faa"
+            spacing = 16
+        elif kind == "heading":
+            font = _load_notification_font(24)
+            color = "#009faa"
+            spacing = 14
+        elif kind == "footer":
+            font = _load_notification_font(18)
+            color = "#888888"
+            spacing = 16
+        else:
+            font = _load_notification_font(22)
+            color = "#303133"
+            spacing = 8
+
+        for line_index, line in enumerate(lines):
+            x = 48.0
+            line_y = y + line_index * (row_height // len(lines))
+            baseline = (
+                font.getmetrics()[0] if isinstance(font, ImageFont.FreeTypeFont) else 0
+            )
+            for part, run_font in _notification_text_runs(
+                line, font=font, symbol_font=symbol_font
+            ):
+                draw.text(
+                    (x, line_y + baseline),
+                    part,
+                    font=run_font,
+                    fill=color,
+                    anchor="ls" if baseline else None,
+                    embedded_color=True,
+                )
+                x += draw.textlength(part, font=run_font)
+        y += row_height + spacing
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
+
+def _community_notification_image_base64(
+    results: list[dict[str, object]],
+) -> str:
+    """生成 OneBot 等渠道可用的纯 Base64 PNG 数据。"""
+
+    return base64.b64encode(_community_notification_image(results)).decode("ascii")
+
+
+def _escape_markdown_text(value: str) -> str:
+    """账号和奖励作为文字展示，不解释为 Markdown 或 HTML。"""
+
+    return re.sub(r"([\\`*_{}\[\]<>!#|])", r"\\\1", " ".join(value.splitlines()))
+
+
+def format_community_notification(
+    results: list[dict[str, object]],
+    *,
+    output_format: NotificationBodyFormat = "markdown",
+    include_signature: bool = True,
+) -> str:
+    """按社区分组生成通知正文，并显式支持文本与 Markdown。"""
+
+    lines: list[str] = []
+    for kind, text in _community_notification_rows(
+        results, include_signature=include_signature
+    ):
+        if kind in {"heading", "footer"} and lines:
+            lines.append("")
+        if output_format == "markdown":
+            text = _escape_markdown_text(text)
+            if kind in {"title", "heading"}:
+                text = f"**{text}**"
+        elif kind == "heading":
+            text = f" {text}"
+        lines.append(text)
+
+    separator = "  \n" if output_format == "markdown" else "\n"
+    return separator.join(lines)
+
+
+def format_community_task_summary(
+    results: list[dict[str, object]],
+    *,
+    output_format: NotificationBodyFormat = "text",
+) -> str:
+    """复用紧凑通知格式追加社区结果，签名由原任务报告保留。"""
+
+    return format_community_notification(
+        results, output_format=output_format, include_signature=False
+    )
+
+
+def get_task_community_summary(
+    task_info: object, *, output_format: NotificationBodyFormat = "text"
+) -> str:
     """读取尚未发送的社区签到汇总，兼容旧任务字段。"""
 
     consumed = (
@@ -214,7 +440,7 @@ def get_task_community_summary(task_info: object) -> str:
     if not results:
         return ""
 
-    return format_community_task_summary(list(results))
+    return format_community_task_summary(list(results), output_format=output_format)
 
 
 def mark_task_community_summary_consumed(task_info: object) -> None:
@@ -226,34 +452,111 @@ def mark_task_community_summary_consumed(task_info: object) -> None:
         setattr(task_info, "game_sign_summary_consumed", True)
 
 
-def append_task_community_summary(task_info: object, result: str) -> str:
+def append_task_community_summary(
+    task_info: object,
+    result: str,
+    *,
+    output_format: NotificationBodyFormat = "text",
+) -> str:
     """将尚未发送的社区签到汇总附加到任务报告。"""
 
     if not Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
         return result
 
-    summary = get_task_community_summary(task_info)
+    summary = get_task_community_summary(task_info, output_format=output_format)
     return f"{result}\n\n{summary}" if summary else result
 
 
-async def _send_notification_channel(
-    channel_name: str,
-    send: Callable[[], Awaitable[bool | None]],
-) -> bool:
-    """发送单个通知渠道，失败时重试一次。"""
-    for attempt in range(1, NOTIFICATION_SEND_ATTEMPTS + 1):
-        try:
-            result = await send()
-            if result is False:
-                raise RuntimeError("通知渠道返回失败状态")
-            return True
-        except Exception as e:
-            if attempt < NOTIFICATION_SEND_ATTEMPTS:
-                logger.warning(f"{channel_name}通知发送失败，将重试: {e}")
-                await asyncio.sleep(NOTIFICATION_RETRY_DELAY_SECONDS)
-            else:
-                logger.warning(f"{channel_name}通知重试后仍失败: {e}")
-    return False
+class _TaskReportSummaryPosition(HTMLParser):
+    """定位模板签名或正文末尾，保持专项 HTML 和样式原样。"""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.position: tuple[int, int] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if (
+            self.position is None
+            and "signature" in (dict(attrs).get("class") or "").split()
+        ):
+            self.position = self.getpos()
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.position is None and tag == "body":
+            self.position = self.getpos()
+
+
+def append_community_summary_html(content: str, summary: str) -> str:
+    """在任务报告签名前追加经过转义的社区摘要。"""
+
+    parser = _TaskReportSummaryPosition()
+    parser.feed(content)
+    parser.close()
+    offset = len(content)
+    if parser.position is not None:
+        line, column = parser.position
+        offset = (
+            sum(len(part) for part in content.splitlines(keepends=True)[: line - 1])
+            + column
+        )
+    fragment = (
+        '<div class="content"><div class="result-box" style="white-space: pre-wrap">'
+        f"{escape(summary)}</div></div>"
+    )
+    return f"{content[:offset]}{fragment}{content[offset:]}"
+
+
+def _community_html_fragment(
+    results: list[dict[str, object]], *, include_signature: bool = True
+) -> str:
+    """生成社区通知的 HTML 主体，动态文本先统一转义。"""
+
+    tags = {"title": "h2", "heading": "h3", "item": "p", "footer": "p"}
+    html_lines = []
+    for kind, text in _community_notification_rows(
+        results, include_signature=include_signature
+    ):
+        tag = tags[kind]
+        html_lines.append(f"<{tag}>{escape(text)}</{tag}>")
+    return "".join(html_lines)
+
+
+def _render_community_html(
+    results: list[dict[str, object]],
+    title: str,
+) -> str:
+    """按 MAS 通知模板渲染社区签到邮件正文。"""
+
+    return Config.notify_env.get_template("community_result.html").render(
+        title=title,
+        content=_community_html_fragment(results, include_signature=False),
+    )
+
+
+def build_community_notification_payload(
+    results: list[dict[str, object]],
+) -> NotifyPayload:
+    """把结构化社区结果渲染为统一通知载荷。
+
+    Markdown 是独立社区通知的主内容形态；ServerChan/Webhook 使用 Markdown
+    源码，Koishi 使用转换后的 HTML，系统/OpenClaw 等纯文本渠道使用不带
+    Markdown 标记的可读文本，邮件使用 MAS HTML 卡片模板。
+    """
+
+    results = _notification_results(results)
+    title = "社区签到通知"
+    plain_text = format_community_notification(results, output_format="text")
+    markdown_text = format_community_notification(results)
+    return NotifyPayload(
+        title=title,
+        text=plain_text,
+        append_signature=False,
+        html=_render_community_html(results, title),
+        markdown_text=markdown_text,
+        webhook_image_base64=_community_notification_image_base64(results),
+        koishi_text=_community_html_fragment(results),
+        koishi_msgtype="html",
+    )
 
 
 async def push_community_notification(
@@ -264,113 +567,14 @@ async def push_community_notification(
     if not results:
         return []
 
-    title = "社区签到通知:"
-    plain_text = format_community_notification(results, output_format="text")
-    markdown_text = format_community_notification(
-        results,
-        output_format="markdown",
+    payload = build_community_notification_payload(results)
+    dispatch_result = await dispatch(
+        payload,
+        [global_target(include_system=True)],
+        attempts=NOTIFICATION_SEND_ATTEMPTS,
+        retry_delay=NOTIFICATION_RETRY_DELAY_SECONDS,
     )
-    channel_text = (
-        markdown_text
-        if detect_community_notification_format(markdown_text) == "markdown"
-        else plain_text
-    )
-
-    # 邮件按同一正文生成 HTML，角色名和原因均需要转义。
-    grouped: dict[str, list[dict[str, object]]] = {}
-    for item in results:
-        platform = str(item.get("platform", "未知") or "未知")
-        grouped.setdefault(platform, []).append(item)
-
-    html_lines = []
-    for platform in _ordered_platforms(grouped):
-        items = grouped[platform]
-        total = len(items)
-        success_count = sum(
-            1 for item in items if item.get("status") in _SUCCESS_STATUSES
-        )
-        marker = "✅" if total and success_count == total else "❌"
-        html_lines.append(
-            f"<p><strong>{marker}{escape(platform)}({success_count}/{total}):</strong></p>"
-        )
-        html_lines.append("<ul>")
-        for item in items:
-            html_lines.append(f"<li>{escape(_format_notification_item(item))}</li>")
-        html_lines.append("</ul>")
-    html_lines.append("<p>AUTO-MAS 敬上</p>")
-    html_content = "".join(html_lines)
-    failed_channels: list[str] = []
-
-    # 分发到所有已启用的渠道
-    if not await _send_notification_channel(
-        "系统",
-        lambda: Notify.push_plyer(
-            title=title,
-            message=plain_text,
-            ticker=title,
-            t=5,
-        ),
-    ):
-        failed_channels.append("系统")
-
-    # 邮件通知
-    if Config.get("Notify", "IfSendMail"):
-        to_address = Config.get("Notify", "ToAddress")
-        if not to_address:
-            logger.warning("邮件通知已启用，但未配置收件地址")
-            failed_channels.append("邮件")
-        elif not await _send_notification_channel(
-            "邮件",
-            lambda: Notify.send_mail(
-                mode="网页",
-                title=title,
-                content=html_content,
-                to_address=to_address,
-            ),
-        ):
-            failed_channels.append("邮件")
-
-    # Server酱通知
-    if Config.get("Notify", "IfServerChan"):
-        send_key = Config.get("Notify", "ServerChanKey")
-        if not send_key:
-            logger.warning("Server酱通知已启用，但未配置 SendKey")
-            failed_channels.append("Server酱")
-        elif not await _send_notification_channel(
-            "Server酱",
-            lambda: Notify.ServerChanPush(
-                title=title,
-                content=channel_text,
-                send_key=send_key,
-            ),
-        ):
-            failed_channels.append("Server酱")
-
-    # Webhook 通知
-    try:
-        for uid, webhook in Config.Notify_CustomWebhooks.items():
-            if webhook.get("Info", "Enabled"):
-                channel_name = f"Webhook {uid}"
-                if not await _send_notification_channel(
-                    channel_name,
-                    lambda webhook=webhook: Notify.WebhookPush(
-                        title=title,
-                        content=channel_text,
-                        webhook=webhook,
-                    ),
-                ):
-                    failed_channels.append(channel_name)
-    except Exception as e:
-        logger.warning(f"读取 Webhook 通知配置失败: {e}")
-        failed_channels.append("Webhook")
-
-    # Koishi 通知
-    if Config.get("Notify", "IfKoishiSupport") and not await _send_notification_channel(
-        "Koishi", lambda: Notify.send_koishi(f"{title}\n{plain_text}")
-    ):
-        failed_channels.append("Koishi")
-
-    return failed_channels
+    return list(dispatch_result.failed)
 
 
 __all__ = [

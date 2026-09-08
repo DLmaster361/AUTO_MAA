@@ -31,12 +31,13 @@ import httpx
 from app.core import Config
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
+
+from .community_contract import CommunitySignResult
 from .community_credentials import (
     is_community_credential_configured,
     parse_community_credential,
     validate_community_credential,
 )
-from .community_contract import CommunitySignInProgressError, CommunitySignResult
 from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
@@ -292,6 +293,8 @@ async def _run_taygedo_provider(
     on_credential_update: CredentialUpdateCallback | None = None,
 ) -> _CommunityProviderRun:
     from .taygedo import (
+        parse_taygedo_credential,
+        serialize_taygedo_credential,
         sign_taygedo,
         validate_taygedo_credential,
     )
@@ -310,11 +313,15 @@ async def _run_taygedo_provider(
             # 让 sign_taygedo 保留收尾兜底机会。
             await on_credential_update("TaygedoToken", updated_token)
 
-    community_results, _runtime_credential = await sign_taygedo(
+    community_results, runtime_credential = await sign_taygedo(
         token,
         proxy=Config.proxy,
         on_credential_update=capture_credential,
     )
+    # 云时长在登录凭据刷新之后才返回，收尾必须保存完整的最终快照。
+    final_token = serialize_taygedo_credential(runtime_credential)
+    if final_token != serialize_taygedo_credential(parse_taygedo_credential(token)):
+        updated_token = final_token
     return _CommunityProviderRun(
         results=community_results,
         platforms=(),

@@ -10,6 +10,12 @@
 #
 #       MYS_Game_Singin Copyright © 2023 GildedFlames
 #       https://github.com/GildedFlames/MYS_Game_Singin
+#
+#       MihoyoBBSTools Copyright (c) 2021-2022 Womsxd (MIT License)
+#       https://github.com/Womsxd/MihoyoBBSTools
+#
+#       A-game_checkin Copyright (c) 2025 yoshino-xiao7 (MIT License)
+#       https://github.com/yoshino-xiao7/A-game_checkin
 
 #   This file is part of AUTO-MAS.
 
@@ -443,7 +449,6 @@ def validate_miyoushe_cookie(cookie: str) -> None:
     """校验米游社凭据包含签到所需的 UID 和认证字段。"""
 
     session = prepare_miyoushe_session(cookie)
-    cookies = session.cookies
     if not session.capabilities.has_uid:
         raise ValueError("Cookie 缺少 UID 字段")
     if session.capabilities.has_cookie_token:
@@ -712,9 +717,9 @@ async def miyoushe_sign_in(
             f"{nickname}/{nickname}({game_uid})" if game_uid else f"{nickname}/米游社"
         )
 
-        # 检查今日是否已签到
+        # 检查今日是否已签到，并解析已签到日的奖励
         try:
-            is_signed = await _check_sign_info(
+            sign_info = await _fetch_miyoushe_sign_info(
                 effective_cookie,
                 game_cfg,
                 region,
@@ -722,14 +727,29 @@ async def miyoushe_sign_in(
                 proxy=proxy,
                 device_id=device_id,
             )
+            is_signed = bool(sign_info and sign_info.get("is_sign"))
             if is_signed:
+                sign_day = _parse_miyoushe_sign_day(
+                    sign_info.get("total_sign_day") if sign_info else None
+                )
+                reward = (
+                    await _fetch_miyoushe_sign_reward(
+                        effective_cookie,
+                        game_cfg,
+                        sign_day,
+                        proxy=proxy,
+                        device_id=device_id,
+                    )
+                    if sign_day
+                    else ""
+                )
                 results.append(
                     {
                         "account": account,
                         "game": game_cfg["name"],
                         "platform": "米游社",
                         "status": "已签到",
-                        "reward": "",
+                        "reward": reward,
                         "reason": "",
                     }
                 )
@@ -762,6 +782,31 @@ async def miyoushe_sign_in(
                 proxy=proxy,
                 device_id=device_id,
             )
+            if sign_result.get("status") in ("成功", "已签到"):
+                try:
+                    sign_info = await _fetch_miyoushe_sign_info(
+                        effective_cookie,
+                        game_cfg,
+                        region,
+                        game_uid,
+                        proxy=proxy,
+                        device_id=device_id,
+                    )
+                    sign_day = _parse_miyoushe_sign_day(
+                        sign_info.get("total_sign_day") if sign_info else None
+                    )
+                    if sign_day:
+                        reward = await _fetch_miyoushe_sign_reward(
+                            effective_cookie,
+                            game_cfg,
+                            sign_day,
+                            proxy=proxy,
+                            device_id=device_id,
+                        )
+                        if reward:
+                            sign_result["reward"] = reward
+                except Exception as e:
+                    logger.debug(f"解析{game_cfg['name']}签到奖励失败: {e}")
             results.append(sign_result)
             # cookie_token 过期被刷新后，同一轮后续游戏复用新 cookie，
             # 避免每个游戏重复走派生接口增加风控概率。
@@ -856,7 +901,17 @@ async def _get_game_roles(
     return roles
 
 
-async def _check_sign_info(
+def _parse_miyoushe_sign_day(value: object) -> int:
+    """把签到信息中的连续签到天数转成非负整数，无法解析时返回 0。"""
+
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+async def _fetch_miyoushe_sign_info(
     cookie: str,
     game_cfg: dict[str, object],
     region: str,
@@ -864,8 +919,9 @@ async def _check_sign_info(
     *,
     proxy: str | None = None,
     device_id: str = "",
-) -> bool:
-    """检查今日是否已签到"""
+) -> dict[str, object] | None:
+    """获取米游社签到信息；业务失败返回 None，网络异常仍上抛。"""
+
     headers = BASE_HEADERS.copy()
     query = f"lang=zh-cn&act_id={game_cfg['act_id']}&region={region}&uid={uid}"
     headers["DS"] = _generate_ds(query=query)
@@ -885,11 +941,93 @@ async def _check_sign_info(
         rsp = _safe_json_parse(response)
 
     if rsp.get("retcode") != 0:
-        return False
+        return None
 
-    sign_info = rsp.get("data", {})
-    is_sign = sign_info.get("is_sign", False)
-    return is_sign
+    sign_info = rsp.get("data")
+    if not isinstance(sign_info, dict):
+        return None
+    return sign_info
+
+
+async def _check_sign_info(
+    cookie: str,
+    game_cfg: dict[str, object],
+    region: str,
+    uid: str,
+    *,
+    proxy: str | None = None,
+    device_id: str = "",
+) -> bool:
+    """检查今日是否已签到（保留给旧调用方使用）。"""
+
+    sign_info = await _fetch_miyoushe_sign_info(
+        cookie,
+        game_cfg,
+        region,
+        uid,
+        proxy=proxy,
+        device_id=device_id,
+    )
+    return bool(sign_info and sign_info.get("is_sign"))
+
+
+async def _fetch_miyoushe_sign_reward(
+    cookie: str,
+    game_cfg: dict[str, object],
+    sign_day: int,
+    *,
+    proxy: str | None = None,
+    device_id: str = "",
+) -> str:
+    """按连续签到天数从 home 奖励列表解析今日奖励。"""
+
+    if sign_day < 1:
+        return ""
+
+    query = f"lang=zh-cn&act_id={game_cfg['act_id']}"
+    headers = BASE_HEADERS.copy()
+    headers["DS"] = _generate_ds(query=query)
+    headers["x-rpc-device_id"] = device_id or _generate_device_id(cookie)
+    headers.update(game_cfg.get("extra_headers", {}))
+
+    info_url = str(game_cfg.get("info_url", INFO_URL))
+    base_url = info_url.rsplit("/", 1)[0] if info_url.endswith("/info") else None
+    url = f"{base_url or HOME_URL}/home?{query}"
+
+    try:
+        resolved_proxy = proxy if proxy is not None else Config.proxy
+        async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+            response = await client.get(
+                url,
+                headers=headers,
+                cookies=_parse_cookie(cookie),
+                timeout=30.0,
+            )
+            rsp = _safe_json_parse(response)
+    except Exception as e:
+        logger.debug(f"获取{game_cfg['name']}签到奖励失败: {e}")
+        return ""
+
+    if rsp.get("retcode") != 0:
+        return ""
+
+    data = rsp.get("data")
+    if not isinstance(data, dict):
+        return ""
+
+    awards = data.get("awards") or []
+    if not isinstance(awards, list) or sign_day > len(awards):
+        return ""
+
+    award = awards[sign_day - 1]
+    if not isinstance(award, dict):
+        return ""
+
+    name = award.get("name") or ""
+    count = award.get("cnt", 1)
+    if not name:
+        return ""
+    return f"{name}x{count}"
 
 
 async def _do_sign(

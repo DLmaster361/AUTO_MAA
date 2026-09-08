@@ -22,12 +22,12 @@ from app.core import Config
 from app.core.notify import (
     DispatchResult,
     NotifyPayload,
+    dispatch_task_report,
     global_target,
     should_send_result,
 )
 from app.models.config import BetterGIUserConfig
 from app.services import Notify
-from app.tools.game_sign_notify import dispatch_task_report, get_task_game_sign_summary
 from app.utils import get_logger
 
 logger = get_logger("BetterGI 通知工具")
@@ -156,7 +156,7 @@ async def push_notification(
     if mode != "代理结果":
         return DispatchResult()
 
-    if not should_send_result(message):
+    if not should_send_result(message, task_info=task_info):
         return DispatchResult()
 
     message_text = (
@@ -172,11 +172,6 @@ async def push_notification(
         f"已完成用户数: {message['completed_count']}, "
         f"未完成用户数: {message['uncompleted_count']}"
     )
-    summary_text = (
-        get_task_game_sign_summary(task_info)
-        if task_info is not None and message.get("game_sign_summary")
-        else ""
-    )
     return await dispatch_task_report(
         NotifyPayload(
             title=title,
@@ -189,5 +184,4 @@ async def push_notification(
         ),
         [global_target(include_system=True)],
         task_info,
-        summary_text=summary_text,
     )

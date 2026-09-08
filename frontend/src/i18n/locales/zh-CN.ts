@@ -24,6 +24,9 @@ export default {
     unknown: '未知',
   },
   comp: {
+    changelog: {
+      empty: '本版本暂无更新日志',
+    },
     editUser: '编辑用户',
     addUser2: '添加用户',
     enabled: '启用',
@@ -3159,6 +3162,8 @@ export default {
       copyVersion: '软件版本：{version}',
       copyBackendDate: '后端日期：{date}',
       copyBackendHash: '后端哈希：{hash}',
+      viewChangelog: '更新日志',
+      changelogTitle: '{version} 更新日志',
     },
     tray: {
       section: '托盘菜单自定义',

@@ -32,6 +32,7 @@
 
 ### 破坏性变更
 
+- 森空岛获取凭据改为扫码登录，完善游戏社区签到、云游戏时长判断与日常便笺展示 by [@qiyinxi](https://github.com/qiyinxi)
 - MFW 项目新增了自动更新时机设置，升级后**已有脚本一律默认为「运行前更新」**；不需要的话在项目配置里改成「不更新」 by [@qiyinxi](https://github.com/qiyinxi)
 - HSR 专项脚本页的「游戏启动参数」已移除，**旧配置中的该项会在下次保存时自动清除**；窗口大小改由「1920×1080 窗口模式」开关控制 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA 专项代理接管配置时**会强制开启「开始唤醒」的账号切换开关**，以确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@qiyinxi](https://github.com/qiyinxi)
@@ -157,6 +158,7 @@
 - MFW专项 修复脚本侧强制停止任务（如 MaaEnd 分辨率不达标时的强停）被记成「任务完成」的问题：现在被强停的任务按失败记录，本轮剩余任务不再投递，不会再出现整轮一件事没做却报成全部成功 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复 MAA 卡死后不会被判定为超时、任务一直挂着的问题：MAA 每隔一段时间输出的日志停滞提示被当成任务仍在推进，把超时计时反复重置，剿灭等超时阈值长于提示间隔的模式永远等不到超时；现已识别新旧两版 MAA 的该提示，MAA 的五种界面语言均生效 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
+- BetterGI专项、ZZZ-OD专项 修复任务出错时提示送不到前端、用户看到的报错与实际出错原因无关的问题 by [@qiyinxi](https://github.com/qiyinxi)
 
 ### 开发流程
 

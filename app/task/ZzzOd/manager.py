@@ -22,8 +22,10 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import get_logger
@@ -141,10 +143,10 @@ class ZzzOdManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -201,10 +203,10 @@ class ZzzOdManager(TaskExecuteBase):
                     for user in inject_users:
                         if user.status == "等待":
                             user.status = "异常"
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": sub_check},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=sub_check),
                     )
                 else:
                     ran_any = True
@@ -221,10 +223,10 @@ class ZzzOdManager(TaskExecuteBase):
                 if sub_check != "Pass":
                     if direct_user.status == "等待":
                         direct_user.status = "异常"
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": sub_check},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=sub_check),
                     )
                     continue
                 ran_any = True
@@ -232,10 +234,10 @@ class ZzzOdManager(TaskExecuteBase):
             if not ran_any:
                 self.check_result = "当前没有可执行的用户"
                 self.script_info.status = "异常"
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": self.check_result},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=self.check_result),
                 )
             return
 
@@ -243,10 +245,10 @@ class ZzzOdManager(TaskExecuteBase):
         if account_switch == "MAS切换":
             self.check_result = "MAS切换暂未开放, 请改用单实例切换或多实例切换"
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
@@ -267,8 +269,10 @@ class ZzzOdManager(TaskExecuteBase):
             if sub_check != "Pass":
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id, type="Info", data={"Error": sub_check}
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=sub_check),
                 )
                 continue
 
@@ -278,10 +282,10 @@ class ZzzOdManager(TaskExecuteBase):
         if not ran_any:
             self.check_result = "当前没有可执行的用户"
             self.script_info.status = "异常"
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
 
     async def final_task(self):
@@ -361,10 +365,13 @@ class ZzzOdManager(TaskExecuteBase):
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
+                        ),
                     )
         finally:
             if script_cfg.is_locked:
@@ -396,8 +403,8 @@ class ZzzOdManager(TaskExecuteBase):
                 )
 
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"ZZZ-OD 任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"ZZZ-OD 任务出现异常: {e}"),
             )

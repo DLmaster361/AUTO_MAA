@@ -1721,6 +1721,430 @@ async def get_bettergi_auto_pathing_tree_api(scriptId: str) -> BetterGIPathingTr
 
 
 @router.get(
+    "/bettergi/one-dragon/settings",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 一条龙设置项（右栏按任务分组展示）",
+    response_model=BetterGIOneDragonSettingsOut,
+    status_code=200,
+)
+async def get_bettergi_one_dragon_settings_api(
+    scriptId: str, userId: str, configName: str = "", groupName: str = ""
+) -> BetterGIOneDragonSettingsOut:
+    """返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+
+    供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
+    ``groupName`` 为右栏当前编辑的内置组名，战斗 4 项 Plan 回显按其查映射，
+    缺省/不匹配时跳过 Plan 回显。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        _bettergi_user_id(script_config, userId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        data = one_dragon.read_user_one_dragon_settings(
+            root, scriptId, userId, configName
+        )
+        # 战斗4项：用 Plan 中的执行层参数回显右栏（原生副本已不再存这些字段）。
+        # 第三参必须传 groupName（内置组名），传 configName 会导致 Plan 回显失效。
+        data = _read_combat_from_plan(script_config, userId, groupName, "dragon", data)
+        return BetterGIOneDragonSettingsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 项一条龙设置",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGIOneDragonSettingsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
+
+
+@router.post(
+    "/bettergi/one-dragon/settings",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 一条龙设置项到 per-user 副本",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_one_dragon_settings_api(
+    req: BetterGIOneDragonSettingsIn = Body(...),
+) -> OutBase:
+    """把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。"""
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        _bettergi_user_id(script_config, req.userId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        # 战斗4项：可映射字段仅写 Plan，不可映射字段（如每周秘境表）仍落原生副本。
+        # 注意第三参是「右栏当前编辑的内置组名」（前端 groupName），绝不能传 configName——
+        # RIGHTBAR_TO_PLAN 按组名（自动秘境/自动地脉花…）查映射，传配置名会导致
+        # Plan 路由静默失效，周表/每日行等白名单外键（StrategyName/leyLineDailyEnabled/
+        # team/country/LeyLineDefault* 等）全部丢弃。
+        native_leftover, new_plan = _route_combat_to_plan(
+            script_config, req.userId, req.groupName, req.settings, "dragon"
+        )
+        if new_plan is not None:
+            user_config = _bettergi_user_config(script_config, req.userId)
+            await user_config.set("OneDragon", "Plan", new_plan)
+        if native_leftover:
+            one_dragon.write_user_one_dragon_settings(
+                root, req.scriptId, req.userId, req.configName, native_leftover
+            )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存 {len(req.settings)} 项一条龙设置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/bettergi/one-dragon/plan/step-enabled",
+    tags=["BetterGI"],
+    summary="设置一条龙 Plan 某步骤的启用状态（按实例名，支持 基名-后缀）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def set_one_dragon_plan_step_enabled(
+    scriptId: str = Query(...),
+    userId: str = Query(...),
+    name: str = Query(...),
+    enabled: bool = Query(True),
+) -> OutBase:
+    """按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
+
+    步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
+    「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
+    一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+
+    步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
+    后端无步骤可写，刷新后回退。
+    """
+    from app.task.BetterGI.tools import one_dragon_plan
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        _bettergi_user_id(script_config, userId)
+        user_config = _bettergi_user_config(script_config, userId)
+        plan = one_dragon_plan.parse_one_dragon_plan(
+            user_config.get("OneDragon", "Plan") or ""
+        )
+        target = next((s for s in plan if s.get("name") == name), None)
+        if target is None:
+            plan.append(
+                {
+                    "uid": uuid.uuid4().hex[:12],
+                    "kind": "builtin",
+                    "name": name,
+                    "enabled": enabled,
+                    "settings": {},
+                }
+            )
+        else:
+            target["enabled"] = enabled
+        await user_config.set("OneDragon", "Plan", one_dragon_plan.plan_to_json(plan))
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已更新步骤 {name} 启用={enabled}",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/global-domain/settings",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 全局 config.json 的秘境刷取配置段",
+    response_model=BetterGIGlobalDomainSettingsOut,
+    status_code=200,
+)
+async def get_bettergi_global_domain_settings_api(
+    scriptId: str, userId: str = "", groupName: str = ""
+) -> BetterGIGlobalDomainSettingsOut:
+    """返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
+
+    ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+    使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+    BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        if userId:
+            _bettergi_user_id(script_config, userId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        data = (
+            one_dragon.read_user_global_domain_settings(root, scriptId, userId)
+            if userId
+            else one_dragon.read_global_domain_settings(root)
+        )
+        # 战斗4项（自动秘境）的可映射字段（领奖树脂/分解圣遗物/奖励识别等）在 Plan 中回显
+        if userId:
+            data = _read_combat_from_plan(script_config, userId, groupName, "globalDomain", data)
+        return BetterGIGlobalDomainSettingsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 项秘境刷取配置",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGIGlobalDomainSettingsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
+
+
+@router.post(
+    "/bettergi/global-domain/settings",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 全局 config.json 的秘境刷取配置段",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_global_domain_settings_api(
+    req: BetterGIGlobalDomainSettingsIn = Body(...),
+) -> OutBase:
+    """把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。"""
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        if req.userId:
+            _bettergi_user_id(script_config, req.userId)
+            # 战斗4项（自动秘境）可映射字段仅写 Plan；maxArtifactStar 等全局共享字段仍落副本
+            native_leftover, new_plan = _route_combat_to_plan(
+                script_config, req.userId, req.groupName, req.settings, "globalDomain"
+            )
+            if new_plan is not None:
+                user_config = _bettergi_user_config(script_config, req.userId)
+                await user_config.set("OneDragon", "Plan", new_plan)
+            if native_leftover:
+                one_dragon.write_user_global_domain_settings(
+                    req.scriptId, req.userId, native_leftover
+                )
+        else:
+            one_dragon.write_global_domain_settings(root, req.settings)
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存 {len(req.settings)} 项秘境刷取配置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/global-stygian/settings",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 全局 config.json 的自动幽境危战设置段",
+    response_model=BetterGIGlobalStygianSettingsOut,
+    status_code=200,
+)
+async def get_bettergi_global_stygian_settings_api(
+    scriptId: str, userId: str = "", groupName: str = ""
+) -> BetterGIGlobalStygianSettingsOut:
+    """返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
+
+    ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+    使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+    BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        if userId:
+            _bettergi_user_id(script_config, userId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        data = (
+            one_dragon.read_user_global_stygian_settings(root, scriptId, userId)
+            if userId
+            else one_dragon.read_global_stygian_settings(root)
+        )
+        # 战斗4项（自动幽境危战）全部字段在 Plan 中回显
+        if userId:
+            data = _read_combat_from_plan(script_config, userId, groupName, "globalStygian", data)
+        return BetterGIGlobalStygianSettingsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 项幽境危战设置",
+            data=data,
+        )
+    except Exception as e:
+        return BetterGIGlobalStygianSettingsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={},
+        )
+
+
+@router.post(
+    "/bettergi/global-stygian/settings",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 全局 config.json 的自动幽境危战设置段",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_global_stygian_settings_api(
+    req: BetterGIGlobalStygianSettingsIn = Body(...),
+) -> OutBase:
+    """把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。"""
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        if req.userId:
+            _bettergi_user_id(script_config, req.userId)
+            # 战斗4项（自动幽境危战）全部字段仅写 Plan，不再落全局副本
+            native_leftover, new_plan = _route_combat_to_plan(
+                script_config, req.userId, req.groupName, req.settings, "globalStygian"
+            )
+            if new_plan is not None:
+                user_config = _bettergi_user_config(script_config, req.userId)
+                await user_config.set("OneDragon", "Plan", new_plan)
+            if native_leftover:
+                one_dragon.write_user_global_stygian_settings(
+                    req.scriptId, req.userId, native_leftover
+                )
+        else:
+            one_dragon.write_global_stygian_settings(root, req.settings)
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存 {len(req.settings)} 项幽境危战设置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
+    "/bettergi/domain-catalog",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 每周秘境候选与每秘境三档奖励物",
+    response_model=BetterGIDomainCatalogOut,
+    status_code=200,
+)
+async def get_bettergi_domain_catalog_api(
+    scriptId: str,
+) -> BetterGIDomainCatalogOut:
+    """返回 BetterGI 每周秘境可选秘境目录与分档奖励物。
+
+    数据源：官方传送点 tp.json（GameTask/AutoTrackPath/Assets/tp.json）中
+    Bless/Forgery/Mastery 三类 Domain 点（含奖励物）；tp.json 缺失或为空时返回空目录。
+    供「每周秘境」表格的秘境/奖励下拉联动使用（奖励仍按 BGI 语义存 0~3 序号）。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        source, items = one_dragon.scan_domain_catalog(root)
+        data = [BetterGIDomainCatalogItem(**item) for item in items]
+        return BetterGIDomainCatalogOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个秘境",
+            data=data,
+            source=source or None,
+        )
+    except Exception as e:
+        return BetterGIDomainCatalogOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+            source=None,
+        )
+
+
+@router.post(
+    "/bettergi/script-group/save",
+    tags=["BetterGI"],
+    summary="保存 BetterGI 配置组 json 到 per-user 副本",
+    response_model=OutBase,
+    status_code=200,
+)
+async def save_bettergi_script_group_api(
+    req: BetterGIScriptGroupSaveIn = Body(...),
+) -> OutBase:
+    """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
+    该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+
+    不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+    """
+
+    try:
+        script_config = _bettergi_script_config(req.scriptId)
+        _bettergi_user_id(script_config, req.userId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        projects = (req.data or {}).get("projects")
+        if not isinstance(projects, list):
+            raise ValueError("projects 必须为数组（按执行顺序的项目列表）")
+        out = one_dragon.write_user_script_group(
+            root, req.scriptId, req.userId, req.name, req.data
+        )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已保存配置组 {req.name}（共 {len(projects)} 个项目）到用户配置",
+        )
+    except Exception as e:
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
     "/zzzod/instances",
     tags=["ZZZ-OD"],
     summary="获取 zzz-od 实例（账号）列表",

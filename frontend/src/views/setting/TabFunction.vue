@@ -13,8 +13,9 @@ import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
 
 const { t } = useI18n()
 
-const VDD_DOWNLOAD_URL =
-  'https://github.com/nomi-san/parsec-vdd/releases/download/v0.45.1/ParsecVDisplay-v0.45-setup.exe'
+// 指向 releases 页而不是某一版安装包的直链：直链会随上游发版失效，而且点下去直接落一个 exe，
+// 用户没机会先看清自己在装什么。releases/latest 永远指向最新一版，页面上的 `-setup.exe` 就是它。
+const VDD_DOWNLOAD_URL = 'https://github.com/nomi-san/parsec-vdd/releases/latest'
 
 // 分辨率固定 1920x1080：实测只有它 Windows 给 100% 缩放，再高会被自动上缩放，
 // 游戏窗口又要面对 DPI 虚拟化——而虚拟屏本来就是为了绕开这类问题。所以这里只让用户
@@ -364,7 +365,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         <h3>{{ t('setting.display.section') }}</h3>
       </div>
       <a-alert type="info" show-icon class="vdd-alert">
-        <template #message>{{ t('setting.display.intro') }}</template>
+        <template #message>
+          <i18n-t keypath="setting.display.intro" tag="span" scope="global">
+            <template #driverLink>
+              <a href="#" @click.prevent="openVddDownload">{{
+                t('setting.display.introDriverLink')
+              }}</a>
+            </template>
+          </i18n-t>
+        </template>
       </a-alert>
       <a-row :gutter="24">
         <a-col :span="8">

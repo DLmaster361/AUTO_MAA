@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: version-contributors-dev
@@ -27,75 +28,116 @@ jobs:
           ref: dev
           fetch-depth: 0
 
-      - name: 获取 PR 提交
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: git fetch --no-tags origin "pull/${PR_NUMBER}/head:refs/remotes/origin/pr-${PR_NUMBER}"
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
 
-      - name: 标记更新条目贡献者
-        id: append
+      - name: 标记并提交更新条目贡献者
         env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_AUTHOR_URL: ${{ github.event.pull_request.user.html_url }}
+          GH_TOKEN: ${{ github.token }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          python - <<'PY'
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 人工合并不受 workflow concurrency 限制。每次都从最新 dev 重算；若推送期间
+          # dev 又前进，就丢弃这次本地提交并重试，避免在旧结果上 rebase 同一个热文件。
+          for attempt in 1 2 3; do
+            git fetch --no-tags origin dev
+            git checkout --detach --force origin/dev
+
+            python - <<'PY'
           import json
           import os
           import subprocess
-          from pathlib import Path
+          import sys
 
-          def load_version(ref: str) -> dict:
-              content = subprocess.check_output(
-                  ["git", "show", f"{ref}:res/version.json"],
+          sys.path.insert(0, "scripts")
+          import changelog
+
+          addition = changelog.validate_pr_changelog(
+              changelog.read_changelog_ref(os.environ["PR_BASE_SHA"]),
+              changelog.read_changelog_ref(os.environ["PR_MERGE_SHA"]),
+          )
+          metadata = json.loads(
+              subprocess.check_output(
+                  [
+                      "gh",
+                      "pr",
+                      "view",
+                      os.environ["PR_NUMBER"],
+                      "--json",
+                      "author,commits",
+                  ],
                   text=True,
                   encoding="utf-8",
               )
-              return json.loads(content)
+          )
+          authors = [metadata["author"]]
+          for commit in metadata["commits"]:
+              authors.extend(commit.get("authors", []))
 
-          path = Path("res/version.json")
-          current = json.loads(path.read_text(encoding="utf-8"))
-          base = load_version(os.environ["PR_BASE_SHA"])
-          head = load_version(f"origin/pr-{os.environ['PR_NUMBER']}")
-          suffix = f" by [@{os.environ['PR_AUTHOR']}]({os.environ['PR_AUTHOR_URL']})"
-          additions: set[tuple[str, str, str]] = set()
+          ignored_logins = {"claude", "copilot"}
+          seen = set()
+          suffixes = []
+          for author in authors:
+              if not isinstance(author, dict):
+                  continue
+              login = author.get("login")
+              key = login.lower() if login else None
+              if (
+                  key is None
+                  or key in seen
+                  or key in ignored_logins
+                  or key.endswith("[bot]")
+              ):
+                  continue
+              seen.add(key)
+              suffixes.append(f" by [@{login}](https://github.com/{login})")
 
-          for version, info in head.get("version_info", {}).items():
-              base_info = base.get("version_info", {}).get(version, {})
-              for category, items in info.items():
-                  if not isinstance(items, list):
-                      continue
-                  base_items = set(base_info.get(category, []))
-                  additions.update(
-                      (version, category, item)
-                      for item in items
-                      if isinstance(item, str) and item not in base_items
-                  )
+          _, current, current_dates = changelog.parse_changelog(
+              changelog.read_text(changelog.CHANGELOG_PATH)
+          )
 
           changed = False
-          for version, category, item in additions:
-              items = current.get("version_info", {}).get(version, {}).get(category, [])
-              if item in items and suffix not in item:
-                  items[items.index(item)] = f"{item}{suffix}"
-                  changed = True
+          for version, categories in current.items():
+              for category, items in categories.items():
+                  for index, item in enumerate(items):
+                      if (version, category, item) != addition:
+                          continue
+
+                      updated = item
+                      for suffix in suffixes:
+                          if suffix not in updated:
+                              updated = f"{updated}{suffix}"
+                      if updated != item:
+                          items[index] = updated
+                          changed = True
 
           if changed:
-              path.write_text(
-                  json.dumps(current, ensure_ascii=False, indent=4) + "\n",
-                  encoding="utf-8",
+              changelog.write_text(
+                  changelog.CHANGELOG_PATH,
+                  changelog.render_changelog(current, current_dates),
               )
-
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-              output.write(f"changed={str(changed).lower()}\n")
           PY
+            # 署名写进 CHANGELOG.md 正文后，生成物要跟着重算。
+            python scripts/changelog.py sync
+            git add CHANGELOG.md res/version.json frontend/package.json app/core/config.py pyproject.toml uv.lock
+            if git diff --cached --quiet; then
+              echo "无需补充贡献者署名"
+              exit 0
+            fi
 
-      - name: 提交贡献者信息
-        if: steps.append.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add res/version.json
-          git commit -m "chore(version): mark PR entry contributors"
-          git pull --rebase origin dev
-          git push origin HEAD:dev
+            git commit -m "chore(version): mark PR entry contributors"
+            if git push origin HEAD:dev; then
+              exit 0
+            fi
+            echo "dev 在第 ${attempt} 次提交期间发生变化，重新计算"
+          done
+
+          echo "连续 3 次推送均遇到 dev 更新，未能写入贡献者署名" >&2
+          exit 1

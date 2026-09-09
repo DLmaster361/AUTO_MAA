@@ -646,20 +646,6 @@ async def miyoushe_sign_in(
     _ensure_uid_aliases(effective_cookies, stuid)
     effective_cookie = _build_cookie_str(effective_cookies)
 
-    # 米游币是账号级任务，不依赖任何游戏角色；复用本轮已经补齐的 Cookie
-    # 和稳定设备 ID，并把结果并入同一社区结果链。
-    from .miyoushe_coin import run_miyoushe_coin_tasks
-
-    results.append(
-        await run_miyoushe_coin_tasks(
-            effective_cookies,
-            account_name=account_name or stuid,
-            account_uid=account_uid,
-            device_id=device_id,
-            proxy=proxy,
-        )
-    )
-
     # 获取游戏角色列表
     try:
         roles = await _get_game_roles(

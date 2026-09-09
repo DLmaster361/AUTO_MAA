@@ -12,7 +12,9 @@ import pytest
 
 import app.core  # noqa: F401  # 初始化宿主配置
 
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import installer as installer_module
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    installer as installer_module,
+)
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV,
     AUTO_MAS_MIRROR_PYTHON_ENV,
@@ -67,7 +69,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_uv_cache_dir_defaults_to_pool_relative_path_when_unset(tmp_path) -> None:
-    assert resolve_uv_cache_dir(tmp_path) == (tmp_path / UV_CACHE_RELATIVE_PATH).resolve()
+    assert (
+        resolve_uv_cache_dir(tmp_path) == (tmp_path / UV_CACHE_RELATIVE_PATH).resolve()
+    )
 
 
 def test_uv_cache_dir_uses_injected_absolute_path(tmp_path, monkeypatch) -> None:
@@ -80,7 +84,9 @@ def test_uv_cache_dir_uses_injected_absolute_path(tmp_path, monkeypatch) -> None
     assert resolved == injected.resolve()
 
 
-def test_uv_cache_dir_ignores_relative_injected_value(tmp_path, monkeypatch, caplog) -> None:
+def test_uv_cache_dir_ignores_relative_injected_value(
+    tmp_path, monkeypatch, caplog
+) -> None:
     monkeypatch.setenv(AUTO_MAS_UV_CACHE_DIR_ENV, "relative/cache/uv")
 
     with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
@@ -105,7 +111,8 @@ def test_uv_cache_dir_ignores_injected_value_with_missing_parent(
 
 def test_python_install_dir_defaults_to_pool_relative_path_when_unset(tmp_path) -> None:
     assert (
-        resolve_python_install_dir(tmp_path) == (tmp_path / UV_PYTHON_RELATIVE_PATH).resolve()
+        resolve_python_install_dir(tmp_path)
+        == (tmp_path / UV_PYTHON_RELATIVE_PATH).resolve()
     )
 
 
@@ -166,7 +173,9 @@ def test_package_index_offline_only_when_key_exists_and_is_empty(monkeypatch) ->
     assert is_package_index_offline() is True
     monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "   ")
     assert is_package_index_offline() is True
-    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-a.invalid/simple")
+    monkeypatch.setenv(
+        AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-a.invalid/simple"
+    )
     assert is_package_index_offline() is False
 
 
@@ -175,7 +184,9 @@ def test_package_index_candidates_explicit_single_value_only(monkeypatch) -> Non
     assert resolve_package_index_candidates() == ["https://mirror-a.invalid/simple"]
 
 
-def test_package_index_candidates_splits_trims_and_drops_empty_items(monkeypatch) -> None:
+def test_package_index_candidates_splits_trims_and_drops_empty_items(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv(
         AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV,
         " https://mirror-a.invalid/simple ; ;https://mirror-b.invalid/simple;",
@@ -186,8 +197,12 @@ def test_package_index_candidates_splits_trims_and_drops_empty_items(monkeypatch
     ]
 
 
-def test_package_index_candidates_explicit_value_precedes_mirror_list(monkeypatch) -> None:
-    monkeypatch.setenv(AUTO_MAS_UV_INDEX_URL_ENV, "https://mirror-explicit.invalid/simple")
+def test_package_index_candidates_explicit_value_precedes_mirror_list(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        AUTO_MAS_UV_INDEX_URL_ENV, "https://mirror-explicit.invalid/simple"
+    )
     monkeypatch.setenv(
         AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV,
         "https://mirror-a.invalid/simple;https://mirror-b.invalid/simple",
@@ -226,10 +241,16 @@ def test_python_mirror_candidates_none_when_nothing_configured() -> None:
 def test_python_mirror_candidates_orders_explicit_before_fallback_before_list(
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv(AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV, "https://py-fallback.invalid")
-    monkeypatch.setenv(AUTO_MAS_MIRROR_PYTHON_ENV, "https://py-a.invalid;https://py-b.invalid")
+    monkeypatch.setenv(
+        AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV, "https://py-fallback.invalid"
+    )
+    monkeypatch.setenv(
+        AUTO_MAS_MIRROR_PYTHON_ENV, "https://py-a.invalid;https://py-b.invalid"
+    )
 
-    assert _resolve_python_mirror_candidates(explicit_mirror="https://py-explicit.invalid") == [
+    assert _resolve_python_mirror_candidates(
+        explicit_mirror="https://py-explicit.invalid"
+    ) == [
         "https://py-explicit.invalid",
         "https://py-fallback.invalid",
         "https://py-a.invalid",
@@ -246,7 +267,9 @@ def test_index_rotation_retries_next_candidate_and_records_the_winner(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv(AUTO_MAS_UV_INDEX_URL_ENV, "https://mirror-a.invalid/simple")
-    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-b.invalid/simple")
+    monkeypatch.setenv(
+        AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-b.invalid/simple"
+    )
 
     calls: list[dict] = []
 
@@ -281,7 +304,9 @@ def test_index_rotation_raises_the_last_error_after_every_candidate_fails(
     tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv(AUTO_MAS_UV_INDEX_URL_ENV, "https://mirror-a.invalid/simple")
-    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-b.invalid/simple")
+    monkeypatch.setenv(
+        AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-b.invalid/simple"
+    )
 
     calls: list[list[str]] = []
 
@@ -311,7 +336,9 @@ def test_index_rotation_is_bypassed_when_uv_index_url_is_already_set(
     # 用户已经显式设置了 uv 原生的 UV_INDEX_URL：沿用 uv 自身的解析，不参与
     # 本机制的候选与重试，即使同时配置了 AUTO_MAS_MIRROR_PACKAGE_INDEX。
     monkeypatch.setenv("UV_INDEX_URL", "https://user-set.invalid/simple")
-    monkeypatch.setenv(AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-b.invalid/simple")
+    monkeypatch.setenv(
+        AUTO_MAS_MIRROR_PACKAGE_INDEX_ENV, "https://mirror-b.invalid/simple"
+    )
 
     calls: list[list[str]] = []
 
@@ -404,7 +431,9 @@ def test_missing_injection_key_keeps_online_default_behavior(
 def test_python_distribution_mirror_rotation_switches_env_between_attempts(
     tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setenv(AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV, "https://py-mirror-a.invalid")
+    monkeypatch.setenv(
+        AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV, "https://py-mirror-a.invalid"
+    )
     monkeypatch.setenv(AUTO_MAS_MIRROR_PYTHON_ENV, "https://py-mirror-b.invalid")
 
     calls: list[dict] = []
@@ -435,7 +464,9 @@ def test_python_distribution_mirror_rotation_switches_env_between_attempts(
 def test_python_distribution_mirror_rotation_raises_after_every_candidate_fails(
     tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setenv(AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV, "https://py-mirror-a.invalid")
+    monkeypatch.setenv(
+        AUTO_MAS_UV_PYTHON_INSTALL_MIRROR_ENV, "https://py-mirror-a.invalid"
+    )
 
     def fake_run(command, **kwargs):
         return _FakeCompleted(1, stderr="still unreachable")

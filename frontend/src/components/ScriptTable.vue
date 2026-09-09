@@ -81,6 +81,12 @@
                     alt="BetterGI"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'ZzzOd'"
+                    src="@/assets/zzz-od.ico"
+                    alt="ZZZ-OD"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -736,7 +742,11 @@ const isMaaEndPresetSupported = (script: Script) => {
 }
 
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
+  return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
+}
+
+const handleSaveMaaEndConfig = (script: Script) => {
+  emit('saveMaaEndConfig', script)
 }
 
 const handleStartOkwwConfig = (script: Script) => {
@@ -763,6 +773,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   OkNte: 'blue',
   HSR: 'purple',
   BetterGI: 'gold',
+  ZzzOd: 'volcano',
   General: 'green',
 }
 

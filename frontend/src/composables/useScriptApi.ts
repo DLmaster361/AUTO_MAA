@@ -9,12 +9,17 @@ import {
   type MaaFWAgentEnvPrepareOut,
   ScriptCreateIn,
   type ScriptReorderIn,
+  type ZzzOdUserConfig,
   HsrService,
   MaaFwService,
   Service,
 } from '@/api'
 import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import {
+  MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS,
+  MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
+} from '@/utils/maaEndProtocolSpace'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -41,6 +46,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
   BetterGI: ScriptCreateIn.type.BETTER_GI,
+  ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -54,10 +60,19 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
+  ZzzOdConfig: 'ZzzOd',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
+}
+
+const normalizeMaaEndOptionArray = <T extends string>(
+  value: unknown,
+  fallback: readonly T[]
+): T[] => {
+  if (!Array.isArray(value)) return [...fallback]
+  return value.filter((item): item is T => typeof item === 'string' && fallback.includes(item as T))
 }
 
 export function useScriptApi() {
@@ -105,9 +120,7 @@ export function useScriptApi() {
   }
 
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
-  const getScripts = async (
-    manageLoading: boolean = true
-  ): Promise<ScriptDetail[]> => {
+  const getScripts = async (manageLoading: boolean = true): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
       error.value = null
@@ -608,10 +621,18 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfCreditShoppingN2 != null
                             ? maaEndUserData.Task.IfCreditShoppingN2
                             : true,
-                        IfSeizeEntrustTask:
-                          maaEndUserData.Task?.IfSeizeEntrustTask != null
-                            ? maaEndUserData.Task.IfSeizeEntrustTask
+                        IfSeizeDeliveryJobs:
+                          maaEndUserData.Task?.IfSeizeDeliveryJobs != null
+                            ? maaEndUserData.Task.IfSeizeDeliveryJobs
                             : true,
+                        SeizeDeliveryJobsReward:
+                          maaEndUserData.Task?.SeizeDeliveryJobsReward != null
+                            ? maaEndUserData.Task.SeizeDeliveryJobsReward
+                            : 15.9,
+                        SeizeDeliveryJobsCommissionSource:
+                          maaEndUserData.Task?.SeizeDeliveryJobsCommissionSource != null
+                            ? maaEndUserData.Task.SeizeDeliveryJobsCommissionSource
+                            : 'Unlimited',
                         IfAutoEcoFarm:
                           maaEndUserData.Task?.IfAutoEcoFarm != null
                             ? maaEndUserData.Task.IfAutoEcoFarm
@@ -628,6 +649,18 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfAutoCollect != null
                             ? maaEndUserData.Task.IfAutoCollect
                             : true,
+                        AutoCollectMode:
+                          maaEndUserData.Task?.AutoCollectMode === 'Concentrated'
+                            ? 'Concentrated'
+                            : 'Distributed',
+                        AutoCollectRoutes: normalizeMaaEndOptionArray(
+                          maaEndUserData.Task?.AutoCollectRoutes,
+                          MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => option.value)
+                        ),
+                        AutoCollectCommonRoutes: normalizeMaaEndOptionArray(
+                          maaEndUserData.Task?.AutoCollectCommonRoutes,
+                          MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option => option.value)
+                        ),
                         IfTrialOfSwordmancy:
                           maaEndUserData.Task?.IfTrialOfSwordmancy != null
                             ? maaEndUserData.Task.IfTrialOfSwordmancy
@@ -640,6 +673,10 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfResourceRecycleStation != null
                             ? maaEndUserData.Task.IfResourceRecycleStation
                             : true,
+                        IfPullCountCalculator:
+                          maaEndUserData.Task?.IfPullCountCalculator != null
+                            ? maaEndUserData.Task.IfPullCountCalculator
+                            : false,
                       },
                       Notify: {
                         Enabled:
@@ -794,9 +831,7 @@ export function useScriptApi() {
                             ? okwwUserData.Info.Password
                             : '',
                         Mode:
-                          okwwUserData.Info?.Mode !== undefined
-                            ? okwwUserData.Info.Mode
-                            : '脚本',
+                          okwwUserData.Info?.Mode !== undefined ? okwwUserData.Info.Mode : '脚本',
                         IfQuickConfig: isOkwwUser
                           ? okwwUserData.Info?.IfQuickConfig !== undefined
                             ? okwwUserData.Info.IfQuickConfig
@@ -1104,6 +1139,130 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (userIndex.type === 'ZzzOdUserConfig' && userData) {
+                    const zzzodUserData = userData as unknown as ZzzOdUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: zzzodUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          zzzodUserData.Info?.Name !== undefined
+                            ? zzzodUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          zzzodUserData.Info?.Status !== undefined
+                            ? zzzodUserData.Info.Status
+                            : true,
+                        Mode:
+                          zzzodUserData.Info?.Mode !== undefined
+                            ? zzzodUserData.Info.Mode
+                            : '用户',
+                        RemainedDay:
+                          zzzodUserData.Info?.RemainedDay !== undefined
+                            ? zzzodUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          zzzodUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? zzzodUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          zzzodUserData.Info?.ScriptBeforeTask !== undefined
+                            ? zzzodUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          zzzodUserData.Info?.IfScriptAfterTask !== undefined
+                            ? zzzodUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          zzzodUserData.Info?.ScriptAfterTask !== undefined
+                            ? zzzodUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          zzzodUserData.Info?.Notes !== undefined
+                            ? zzzodUserData.Info.Notes
+                            : '',
+                        Tag:
+                          zzzodUserData.Info?.Tag !== undefined
+                            ? zzzodUserData.Info.Tag
+                            : null,
+                      },
+                      Game: {
+                        GameRegion:
+                          zzzodUserData.Game?.GameRegion !== undefined
+                            ? zzzodUserData.Game.GameRegion
+                            : 'cn',
+                        GamePath:
+                          zzzodUserData.Game?.GamePath !== undefined
+                            ? zzzodUserData.Game.GamePath
+                            : '',
+                        GameLanguage:
+                          zzzodUserData.Game?.GameLanguage !== undefined
+                            ? zzzodUserData.Game.GameLanguage
+                            : 'cn',
+                        Account:
+                          zzzodUserData.Game?.Account !== undefined
+                            ? zzzodUserData.Game.Account
+                            : '',
+                        Password:
+                          zzzodUserData.Game?.Password !== undefined
+                            ? zzzodUserData.Game.Password
+                            : '',
+                        BilibiliAccountName:
+                          zzzodUserData.Game?.BilibiliAccountName !== undefined
+                            ? zzzodUserData.Game.BilibiliAccountName
+                            : '',
+                      },
+                      OneDragon: {
+                        AppList:
+                          zzzodUserData.OneDragon?.AppList !== undefined
+                            ? zzzodUserData.OneDragon.AppList
+                            : '[]',
+                      },
+                      Notify: {
+                        Enabled:
+                          zzzodUserData.Notify?.Enabled !== undefined
+                            ? zzzodUserData.Notify.Enabled
+                            : false,
+                        PushLogMode:
+                          zzzodUserData.Notify?.PushLogMode !== undefined
+                            ? zzzodUserData.Notify.PushLogMode
+                            : '汇总',
+                        IfSendStatistic:
+                          zzzodUserData.Notify?.IfSendStatistic !== undefined
+                            ? zzzodUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          zzzodUserData.Notify?.IfSendMail !== undefined
+                            ? zzzodUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          zzzodUserData.Notify?.ToAddress !== undefined
+                            ? zzzodUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          zzzodUserData.Notify?.IfServerChan !== undefined
+                            ? zzzodUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          zzzodUserData.Notify?.ServerChanKey !== undefined
+                            ? zzzodUserData.Notify.ServerChanKey
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          zzzodUserData.Data?.LastProxyDate !== undefined
+                            ? zzzodUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          zzzodUserData.Data?.ProxyTimes !== undefined
+                            ? zzzodUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          zzzodUserData.Data?.LastProxyStatus !== undefined
+                            ? zzzodUserData.Data.LastProxyStatus
+                            : '未知',
+                      },
+                    }
                   }
 
                   return null
@@ -1220,12 +1379,14 @@ export function useScriptApi() {
 
   const prepareMaaFWAgentEnv = async (
     path: string,
-    scriptId?: string
+    scriptId?: string,
+    force = false
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
     try {
       return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
         path,
         scriptId,
+        force,
       })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)

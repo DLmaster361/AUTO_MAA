@@ -116,7 +116,9 @@
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">{{ t('queue.cycleType') }}</span>
-                  <a-tooltip :title="cycleRunning ? t('queue.cycleLocked') : t('queue.cycleTypeTip')">
+                  <a-tooltip
+                    :title="cycleRunning ? t('queue.cycleLocked') : t('queue.cycleTypeTip')"
+                  >
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -287,8 +289,7 @@ const currentCycleEnabled = ref<boolean>(false)
 const { tasks: runtimeTasks } = useTaskRuntimeState()
 const cycleRunning = computed(() =>
   [...runtimeTasks.value.values()].some(
-    state =>
-      state.isCycle && state.queueId === activeQueueId.value && state.phase !== 'completed'
+    state => state.isCycle && state.queueId === activeQueueId.value && state.phase !== 'completed'
   )
 )
 // 新增：完成后操作状态

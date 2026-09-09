@@ -262,10 +262,17 @@ const STAGE_STARTED_PROGRESS = 10
  * 进度百分比只用 Runtime 真给的 `percent`：没有可靠总量时用 `indeterminate` 明确告诉
  * 界面展示持续活动状态。`progress=10` 只为兼容仍要求数字的旧消费方，不再作为精确百分比
  * 呈现；这样既保留当前 IPC 形状，也不会让长耗时阶段看起来卡死在 10%。
+ *
+ * Runtime 会为 `uv.download` 发真实字节百分比，且写入末块时必定回报一次 100；但一个界面段
+ * 里装着好几个 Runtime stage（`uv.download` 之后还有校验、解压、`python.*`），段没结束就
+ * 不能让渲染层看到 100，所以 running 的百分比钳在 [10, 99]，100 只由段收口发出。段内进度
+ * 还要单调：镜像轮换会让下载从 0 重来，后续无 percent 的事件也不能把数字压回段起始值。
  */
 export class BootstrapProgressBridge {
   private index = -1
   private closed = false
+  /** 当前段已经发出过的最高进度；进新段时重置，保证段内只增不减。 */
+  private stageProgress = STAGE_STARTED_PROGRESS
 
   constructor(private readonly emit: (update: BootstrapProgressUpdate) => void) {}
 
@@ -299,20 +306,27 @@ export class BootstrapProgressBridge {
     if (target > this.index) {
       this.closeStagesBefore(target)
       this.index = target
+      // 段刚开始时若已有真实百分比就照发，这是 dev 既有行为；只是同样受 [10, 99] 约束，
+      // 并作为本段单调递增的起点。
+      this.stageProgress =
+        percent === undefined ? STAGE_STARTED_PROGRESS : clampRunningPercent(percent)
       this.emit({
         stage: RUNTIME_BOOTSTRAP_STAGE_ORDER[target],
         status: 'started',
-        progress: percent === undefined ? STAGE_STARTED_PROGRESS : clampPercent(percent),
+        progress: this.stageProgress,
         message,
         indeterminate: percent === undefined,
       })
       return
     }
 
+    if (percent !== undefined) {
+      this.stageProgress = Math.max(this.stageProgress, clampRunningPercent(percent))
+    }
     this.emit({
       stage: RUNTIME_BOOTSTRAP_STAGE_ORDER[target],
       status: 'running',
-      progress: percent === undefined ? STAGE_STARTED_PROGRESS : clampPercent(percent),
+      progress: this.stageProgress,
       message,
       indeterminate: percent === undefined,
     })
@@ -353,9 +367,10 @@ export class BootstrapProgressBridge {
   }
 }
 
-function clampPercent(percent: number): number {
+/** running 途中的百分比钳在 [段起始值, 99]：100 留给段收口，避免段内多个 stage 提前显示完成。 */
+function clampRunningPercent(percent: number): number {
   if (!Number.isFinite(percent)) return STAGE_STARTED_PROGRESS
-  return Math.min(100, Math.max(0, Math.round(percent)))
+  return Math.min(99, Math.max(STAGE_STARTED_PROGRESS, Math.round(percent)))
 }
 
 // ==================== 结果 ====================

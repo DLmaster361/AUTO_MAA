@@ -334,6 +334,12 @@
                 alt="BetterGI"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'ZzzOd'"
+                src="@/assets/zzz-od.ico"
+                alt="ZZZ-OD"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -465,6 +471,17 @@
             <div class="type-info">
               <div class="type-title">{{ t('scripts.type.BetterGI') }}</div>
               <div class="type-description">{{ t('scripts.typeDesc.BetterGI') }}</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="ZzzOd" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/zzz-od.ico" alt="ZZZ-OD" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">{{ t('scripts.type.ZzzOd') }}</div>
+              <div class="type-description">{{ t('scripts.typeDesc.ZzzOd') }}</div>
             </div>
           </div>
         </a-radio-button>
@@ -725,6 +742,7 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   MaaFW: 'maafw',
   HSR: 'hsr',
   BetterGI: 'bettergi',
+  ZzzOd: 'zzzod',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
@@ -1152,6 +1170,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/hsr`)
   } else if (script.type === 'BetterGI') {
     router.push(`/scripts/${script.id}/users/add/bettergi`)
+  } else if (script.type === 'ZzzOd') {
+    router.push(`/scripts/${script.id}/users/add/zzzod`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -1180,6 +1200,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
     } else if (script.type === 'BetterGI') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/bettergi`)
+    } else if (script.type === 'ZzzOd') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }

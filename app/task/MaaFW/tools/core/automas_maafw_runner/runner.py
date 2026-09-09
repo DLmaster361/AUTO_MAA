@@ -32,7 +32,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Literal, TextIO
+from typing import Any, BinaryIO, Callable, TextIO
 
 import maa as maa_package
 from maa.agent_client import AgentClient
@@ -62,6 +62,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
 )
 
 try:
+    from .models import MaaFWDeviceConfig
     from .run_plan import (
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -73,6 +74,7 @@ try:
         route_managed_python_agents_to_shared_runtime,
     )
 except ImportError:
+    from models import MaaFWDeviceConfig  # type: ignore[no-redef]
     from run_plan import (  # type: ignore[no-redef]
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -91,6 +93,10 @@ MAAFW_DEBUG_LOG_PATH = Path("debug") / "maafw.log"
 # 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
 # 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
 FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
+# MaaFramework 在 `Tasker::post_stop` 内部会跑一个同名的伪任务，任何一方调用
+# post_stop 都会产生它。脚本侧（如 MaaEnd 的分辨率闸门）用自定义动作强停时，
+# 我们只能从这里知道「这一轮不是自己结束的」。
+MAAFW_POST_STOP_ENTRY = "MaaTaskerPostStop"
 TASK_CONFIG_LOG_VALUE_LIMIT = 1200
 # 整行上限。留足余量低于宿主 _FRAMEWORK_UI_LOG_MAX_CHARS(1200)，
 # 免得任务配置被当成框架错误诊断截断。
@@ -100,7 +106,6 @@ _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
 
 
-MaaFWControllerType = Literal["Adb", "Win32"]
 AGENT_CONNECT_RETRY_COUNT = 30
 AGENT_CONNECT_RETRY_INTERVAL = 0.2
 AGENT_CONNECT_TIMEOUT_MS = 1000
@@ -498,17 +503,11 @@ def _ensure_maafw_global_init(
         _MAAFW_INITIALIZED = True
 
 
-class MaaFWDeviceConfig(BaseModel):
-    type: MaaFWControllerType
-    adbPath: str | None = None
-    address: str | None = None
-    hWnd: int | None = None
-    screencapMethods: int = MaaAdbScreencapMethodEnum.Default
-    inputMethods: int = MaaAdbInputMethodEnum.Default
-    screencapMethod: int = MaaWin32ScreencapMethodEnum.DXGI_DesktopDup
-    mouseMethod: int = MaaWin32InputMethodEnum.Seize
-    keyboardMethod: int = MaaWin32InputMethodEnum.Seize
-    config: dict[str, Any] = Field(default_factory=dict)
+# MaaFWDeviceConfig 统一从 models 导入（见文件头部的 import）。这里原本还有一份同名
+# 类，比 models 那份少了 adbReadyTimeout；宿主按 models 那份序列化 job 文件、worker 按
+# 这份反序列化，pydantic 默认 extra="ignore" 把该字段静默丢掉，模拟器等待时长设置因此
+# 从落地起就没生效过。各方法的默认值不会因此改变：宿主每次都显式写全本 controller 用到
+# 的字段，另一类 controller 的字段消费点本来就写成 `... or XxxEnum.Default`。
 
 
 class MaaFWRunResult(BaseModel):
@@ -541,6 +540,9 @@ class MaaFWRunner:
         self._initialized: bool = False
         self._python_env_checked: dict[str, bool] = {}
         self._stop_requested: threading.Event = threading.Event()
+        self._external_stop_seen: threading.Event = threading.Event()
+        self._self_stop_lock: threading.Lock = threading.Lock()
+        self._pending_self_stops: int = 0
         self._task_failure_summaries: list[str] = []
         self._failed_controller_actions: set[str] = set()
         self._failed_task_errors: list[tuple[str, str]] = []
@@ -610,6 +612,7 @@ class MaaFWRunner:
 
     def run(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         self._stop_requested.clear()
+        self._external_stop_seen.clear()
         try:
             self._ensure_initialized(device_config)
             completed_tasks = self._run_tasks()
@@ -667,7 +670,7 @@ class MaaFWRunner:
             try:
                 _ensure_maafw_client_library_mode()
                 if self.tasker.running:
-                    self.tasker.post_stop().wait()
+                    self._post_self_stop()
             except Exception as exc:
                 self.send_log(f"停止 MaaFW tasker 失败: {exc}")
 
@@ -677,7 +680,7 @@ class MaaFWRunner:
             try:
                 _ensure_maafw_client_library_mode()
                 if self.tasker.running:
-                    self.tasker.post_stop().wait()
+                    self._post_self_stop()
             except Exception as exc:
                 self.send_log(f"停止 MaaFW tasker 准备重试失败: {exc}")
 
@@ -1848,6 +1851,7 @@ class MaaFWRunner:
             sink = _MaaFWTaskerLogSink(
                 self.send_log,
                 self._record_task_failure_summary,
+                self._note_tasker_entry,
             )
             if self.tasker.add_sink(sink) is not None:
                 self.event_sinks.append(sink)
@@ -1873,6 +1877,10 @@ class MaaFWRunner:
         env.pop("PIP_TARGET", None)
         env.pop("PIP_PREFIX", None)
         env.pop("PIP_USER", None)
+        # worker 自己需要 PYTHONSAFEPATH（见 build_runner_environment），但不能透传给
+        # 项目 agent：agent 以 `python ./agent/main.py` 启动，靠脚本目录进 sys.path[0]
+        # 才能 import 同级模块，官方模板就是这么写的，继承过去会当场 ModuleNotFoundError。
+        env.pop("PYTHONSAFEPATH", None)
         # 不继承 MAS 的 PYTHONPATH，显式设置为当前项目根目录
         python_path_items: list[str] = []
         if getattr(agent_plan, "runtimeKind", None) == "isolated_venv":
@@ -2215,6 +2223,8 @@ class MaaFWRunner:
         env.pop("PIP_TARGET", None)
         env.pop("PIP_PREFIX", None)
         env.pop("PIP_USER", None)
+        # 与 _build_agent_env 同理：agent 侧不能带 PYTHONSAFEPATH
+        env.pop("PYTHONSAFEPATH", None)
         env["PYTHONPATH"] = str(project_path)
         return env
 
@@ -2397,6 +2407,64 @@ class MaaFWRunner:
             self.send_log(f"[Python环境] pip install 异常: {exc}，将由 agent 自举尝试")
         return False
 
+    def _post_self_stop(self) -> None:
+        """MAS 自己发起停止，并给随之而来的 MaaTaskerPostStop 通知记账。
+
+        通知是异步送达的，可能晚到下一轮 `run()` 清完标志之后才到；不记账就会被
+        `_note_tasker_entry` 当成脚本侧强停，把重试的第一个任务判成失败、后面的
+        全部跳过。`post_stop()` 返回即代表停止任务已入队、通知必然会来；它抛异常
+        时没有入队，所以计数必须放在调用返回之后。
+        """
+
+        if self.tasker is None:
+            return
+        job = self.tasker.post_stop()
+        with self._self_stop_lock:
+            self._pending_self_stops += 1
+        job.wait()
+
+    def _note_tasker_entry(self, noti_type: NotificationType, entry: str) -> None:
+        """从 tasker 事件流里捕获「被外部强停」。"""
+
+        if entry != MAAFW_POST_STOP_ENTRY:
+            return
+        # 一次 post_stop 会先后发出 Starting 和 Succeeded 两条通知。只认第一条，
+        # 记账才能和 `_post_self_stop` 的调用一一对应。
+        if noti_type != NotificationType.Starting:
+            return
+        with self._self_stop_lock:
+            if self._pending_self_stops > 0:
+                self._pending_self_stops -= 1
+                return
+        if self._stop_requested.is_set():
+            return
+        self._external_stop_seen.set()
+
+    def _external_stop_active(self, tasker: Tasker | None) -> bool:
+        """tasker 是不是被脚本侧强停了。
+
+        主判据是同步查询 `MaaTaskerStopping`，不是上面那个事件标志：事件是异步
+        送达的，实测比 `job.wait()` 返回晚约 19ms，光靠它会漏掉**当前**这个任务，
+        于是它照旧被记成「任务完成」——这正是要修的 bug。
+        post_stop 因果上必然早于 wait() 返回，所以此刻 stopping 一定还是 true。
+        事件标志留作兜底，覆盖两个任务之间到达的强停。
+        """
+
+        if self._stop_requested.is_set():
+            return False
+        if self._external_stop_seen.is_set():
+            return True
+        if tasker is None:
+            return False
+        try:
+            if bool(tasker.stopping):
+                self._external_stop_seen.set()
+                return True
+        except Exception:
+            # 老版本 MaaFW 没有 MaaTaskerStopping，退回只靠事件标志。
+            return False
+        return False
+
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []
         self._completed_tasks = completed_tasks
@@ -2433,6 +2501,12 @@ class MaaFWRunner:
                         f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
                         f"{display_name}: {message}"
                     ) from exc
+                if self._external_stop_active(tasker):
+                    self.send_log(
+                        f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+                        f"{display_name}: {message}"
+                    )
+                    break
                 # 这条现在会实时出现在任务日志里，措辞不能对最后一个
                 # 任务说「将继续后续任务」。
                 if index + 1 < total_tasks:
@@ -2445,6 +2519,17 @@ class MaaFWRunner:
                 continue
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
+            # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
+            # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
+            # `job.failed` 会把一件没做的事记成「任务完成」，整轮还可能被报成
+            # 全部成功。这里必须独立判一次。
+            if self._external_stop_active(tasker):
+                message = "任务被脚本侧强制停止（MaaTaskerPostStop）"
+                self._failed_task_errors.append((task.name, message))
+                self.send_log(
+                    f"任务未完成，本轮剩余任务已跳过: {display_name}: {message}"
+                )
+                break
             completed_tasks.append(task.name)
             self.send_log(f"任务完成: {display_name}")
             time.sleep(0.1)
@@ -2654,10 +2739,12 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         self,
         send_log: Callable[[str], None],
         record_failure: Callable[[str, dict[str, Any]], None],
+        note_entry: Callable[[NotificationType, str], None] | None = None,
     ) -> None:
         super().__init__()
         self.send_log = send_log
         self.record_failure = record_failure
+        self.note_entry = note_entry
 
     def on_tasker_task(
         self,
@@ -2668,6 +2755,8 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         self.send_log(
             f"[MaaFW Tasker] {_notification_label(noti_type)}: {detail.entry}"
         )
+        if self.note_entry is not None:
+            self.note_entry(noti_type, detail.entry)
 
     def on_raw_notification(
         self,

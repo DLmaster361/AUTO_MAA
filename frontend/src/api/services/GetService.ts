@@ -9,6 +9,16 @@ import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
+import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
+import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
+import type { Emulator2InstanceDeletePreviewOut } from '../models/Emulator2InstanceDeletePreviewOut';
+import type { Emulator2PathRemoveIn } from '../models/Emulator2PathRemoveIn';
+import type { Emulator2PathRemovePreviewOut } from '../models/Emulator2PathRemovePreviewOut';
+import type { Emulator2SearchIn } from '../models/Emulator2SearchIn';
+import type { Emulator2SearchOut } from '../models/Emulator2SearchOut';
+import type { Emulator2SettingsIn } from '../models/Emulator2SettingsIn';
+import type { Emulator2SettingsOut } from '../models/Emulator2SettingsOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
@@ -48,6 +58,7 @@ import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
 import type { VersionOut } from '../models/VersionOut';
+import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -372,6 +383,112 @@ export class GetService {
         });
     }
     /**
+     * 搜索可加入 Emulator 2.0 的模拟器
+     * 列出本机模拟器并逐条判定。不可添加的**也会列出**并给出原因枚举。
+     * @param requestBody
+     * @returns Emulator2SearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchEmulatorsApiEmulator2SearchPost(
+        requestBody?: Emulator2SearchIn,
+    ): CancelablePromise<Emulator2SearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/search',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预览移除模拟器路径的影响
+     * 只读。列出会失效的设备号与受影响的脚本，供确认页使用。
+     * @param requestBody
+     * @returns Emulator2PathRemovePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewRemovePathApiEmulator2PathsRemovePreviewPost(
+        requestBody: Emulator2PathRemoveIn,
+    ): CancelablePromise<Emulator2PathRemovePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/paths/remove/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询合并后的设备列表
+     * 合并多条安装的实例。键是设备号，另附模拟器自己的实例索引。
+     *
+     * 枚举失败的安装标 ``unavailable``——一次枚举失败不等于实例被删除，
+     * 既不写墓碑也不影响下次恢复。
+     * @param requestBody
+     * @returns Emulator2DevicesOut Successful Response
+     * @throws ApiError
+     */
+    public static listDevicesApiEmulator2DevicesPost(
+        requestBody: Emulator2DevicesIn,
+    ): CancelablePromise<Emulator2DevicesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/devices',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预览删除实例的影响
+     * 只读。列出绑定了该设备号的脚本，供确认页使用。
+     * @param requestBody
+     * @returns Emulator2InstanceDeletePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewDeleteInstanceApiEmulator2InstancesDeletePreviewPost(
+        requestBody: Emulator2InstanceDeleteIn,
+    ): CancelablePromise<Emulator2InstanceDeletePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/instances/delete/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询实例设置
+     * 读一台设备的四项设置。
+     *
+     * 每项都带状态：``.config`` 里有的才是用户保存过的，没有而从模拟器默认读到的
+     * 标 ``default``，两边都没有标 ``unset``。
+     * @param requestBody
+     * @returns Emulator2SettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getSettingsApiEmulator2SettingsGetPost(
+        requestBody: Emulator2SettingsIn,
+    ): CancelablePromise<Emulator2SettingsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/settings/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询调度队列配置信息
      * @param requestBody
      * @returns QueueGetOut Successful Response
@@ -554,6 +671,37 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检测虚拟显示驱动
+     * 三段式检测虚拟显示驱动。
+     *
+     * 前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+     * 会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+     * 拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkVirtualDisplayApiSettingVirtualDisplayCheckPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/check',
+        });
+    }
+    /**
+     * 查询虚拟显示驱动状态
+     * 只查驱动装没装、能不能调，不改变桌面拓扑。
+     *
+     * 设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+     * 而存下来的状态只会变陈旧。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static virtualDisplayStatusApiSettingVirtualDisplayStatusPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/status',
         });
     }
     /**

@@ -40,6 +40,7 @@ import { getLogger, initializeLogger } from './services/logger'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
+import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
 import {
   captureMainRendererCrash,
   configureMainSentry,
@@ -613,6 +614,8 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+/** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
+type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
@@ -1066,9 +1069,13 @@ function createWindow() {
 }
 
 // 创建日志窗口
-function createLogWindow() {
-  // 如果日志窗口已存在，则聚焦并返回
+// file 指定落地时选中哪一份日志；启动/初始化路径要的是主进程写的 frontend.log，
+// 因为那时后端还没起来，debug/app.log 不存在或者还停在上一轮。
+function createLogWindow(file?: LogWindowFile) {
+  // 如果日志窗口已存在，则切到请求的那一份再聚焦——只聚焦的话，之前停在后端日志的窗口
+  // 会让「查看日志」看上去仍然没有内容，正是这次要修的现象。
   if (logWindow && !logWindow.isDestroyed()) {
+    if (file) logWindow.webContents.send('log:selectFile', file)
     logWindow.focus()
     return
   }
@@ -1088,12 +1095,13 @@ function createLogWindow() {
     show: false,
   })
 
+  const hash = file ? `/logs?file=${file}` : '/logs'
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
-    logWindow.loadURL(`${devServer}#/logs`)
+    logWindow.loadURL(`${devServer}#${hash}`)
   } else {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
-    logWindow.loadFile(indexHtmlPath, { hash: '/logs' })
+    logWindow.loadFile(indexHtmlPath, { hash })
   }
 
   logWindow.once('ready-to-show', () => {
@@ -1256,6 +1264,12 @@ registerIssueReportExporter(
   'OK-NTE-logs',
   createOkNteIssueReport
 )
+registerIssueReportExporter(
+  'zzzod:exportIssueReport',
+  '导出 ZZZ-OD 问题包',
+  'ZZZ-OD-logs',
+  createZzzOdIssueReport
+)
 
 ipcMain.handle('data:backup', async () => {
   let partialPath: string | undefined
@@ -1344,9 +1358,9 @@ ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: strin
   }
 })
 
-ipcMain.handle('log:openWindow', async () => {
+ipcMain.handle('log:openWindow', async (_event, file?: LogWindowFile) => {
   try {
-    createLogWindow()
+    createLogWindow(file)
     return { success: true }
   } catch (error) {
     logger.error('打开日志窗口失败:', error)
@@ -1486,12 +1500,20 @@ ipcMain.handle('open-url', async (_event, url: string) => {
 })
 
 // 打开文件
+// shell.openPath 失败时不 reject，而是 resolve 一条非空的错误信息（没有关联程序、
+// 文件不存在都走这条），丢掉返回值的话调用方永远收不到失败。
 ipcMain.handle('open-file', async (_event, filePath: string) => {
   try {
-    await shell.openPath(filePath)
+    const failure = await shell.openPath(filePath)
+    if (failure) {
+      logger.error(`打开文件失败: ${failure}`)
+      return { success: false, error: failure }
+    }
+    return { success: true }
   } catch (error) {
-    logger.error(`打开文件失败: ${error}`)
-    throw error
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(`打开文件失败: ${message}`)
+    return { success: false, error: message }
   }
 })
 

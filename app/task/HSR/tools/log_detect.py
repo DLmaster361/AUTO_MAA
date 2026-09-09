@@ -91,14 +91,19 @@ HSR_BENIGN_FAILURE_MARKERS: tuple[str, ...] = (
     "cv::matchTemplate",
     "Assertion failed",
 )
-HSR_EOF_FAILURE_CONTEXT_MARKERS: tuple[str, ...] = (
-    "EOF when reading a line",
-    "pause_on_success",
+# M7A 收尾的「按任意键继续」写在 utils/console.py：走到 pause_on_success 说明
+# 任务正文已经跑完，之后再崩只是收尾输出失败。非交互启动下它必崩——早期是
+# stdin 被关掉的 EOFError，非中文系统区域下则是中文写不进 ANSI 代码页 stdout
+# 的 UnicodeEncodeError——判据因此锚在崩溃位置，而不是某一种异常类型。
+HSR_CONSOLE_PAUSE_SUCCESS_MARKER = "pause_on_success"
+HSR_NONINTERACTIVE_EOF_MARKER = "EOF when reading a line"
+# pause_on_error 是正文失败后的兜底路径，它自己崩不能证明正文成功。
+HSR_CONSOLE_PAUSE_ERROR_MARKERS: tuple[str, ...] = (
     "pause_on_error",
     "utils\\console.py",
     "utils/console.py",
 )
-HSR_EOF_FAILURE_LINE_MARKERS: tuple[str, ...] = (
+HSR_EXIT_CRASH_LINE_MARKERS: tuple[str, ...] = (
     "Traceback",
     "During handling of the above exception",
     "Failed to execute script",
@@ -188,11 +193,9 @@ def has_failure_output(*texts: str) -> bool:
     """判断外部脚本输出中是否包含明确的失败语义。"""
 
     full_text = "\n".join(str(text) for text in texts if text)
-    has_noninteractive_eof = all(
-        marker in full_text for marker in HSR_EOF_FAILURE_CONTEXT_MARKERS[:2]
-    ) or (
-        "EOF when reading a line" in full_text
-        and any(marker in full_text for marker in HSR_EOF_FAILURE_CONTEXT_MARKERS[2:])
+    is_exit_pause_crash = HSR_CONSOLE_PAUSE_SUCCESS_MARKER in full_text or (
+        HSR_NONINTERACTIVE_EOF_MARKER in full_text
+        and any(marker in full_text for marker in HSR_CONSOLE_PAUSE_ERROR_MARKERS)
     )
 
     for text in texts:
@@ -204,8 +207,8 @@ def has_failure_output(*texts: str) -> bool:
                 continue
             if any(marker in line for marker in HSR_BENIGN_FAILURE_MARKERS):
                 continue
-            if has_noninteractive_eof and any(
-                marker in line for marker in HSR_EOF_FAILURE_LINE_MARKERS
+            if is_exit_pause_crash and any(
+                marker in line for marker in HSR_EXIT_CRASH_LINE_MARKERS
             ):
                 continue
             if HSR_ENGLISH_FAILURE_RE.search(line):

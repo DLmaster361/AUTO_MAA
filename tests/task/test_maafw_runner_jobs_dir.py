@@ -37,7 +37,7 @@ def test_legacy_runtime_dir_is_migrated_on_first_access(
     work_dir = _maafw_runner_jobs_dir()
 
     assert work_dir == tmp_path / "data" / "maafw_runner_jobs"
-    assert (
-        work_dir / "maafw-runner-job-legacy.json"
-    ).read_text(encoding="utf-8") == "{}"
+    assert (work_dir / "maafw-runner-job-legacy.json").read_text(
+        encoding="utf-8"
+    ) == "{}"
     assert not legacy_dir.exists()

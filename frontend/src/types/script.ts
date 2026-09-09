@@ -10,9 +10,14 @@ import type {
   MaaEndConfig,
   M9AConfig,
   BetterGIConfig,
+  ZzzOdConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
+  MaaEndAutoCollectCommonRoute,
+  MaaEndAutoCollectMode,
+  MaaEndAutoCollectRoute,
+  MaaEndDeliveryCommissionSource,
   MaaEndTaskSwitch,
   ProtocolSpaceTaskValue,
   RewardSetOption,
@@ -30,10 +35,12 @@ export type ScriptType =
   | 'MaaFW'
   | 'HSR'
   | 'BetterGI'
+  | 'ZzzOd'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
 export type BetterGIScriptConfig = BetterGIConfig
+export type ZzzOdScriptConfig = ZzzOdConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -134,9 +141,17 @@ export interface SRCScriptConfig {
   }
 }
 
-export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean>
+export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
+  IfSeizeDeliveryJobs: boolean
+}
 
 export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+  IfAutoCollect: boolean
+  SeizeDeliveryJobsReward: number
+  SeizeDeliveryJobsCommissionSource: MaaEndDeliveryCommissionSource
+  AutoCollectMode: MaaEndAutoCollectMode
+  AutoCollectRoutes: MaaEndAutoCollectRoute[]
+  AutoCollectCommonRoutes: MaaEndAutoCollectCommonRoute[]
   SanityTaskType: SanityTaskType
   OperatorProgression: ProtocolSpaceTaskValue
   WeaponProgression: ProtocolSpaceTaskValue
@@ -156,6 +171,7 @@ export interface MaaEndScriptConfig {
     ProxyTimesLimit: number
     RunTimesLimit: number
     AccountSwitchMethod: 'MAS' | 'MAAEND'
+    TaskTransitionMethod: 'NoAction' | 'ExitGame'
   }
   Game: {
     ControllerType: string | null
@@ -230,6 +246,8 @@ export interface MaaFWScriptConfig {
   Game: {
     LaunchMode: MaaFWLaunchMode
     LaunchPath: string
+    /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
+    PackageName: string
     Arguments: string
     WaitTime: number
     CloseOnFinish: boolean
@@ -619,6 +637,7 @@ export interface AddScriptResponse {
     | MaaFWScriptConfig
     | HSRScriptConfig
     | BetterGIScriptConfig
+    | ZzzOdScriptConfig
 }
 
 // 脚本索引项
@@ -635,6 +654,7 @@ export interface ScriptIndexItem {
     | 'MaaFWConfig'
     | 'HSRConfig'
     | 'BetterGIConfig'
+    | 'ZzzOdConfig'
 }
 
 // 获取脚本API响应
@@ -655,6 +675,7 @@ export interface GetScriptsResponse {
     | MaaFWScriptConfig
     | HSRScriptConfig
     | BetterGIScriptConfig
+    | ZzzOdScriptConfig
   >
 }
 
@@ -674,6 +695,7 @@ export interface ScriptDetail {
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
+    | ZzzOdConfig
   users?: User[]
   createTime?: string
 }

@@ -103,7 +103,9 @@
                       size="small"
                       style="width: 150px"
                       :disabled="!record.schedule.Enabled"
-                      @change="saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })"
+                      @change="
+                        saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })
+                      "
                     >
                       <a-select-option value="start">
                         {{ t('queue.cycle.anchorStart') }}
@@ -302,7 +304,9 @@ watch(
 
 // 时间字符串 "HH:mm" 与时间选择器的 dayjs 值互转
 const parseTimeString = (timeString: string) => {
-  const [hours = 0, minutes = 0] = String(timeString || '00:00').split(':').map(Number)
+  const [hours = 0, minutes = 0] = String(timeString || '00:00')
+    .split(':')
+    .map(Number)
   return dayjs().hour(hours).minute(minutes).second(0).millisecond(0)
 }
 

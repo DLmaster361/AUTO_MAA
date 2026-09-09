@@ -21,9 +21,10 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
@@ -115,11 +116,15 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.opt(exception=True).warning(f"BetterGI 设置任务出现异常: {e}")
         with suppress(Exception):
             await self._kill_processes()
+        # 异常退出也先快照（固化 GUI 中已保存的编辑）再清理 MAS 运行时槽位，避免残留与丢编辑
+        if self.use_mas_config:
+            with suppress(Exception):
+                self._snapshot_one_dragon_config()
         self._cleanup_leftover_slot()
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"BetterGI 设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"BetterGI 设置任务出现异常: {e}"),
         )
 
     async def _kill_processes(self) -> None:

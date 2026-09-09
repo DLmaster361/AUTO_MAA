@@ -1,9 +1,4 @@
-import {
-  createRouter,
-  createWebHashHistory,
-  type LocationQueryRaw,
-  type RouteParamsRawGeneric,
-} from 'vue-router'
+import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
@@ -128,6 +123,24 @@ const routes = [
     name: 'BetterGIScriptEdit',
     component: () => import('../views/EditView/Script/BetterGIScriptEdit.vue'),
     meta: { title: '编辑BetterGI脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/zzzod',
+    name: 'ZzzOdScriptEdit',
+    component: () => import('../views/EditView/Script/ZzzOdScriptEdit.vue'),
+    meta: { title: '编辑ZZZ-OD脚本' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/zzzod',
+    name: 'ZzzOdUserAdd',
+    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
+    meta: { title: '添加ZZZ-OD用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/zzzod',
+    name: 'ZzzOdUserEdit',
+    component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
+    meta: { title: '编辑ZZZ-OD用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
@@ -287,7 +300,22 @@ const routes = [
     path: '/gamesign',
     name: 'GameSign',
     component: () => import('../views/gamesign/index.vue'),
-    meta: { title: '游戏签到' },
+    meta: { title: '游戏社区' },
+  },
+  {
+    path: '/gamesign/sign',
+    name: 'CommunityToolSign',
+    redirect: '/gamesign',
+    meta: { title: '游戏社区' },
+  },
+  {
+    path: '/gamesign/activity',
+    name: 'CommunityToolActivity',
+    redirect: {
+      path: '/gamesign',
+      query: { tab: 'activity' },
+    },
+    meta: { title: '游戏社区' },
   },
   {
     path: '/tools',
@@ -403,23 +431,6 @@ export function navigateTo(
   const { replace = false, query } = options || {}
   if (replace) return router.replace({ path, query })
   return router.push({ path, query })
-}
-
-export function navigateToByName(
-  name: string,
-  options?: { replace?: boolean; query?: LocationQueryRaw; params?: RouteParamsRawGeneric }
-) {
-  const { replace = false, query, params } = options || {}
-  if (replace) return router.replace({ name, query, params })
-  return router.push({ name, query, params })
-}
-
-export function goBack() {
-  return router.back()
-}
-
-export function goForward() {
-  return router.forward()
 }
 
 export default router

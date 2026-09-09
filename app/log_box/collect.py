@@ -58,10 +58,12 @@ class LogCollect:
         *,
         sink: Optional[_Sink] = None,
         start_from_end: bool = True,
+        rotated_name: Optional[str] = None,
     ):
         self.paths = resolve_sources(paths)
         self.sources = [
-            LogSource(item, start_from_end=start_from_end) for item in self.paths
+            LogSource(item, start_from_end=start_from_end, rotated_name=rotated_name)
+            for item in self.paths
         ]
         # sink：MAS 进程宿主注入；缺省时走 @@LOGBOX@@ 标记回传（脚本宿主）
         self.sink = sink
@@ -149,9 +151,7 @@ class LogCollect:
         # 完成推送
         self._deliver(self._results)
 
-    def _apply_postprocessors(
-        self, results: list[_ResultItem]
-    ) -> list[_ResultItem]:
+    def _apply_postprocessors(self, results: list[_ResultItem]) -> list[_ResultItem]:
         """对最终结果集应用后置处理器，时间戳随 (类型, 文本, 时间戳) 元组一并保留
 
         后置处理器直接接收并返回 ``list[(log_type, text, ts)]``，文本改写（如

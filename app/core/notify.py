@@ -26,11 +26,14 @@
 """
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from app.core.config import Config
+from app.models.config import Webhook
 from app.services.notification import Notify
 from app.utils import get_logger
 
@@ -53,7 +56,11 @@ class NotifyPayload:
     append_signature: bool = True
     email_mode: MailMode = "网页"
     serverchan_text: str | None = None
+    webhook_text: str | None = None
+    markdown_text: str | None = None
+    webhook_image_base64: str | None = None
     koishi_text: str | None = None
+    koishi_msgtype: Literal["text", "html", "picture"] = "text"
     system_title: str | None = None
     system_message: str | None = None
     system_ticker: str | None = None
@@ -81,6 +88,8 @@ class NotifyPayload:
 
         if self.serverchan_text is not None:
             return self.serverchan_text
+        if self.markdown_text is not None:
+            return self.markdown_text
         text = self.text.replace("\n", "\n\n")
         if not self.append_signature:
             return text
@@ -90,6 +99,35 @@ class NotifyPayload:
     def webhook_content(self) -> str:
         """返回 Webhook 正文。"""
 
+        if self.webhook_text is not None:
+            return self.webhook_text
+        if self.markdown_text is not None:
+            return self.markdown_text
+        return self.signed_text
+
+    def webhook_content_for(self, webhook: Webhook) -> str:
+        """只有明确支持 Markdown 的模板接收 Markdown 正文。"""
+
+        if self.webhook_text is not None or self.markdown_text is None:
+            return self.webhook_content
+        try:
+            template = json.loads(webhook.get("Data", "Template") or "{}")
+            host = urlsplit(webhook.get("Data", "Url")).hostname
+        except (ValueError, TypeError):
+            return self.signed_text
+        if isinstance(template, dict) and (
+            template.get("msgtype") == "markdown"
+            or template.get("template") == "markdown"
+            or "desp" in template
+        ):
+            return self.markdown_text
+        if host in {
+            "discord.com",
+            "discordapp.com",
+            "canary.discord.com",
+            "ptb.discord.com",
+        }:
+            return self.markdown_text
         return self.signed_text
 
     @property
@@ -104,13 +142,15 @@ class NotifyPayload:
     def openclaw_weixin_content(self) -> str:
         """返回微信（iLink）正文。"""
 
-        return f"{self.title}\n\n{self.signed_text}"
+        text = self.signed_text
+        return text if text.startswith(f"【{self.title}】") else f"{self.title}\n\n{text}"
 
     @property
     def openclaw_qq_content(self) -> str:
         """返回 QQ 官方机器人正文。"""
 
-        return f"{self.title}\n\n{self.signed_text}"
+        text = self.signed_text
+        return text if text.startswith(f"【{self.title}】") else f"{self.title}\n\n{text}"
 
     @property
     def system_content(self) -> str:
@@ -206,11 +246,17 @@ def user_target(user_config: Any) -> NotifyTarget:
     )
 
 
-def should_send_result(message: dict) -> bool:
+def should_send_result(message: dict, *, task_info: object | None = None) -> bool:
     """判断代理结果是否满足全局推送时机。"""
 
     if message.get("game_sign_summary", False):
         return True
+
+    if task_info is not None:
+        from app.tools.community_notify import append_task_community_summary
+
+        if append_task_community_summary(task_info, ""):
+            return True
 
     result_time = Config.get("Notify", "SendTaskResultTime")
     if result_time == "任何时刻":
@@ -349,9 +395,7 @@ async def dispatch(
         if channel in skip:
             return
         attempted += 1
-        if await _send(
-            channel, send, attempts=attempts, retry_delay=retry_delay
-        ):
+        if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
             succeeded.append(channel)
         else:
             failed.append(channel)
@@ -421,7 +465,8 @@ async def dispatch(
                 f"{target.name} Webhook {_webhook_name(uid, webhook)}",
                 lambda w=webhook: Notify.WebhookPush(
                     title=payload.title,
-                    content=payload.webhook_content,
+                    content=payload.webhook_content_for(w),
+                    image_base64=payload.webhook_image_base64 or "",
                     webhook=w,
                 ),
             )
@@ -429,7 +474,12 @@ async def dispatch(
         if target.koishi:
             await attempt(
                 f"{target.name} Koishi",
-                lambda: Notify.send_koishi(payload.koishi_content),
+                lambda: Notify.send_koishi(
+                    payload.koishi_content,
+                    msgtype=payload.koishi_msgtype,
+                )
+                if payload.koishi_msgtype != "text"
+                else Notify.send_koishi(payload.koishi_content),
             )
 
         if target.openclaw_weixin:
@@ -455,6 +505,167 @@ async def dispatch(
         succeeded=tuple(succeeded),
         failed=tuple(failed),
     )
+
+
+async def dispatch_task_report(
+    payload: NotifyPayload,
+    targets: list[NotifyTarget],
+    task_info: object | None,
+    *,
+    summary_text: str = "",
+    attempts: int = 1,
+    retry_delay: float = 0,
+) -> DispatchResult:
+    """统一附加社区结果，并按渠道维护任务报告的投递状态。
+
+    专项只提供原始报告与任务信息。旧调用传入的 summary_text 继续兼容，
+    已送达摘要的渠道接收后续脚本报告时不再重复摘要。
+    """
+
+    # 社区渲染器复用 NotifyPayload，按需导入以避免模块初始化循环。
+    from app.tools.community_notify import (
+        append_community_summary_html,
+        append_task_community_summary,
+        detect_community_notification_format,
+        mark_task_community_summary_consumed,
+    )
+
+    delivered = set(getattr(task_info, "game_sign_summary_delivered", ()))
+    if summary_text:
+        clean_payload = replace(
+            payload,
+            text=payload.text.replace(summary_text, "").rstrip(),
+            html=(
+                payload.html.replace(summary_text, "").rstrip()
+                if payload.html is not None
+                else None
+            ),
+        )
+    else:
+        clean_payload = payload
+        if task_info is not None:
+            summary_text = append_task_community_summary(task_info, "").strip()
+        if summary_text:
+            summary_markdown = append_task_community_summary(
+                task_info, "", output_format="markdown"
+            ).strip()
+            serverchan_body = payload.serverchan_content
+            serverchan_summary = summary_markdown
+            if payload.serverchan_text is None and payload.markdown_text is None:
+                # 默认签名仍放在整份报告末尾，社区摘要只负责自己的格式。
+                serverchan_body = replace(
+                    payload, append_signature=False
+                ).serverchan_content
+                if payload.append_signature:
+                    serverchan_summary += f"{payload.signature_sep}{SIGNATURE}"
+            payload = replace(
+                payload,
+                text=f"{payload.text}\n\n{summary_text}",
+                html=(
+                    append_community_summary_html(payload.html, summary_text)
+                    if payload.html is not None
+                    else None
+                ),
+                serverchan_text=f"{serverchan_body}\n\n{serverchan_summary}",
+                markdown_text=(
+                    f"{payload.markdown_text}\n\n{summary_markdown}"
+                    if payload.markdown_text is not None
+                    else None
+                ),
+                webhook_text=(
+                    f"{payload.webhook_text}\n\n"
+                    + (
+                        summary_markdown
+                        if detect_community_notification_format(payload.webhook_text)
+                        == "markdown"
+                        else summary_text
+                    )
+                    if payload.webhook_text is not None
+                    else None
+                ),
+                koishi_text=(
+                    append_community_summary_html(payload.koishi_text, summary_text)
+                    if payload.koishi_text is not None
+                    and payload.koishi_msgtype == "html"
+                    else f"{payload.koishi_text}\n\n{summary_text}"
+                    if payload.koishi_text is not None
+                    else None
+                ),
+                system_message=(
+                    f"{payload.system_message}\n\n{summary_text}"
+                    if payload.system_message is not None
+                    else None
+                ),
+            )
+
+    if not summary_text:
+        result = await dispatch(
+            payload, targets, attempts=attempts, retry_delay=retry_delay
+        )
+    else:
+        channels = {
+            channel for target in targets for channel in target_channel_names(target)
+        }
+        with_summary = await dispatch(
+            payload,
+            targets,
+            attempts=attempts,
+            retry_delay=retry_delay,
+            skip_channels=delivered,
+        )
+        # 只给本轮开始前已送达摘要的渠道发原始报告，避免同一轮发送两次。
+        without_summary = (
+            await dispatch(
+                clean_payload,
+                targets,
+                attempts=attempts,
+                retry_delay=retry_delay,
+                skip_channels=channels - delivered,
+            )
+            if delivered & channels
+            else DispatchResult()
+        )
+        delivered.update(with_summary.succeeded)
+        if task_info is not None:
+            setattr(task_info, "game_sign_summary_delivered", delivered)
+            setattr(task_info, "game_sign_summary_pending", with_summary.failed)
+            if delivered & channels and not with_summary.failed:
+                mark_task_community_summary_consumed(task_info)
+        result = DispatchResult(
+            attempted=with_summary.attempted + without_summary.attempted,
+            succeeded=with_summary.succeeded + without_summary.succeeded,
+            failed=with_summary.failed + without_summary.failed,
+        )
+
+    await _publish_task_notification_failure(task_info, result)
+    return result
+
+
+async def _publish_task_notification_failure(
+    task_info: object | None, result: DispatchResult
+) -> None:
+    """把任务报告的渠道失败同步提示到当前任务页面。"""
+
+    if not result.failed or task_info is None:
+        return
+    task_id = getattr(task_info, "task_id", None)
+    if not task_id:
+        return
+
+    from app.core.ws import Publisher, protocol
+    from app.models.schema import WSTaskNoticeData
+
+    failed_channels = tuple(dict.fromkeys(result.failed))
+    title = "部分通知发送失败" if result.succeeded else "通知发送失败"
+    message = f"{title}：{'、'.join(failed_channels)}"
+    try:
+        await Publisher.send(
+            id=str(task_id),
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"发送通知失败提示到前端时出现异常: {exc}")
 
 
 async def send_test_notification() -> DispatchResult:

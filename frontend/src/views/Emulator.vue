@@ -18,6 +18,7 @@ import {
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
+import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 const { t } = useI18n()
 
@@ -33,6 +34,8 @@ interface EmulatorInfo {
   max_wait_time: number
   boss_keys: string[]
   force_kill_on_close: boolean
+  stable_mode: boolean
+  config_guard: boolean
 }
 
 // 安全的 JSON 解析函数
@@ -49,10 +52,14 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
 
 // 模拟器类型映射
 // label 随语言变，所以必须是 computed；常量数组在切换语言后不会更新
+const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
+
 const emulatorTypeOptions = computed(() => [
   { value: 'general', label: t('emulator.type.general') },
   { value: 'mumu', label: t('emulator.type.mumu') },
   { value: 'ldplayer', label: t('emulator.type.ldplayer') },
+  // Emulator 2.0: 一条配置纳管多条模拟器路径, 实例合并成一张设备表
+  { value: 'emulator2', label: t('emulator.type.emulator2') },
   // { value: 'nox', label: '夜神模拟器' },
   // { value: 'memu', label: '逍遥模拟器' },
   // { value: 'blueStacks', label: 'BlueStacks' },
@@ -195,6 +202,71 @@ const canStopDevice = (status: number) => {
   return status === DeviceStatus.ONLINE || status === DeviceStatus.STARTING
 }
 
+// Emulator 2.0 面板的实例引用：路径管理弹窗的入口在本页的「路径」那一行
+const emulator2Panels = ref<Record<string, any>>({})
+const setEmulator2Panel = (uuid: string, el: any) => {
+  if (el) emulator2Panels.value[uuid] = el
+  else delete emulator2Panels.value[uuid]
+}
+
+const openEmulator2Paths = (uuid: string) => {
+  emulator2Panels.value[uuid]?.openPaths?.()
+}
+
+/**
+ * 稳定模式开关。
+ *
+ * 它是**配置级**设置：存进配置后每次启动实例都会顺带确保一次，所以在模拟器自己
+ * 那边新建的实例也会跟着进入安全状态。打开时额外把现有设备立刻压一遍，
+ * 免得点完开关看不到任何变化。
+ *
+ * 关掉只是不再确保，**不会把那些项改回去**——不知道用户原本想要什么值。
+ */
+const stableSwitching = ref<Set<string>>(new Set())
+
+const toggleStableMode = async (uuid: string, checked: boolean) => {
+  stableSwitching.value = new Set(stableSwitching.value).add(uuid)
+  try {
+    getEditingData(uuid).stable_mode = checked
+    await handleSaveChange(uuid, 'stable_mode', checked)
+    if (checked) {
+      const count = await emulator2Panels.value[uuid]?.applyStableMode?.()
+      if (typeof count === 'number') {
+        message.success(t('emulator2.toast.stableOk', { count }))
+      }
+    }
+  } finally {
+    const next = new Set(stableSwitching.value)
+    next.delete(uuid)
+    stableSwitching.value = next
+  }
+}
+
+/**
+ * 配置守卫开关。
+ *
+ * 打开时先把当前设置记成基准，之后每次启动前和关闭后各核验一次，对不上就按基准
+ * 写回去。必须先记基准再开——否则守卫没有「应该是什么」可依据，等于没开。
+ */
+const guardSwitching = ref<Set<string>>(new Set())
+
+const toggleConfigGuard = async (uuid: string, checked: boolean) => {
+  guardSwitching.value = new Set(guardSwitching.value).add(uuid)
+  try {
+    if (checked) {
+      const count = await emulator2Panels.value[uuid]?.captureBaselines?.()
+      if (count === null || count === undefined) return
+      message.success(t('emulator2.toast.guardOk', { count }))
+    }
+    getEditingData(uuid).config_guard = checked
+    await handleSaveChange(uuid, 'config_guard', checked)
+  } finally {
+    const next = new Set(guardSwitching.value)
+    next.delete(uuid)
+    guardSwitching.value = next
+  }
+}
+
 const buildEditingData = (configData: any): EmulatorInfo => ({
   name: configData?.Info?.Name || '',
   type: configData?.Info?.Type || '',
@@ -202,6 +274,8 @@ const buildEditingData = (configData: any): EmulatorInfo => ({
   max_wait_time: configData?.Info?.MaxWaitTime || 300,
   boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
   force_kill_on_close: configData?.Info?.ForceKillOnClose === true,
+  stable_mode: configData?.Info?.StableMode === true,
+  config_guard: configData?.Info?.ConfigGuard === true,
 })
 
 // 获取当前模拟器的编辑数据
@@ -348,6 +422,10 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { MaxWaitTime: value } }
     } else if (key === 'boss_keys') {
       configData = { Info: { BossKey: JSON.stringify(value) } }
+    } else if (key === 'stable_mode') {
+      configData = { Info: { StableMode: value } }
+    } else if (key === 'config_guard') {
+      configData = { Info: { ConfigGuard: value } }
     } else if (key === 'force_kill_on_close') {
       configData = { Info: { ForceKillOnClose: value } }
     }
@@ -919,7 +997,30 @@ const handleBossKeyInputChange = (uuid: string) => {
                         @change="handleSaveChange(element.uid, 'type', $event)"
                       />
                     </a-descriptions-item>
-                    <a-descriptions-item :label="t('emulator.pathLabel')" :span="2">
+                    <a-descriptions-item
+                      v-if="isEmulator2(element.uid)"
+                      :label="t('emulator.pathLabel')"
+                      :span="2"
+                    >
+                      <div class="emulator2-path-entry">
+                        <span class="emulator2-path-summary">
+                          {{ t('emulator2.pathsEntryHint') }}
+                        </span>
+                        <a-button
+                          size="small"
+                          type="link"
+                          :icon="h(FolderOpenOutlined)"
+                          @click="openEmulator2Paths(element.uid)"
+                        >
+                          {{ t('emulator2.managePaths') }}
+                        </a-button>
+                      </div>
+                    </a-descriptions-item>
+                    <a-descriptions-item
+                      v-if="!isEmulator2(element.uid)"
+                      :label="t('emulator.pathLabel')"
+                      :span="2"
+                    >
                       <a-input
                         v-model:value="getEditingData(element.uid).path"
                         :placeholder="t('emulator.pathPlaceholder')"
@@ -961,7 +1062,35 @@ const handleBossKeyInputChange = (uuid: string) => {
                         "
                       />
                     </a-descriptions-item>
-                    <a-descriptions-item>
+                    <a-descriptions-item v-if="isEmulator2(element.uid)">
+                      <template #label>
+                        <span>{{ t('emulator2.stableMode') }}</span>
+                        <a-tooltip :title="t('emulator2.stableSwitchTip')">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        :checked="getEditingData(element.uid).stable_mode"
+                        :loading="stableSwitching.has(element.uid)"
+                        size="small"
+                        @change="(checked: any) => toggleStableMode(element.uid, !!checked)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="isEmulator2(element.uid)">
+                      <template #label>
+                        <span>{{ t('emulator2.configGuard') }}</span>
+                        <a-tooltip :title="t('emulator2.guardTip')">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        :checked="getEditingData(element.uid).config_guard"
+                        :loading="guardSwitching.has(element.uid)"
+                        size="small"
+                        @change="(checked: any) => toggleConfigGuard(element.uid, !!checked)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="!isEmulator2(element.uid)">
                       <template #label>
                         <span>{{ t('emulator.bossKeyLabel') }}</span>
                         <a-tooltip :title="t('emulator.bossKeyTip')">
@@ -1026,7 +1155,15 @@ const handleBossKeyInputChange = (uuid: string) => {
               </div>
 
               <!-- 设备列表区域 -->
-              <div class="devices-panel">
+              <!-- Emulator 2.0：多路径 + 合并设备表 -->
+              <div v-if="isEmulator2(element.uid)" class="devices-panel">
+                <Emulator2Panel
+                  :ref="(el: any) => setEmulator2Panel(element.uid, el)"
+                  :emulator-id="element.uid"
+                />
+              </div>
+
+              <div v-else class="devices-panel">
                 <div class="panel-header">
                   <h4 class="panel-title">{{ t('emulator.deviceList') }}</h4>
                 </div>

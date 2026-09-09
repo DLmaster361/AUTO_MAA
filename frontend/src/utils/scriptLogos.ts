@@ -9,6 +9,7 @@ import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 import maafwIcon from '@/assets/maafw.png'
+import zzzOdIcon from '@/assets/zzz-od.ico'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
 export const SCRIPT_LOGOS: Record<ScriptType, string> = {
@@ -22,6 +23,7 @@ export const SCRIPT_LOGOS: Record<ScriptType, string> = {
   OkNte: okNteIcon,
   Okww: okwwIcon,
   SRC: srcIcon,
+  ZzzOd: zzzOdIcon,
 }
 
 /** 脚本类型 → 展示名，用于图片 alt 与标签文案 */
@@ -36,4 +38,5 @@ export const SCRIPT_LABELS: Record<ScriptType, string> = {
   OkNte: 'OK-NTE',
   Okww: 'ok-ww',
   SRC: 'SRC',
+  ZzzOd: 'ZZZ-OD',
 }

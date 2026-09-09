@@ -42,6 +42,8 @@ TaskTriggerSource = Literal[
 class LogRecord:
     content: list[str] = field(default_factory=list)
     status: str = "未开始监看日志"
+    # 所属运行阶段（如 MaaEnd 的送货/日常/自动采集），用于历史记录结果前缀
+    phase: str = ""
 
 
 @dataclass
@@ -134,16 +136,40 @@ class TaskItem(ABC):
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
+    view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
+    instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
     cycle_next_list: List[dict] = field(
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict] = field(default_factory=list, repr=False)
+    game_sign_results: list[dict[str, object]] = field(
+        default_factory=list, repr=False
+    )
     game_sign_summary_consumed: bool = field(default=False, repr=False)
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
+
+    @property
+    def community_results(self) -> list[dict[str, object]]:
+        """读取社区签到结果，底层继续使用历史任务字段。"""
+
+        return self.game_sign_results
+
+    @community_results.setter
+    def community_results(self, value: list[dict[str, object]]) -> None:
+        self.game_sign_results = value
+
+    @property
+    def community_summary_consumed(self) -> bool:
+        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
+
+        return self.game_sign_summary_consumed
+
+    @community_summary_consumed.setter
+    def community_summary_consumed(self, value: bool) -> None:
+        self.game_sign_summary_consumed = value
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -258,6 +284,9 @@ class TaskItem(ABC):
 class TaskExecuteBase(ABC):
     wait_for_finalizer_on_cancel = False
 
+    # 外部手动停止（TaskManager 中止）时置位，供收尾逻辑区分自然结束与手动中止
+    stopped_manually: bool = False
+
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
@@ -307,6 +336,9 @@ class TaskExecuteBase(ABC):
         self._task_group = parent_tg
         try:
             await self.main_task()
+        except asyncio.CancelledError:
+            self.stopped_manually = True
+            raise
         except Exception as e:
             await self.on_crash(e)
         finally:

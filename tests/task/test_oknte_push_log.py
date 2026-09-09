@@ -104,9 +104,7 @@ class OkNteResolveTest(unittest.TestCase):
 
     def test_no_cur_yields_no_stamina_line(self) -> None:
         # 没有当前体力作基数（含未知/非法标记），不追加剩余体力行
-        self.assertEqual(
-            oknte_resolve([(LogType.NORMAL, "CONSUME:60", T)]), []
-        )
+        self.assertEqual(oknte_resolve([(LogType.NORMAL, "CONSUME:60", T)]), [])
 
     def test_stamina_anomaly_single_run(self) -> None:
         # 异象界域刷 1 把单倍（40 体）：76 − 40 = 36（今晚真实场景）
@@ -209,9 +207,7 @@ class OkNteResolveTest(unittest.TestCase):
 
     def test_no_reward_marker_alone_produces_nothing(self) -> None:
         # 仅 NO_REWARD 标记不产出任何节点
-        self.assertEqual(
-            oknte_resolve([(LogType.NORMAL, "NO_REWARD", T)]), []
-        )
+        self.assertEqual(oknte_resolve([(LogType.NORMAL, "NO_REWARD", T)]), [])
 
 
 if __name__ == "__main__":

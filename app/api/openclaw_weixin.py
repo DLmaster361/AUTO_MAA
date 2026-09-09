@@ -33,9 +33,7 @@ from app.models.schema import (
 )
 from app.services.openclaw_weixin import openclaw_weixin_manager
 
-router = APIRouter(
-    prefix="/api/setting/openclaw-weixin", tags=["微信 Claw 通知"]
-)
+router = APIRouter(prefix="/api/setting/openclaw-weixin", tags=["微信 Claw 通知"])
 
 
 @router.post(

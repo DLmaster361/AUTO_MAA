@@ -62,6 +62,10 @@ export class MaaFwService {
      * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
      * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
      * 在请求内完成，首次冷启动可能耗时数分钟。
+     *
+     * 编辑页每打开一次就会调一次，所以先比一遍项目输入指纹：项目没更新过、上次
+     * 准备的环境也还在盘上，就直接还回上次的结果，不再取锁起进程。用户手动重试
+     * 时前端带 ``force``，跳过这层缓存。
      * @param requestBody
      * @returns MaaFWAgentEnvPrepareOut Successful Response
      * @throws ApiError

@@ -161,6 +161,7 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
+  color: var(--ant-color-text);
   background: var(--ant-color-fill-quaternary);
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;

@@ -94,10 +94,10 @@ class PoTranslator:
         *,
         base: Optional[PathLike] = None,
     ) -> "PoTranslator":
-        """加载补充翻译文件（.po / .mo），优先于已加载的翻译
+        """加载补充翻译文件（.po / .mo），语义与 load 一致，保留别名给既有调用方
 
-        补充翻译后加载、覆盖同名键，如 AutoMAS 项目自带的补充 .mo 或专项
-        补充的关键节点文案；与 load 一样支持多个文件与相对路径解析。
+        后加载、覆盖同名键，如 AutoMAS 项目自带的补充 .mo 或专项补充的
+        关键节点文案。
 
         Args:
             paths: 补充翻译文件路径（单个或多个）
@@ -106,14 +106,7 @@ class PoTranslator:
         Returns:
             self（支持链式调用）
         """
-        items = [paths] if isinstance(paths, (str, Path)) else list(paths)
-        for item in items:
-            path = Path(item)
-            if not path.is_absolute() and base is not None:
-                path = Path(base) / path
-            self._map.update(self._load_file(path))
-        self._rebuild_sorted_keys()
-        return self
+        return self.load(paths, base=base)
 
     def translate(self, text: str) -> str:
         """逐行翻译：命中的键替换为译文，未命中返回原文

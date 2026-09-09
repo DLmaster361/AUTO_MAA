@@ -21,6 +21,7 @@
 
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -30,16 +31,12 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    finalize_task_game_sign_notification,
-)
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
-from .ScriptConfig import ScriptConfigTask
+from .ScriptConfig import ScriptConfigTask, maaend_config_mode
 from .tools import push_notification
 
 logger = get_logger("MaaEnd 调度器")
@@ -63,6 +60,11 @@ class MaaEndManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.controller_protocol = ""
+        self.user_config: MultipleConfig[MaaEndUserConfig] | None = None
+        self.maaend_config_dir: Path | None = None
+        self.temp_path: Path | None = None
+        self.had_original_script_config = False
+        self.script_config_mode = "脚本"
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -76,10 +78,14 @@ class MaaEndManager(TaskExecuteBase):
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
             return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
+        controller_name = str(script_config.get("Game", "ControllerType") or "").strip()
+        if not controller_name:
+            return "未选择 MaaEnd 控制器，请在脚本编辑页选择控制器！"
+
         try:
             self.controller_protocol = load_maaend_controller_protocol(
                 Path(script_config.get("Info", "Path")),
-                script_config.get("Game", "ControllerType"),
+                controller_name,
             )
         except (OSError, KeyError, ValueError) as error:
             return f"MaaEnd 控制器配置读取失败: {error}"
@@ -133,15 +139,19 @@ class MaaEndManager(TaskExecuteBase):
         shutil.rmtree(self.temp_path, ignore_errors=True)
         self.temp_path.mkdir(parents=True, exist_ok=True)
         if self.maaend_config_dir.exists():
+            self.had_original_script_config = True
             shutil.copytree(self.maaend_config_dir, self.temp_path, dirs_exist_ok=True)
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
+            target_user_id = self.task_info.user_id or "Default"
             self.script_info.user_list = [
-                UserItem(
-                    user_id=self.task_info.user_id or "Default", name="", status="等待"
-                )
+                UserItem(user_id=target_user_id, name="", status="等待")
             ]
+            if target_user_id != "Default":
+                self.script_config_mode = maaend_config_mode(
+                    self.user_config[uuid.UUID(target_user_id)].get("Info", "Mode")
+                )
         else:
             self.script_info.user_list = [
                 UserItem(
@@ -154,6 +164,42 @@ class MaaEndManager(TaskExecuteBase):
             ]
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+        )
+
+    async def _restore_script_config_from_temp(self) -> None:
+        """恢复任务开始前的 MaaEnd working 配置。"""
+
+        if (
+            not self.temp_path
+            or not self.temp_path.exists()
+            or not self.maaend_config_dir
+        ):
+            return
+        if not self.had_original_script_config:
+            shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
+            return
+
+        temporary_path = self.maaend_config_dir.with_name(
+            self.maaend_config_dir.name + ".tmp"
+        )
+        shutil.rmtree(temporary_path, ignore_errors=True)
+        shutil.copytree(self.temp_path, temporary_path, dirs_exist_ok=True)
+        shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
+        temporary_path.rename(self.maaend_config_dir)
+
+    def _cleanup_script_config_temp(self) -> None:
+        if self.temp_path:
+            shutil.rmtree(self.temp_path, ignore_errors=True)
+
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功时保留 MaaEnd GUI 的写回。"""
+
+        return (
+            self.task_info.mode == "ScriptConfig"
+            and self.script_config_mode == "直控"
+            and not self.stopped_manually
+            and bool(self.script_info.user_list)
+            and self.script_info.user_list[0].status == "完成"
         )
 
     async def main_task(self):
@@ -175,13 +221,25 @@ class MaaEndManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 MaaEnd 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if self.task_info.mode != "ScriptConfig":
+                current_config = self.user_config[uuid.UUID(current_user.user_id)]
+                config_mode = maaend_config_mode(current_config.get("Info", "Mode"))
+                logger.info(f"用户 {current_user.user_id} 配置来源: {config_mode}")
+                if config_mode == "直控":
+                    await self._restore_script_config_from_temp()
+
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
             )
-            await self.spawn(task)
+            try:
+                await self.spawn(task)
+            finally:
+                if self.task_info.mode != "ScriptConfig":
+                    await self._restore_script_config_from_temp()
 
     async def final_task(self):
 
@@ -190,6 +248,12 @@ class MaaEndManager(TaskExecuteBase):
             return
 
         logger.info("MaaEnd 主任务已结束, 开始执行后续操作")
+        if self._keep_script_config_changes():
+            logger.info("直控配置会话成功，保留 MaaEnd 原生配置")
+        else:
+            await self._restore_script_config_from_temp()
+        self._cleanup_script_config_temp()
+
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
@@ -214,10 +278,6 @@ class MaaEndManager(TaskExecuteBase):
             )
 
             title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-            task_result = append_task_game_sign_summary(
-                self.task_info, self.script_info.result
-            )
-            has_game_sign_summary = task_result != self.script_info.result
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -225,20 +285,16 @@ class MaaEndManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": over_count,
                 "uncompleted_count": error_count + wait_count,
-                "result": task_result,
-                "game_sign_summary": has_game_sign_summary,
+                "result": self.script_info.result,
             }
 
             try:
-                push_result = await push_notification(
+                await push_notification(
                     mode="代理结果",
                     title=title,
                     message=result,
                     user_config=None,
                     task_info=self.task_info,
-                )
-                finalize_task_game_sign_notification(
-                    self.task_info, has_game_sign_summary, push_result
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
@@ -250,17 +306,30 @@ class MaaEndManager(TaskExecuteBase):
                     ),
                 )
 
-        # 还原配置
-        if (self.temp_path).exists():
-            shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
-            shutil.copytree(self.temp_path, self.maaend_config_dir, dirs_exist_ok=True)
-        shutil.rmtree(self.temp_path, ignore_errors=True)
-
-        self.script_info.status = "完成"
+        if self.stopped_manually or any(
+            user.status == "异常" for user in self.script_info.user_list
+        ):
+            self.script_info.status = "异常"
+        else:
+            self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MaaEnd任务出现异常: {e}")
+        with suppress(Exception):
+            await self._restore_script_config_from_temp()
+        self._cleanup_script_config_temp()
+
+        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        if script_config.is_locked:
+            with suppress(Exception):
+                await script_config.unlock()
+
+        if self.task_info.mode in ("AutoProxy",) and self.user_config:
+            with suppress(Exception):
+                await script_config.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
+
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,

@@ -31,10 +31,6 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
-from app.tools.game_sign_notify import (
-    append_task_game_sign_summary,
-    finalize_task_game_sign_notification,
-)
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -353,10 +349,6 @@ class GeneralManager(TaskExecuteBase):
             user_result_text = build_user_result_text(
                 self.script_info.user_list, has_uncompleted
             )
-            task_result = append_task_game_sign_summary(
-                self.task_info, user_result_text
-            )
-            has_game_sign_summary = task_result != user_result_text
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -364,20 +356,16 @@ class GeneralManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": over_count,
                 "uncompleted_count": error_count + wait_count,
-                "result": task_result,
-                "game_sign_summary": has_game_sign_summary,
+                "result": user_result_text,
             }
 
             try:
-                push_result = await push_notification(
+                await push_notification(
                     mode="代理结果",
                     title=title,
                     message=result,
                     user_config=None,
                     task_info=self.task_info,
-                )
-                finalize_task_game_sign_notification(
-                    self.task_info, has_game_sign_summary, push_result
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

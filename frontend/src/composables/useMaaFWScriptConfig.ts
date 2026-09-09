@@ -6,13 +6,19 @@ import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/scrip
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
-export type EmulatorType = 'general' | 'mumu' | 'ldplayer'
+export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
 const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
   general: '通用模拟器',
   mumu: 'MuMu 模拟器',
   ldplayer: '雷电模拟器',
+  emulator2: 'Emulator 2.0',
 }
+
+// Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
+// 所以不能按配置类型去查 EmulatorExtras 能力——那样会对雷电设备报「没有可用能力」，
+// 与运行时的真实行为正好相反。真实能力按设备解析，运行时由后端决定。
+const MULTI_EMULATOR_TYPES: ReadonlySet<string> = new Set<string>(['emulator2'])
 
 type MaaFWProjectUpdateSource = MaaFWScriptConfig['Update']['Source']
 type MaaFWProjectUpdateChannel = MaaFWScriptConfig['Update']['Channel']
@@ -79,6 +85,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   Game: {
     LaunchMode: 'AttachOnly',
     LaunchPath: '',
+    PackageName: '',
     Arguments: '',
     WaitTime: 60,
     CloseOnFinish: true,
@@ -227,6 +234,15 @@ export function useMaaFWControlConfig(
     maafwConfig.Info.Resource = nextResource
     await handleChange('Info', 'Controller', maafwConfig.Info.Controller)
     await handleChange('Info', 'Resource', maafwConfig.Info.Resource)
+
+    // 切到非 ADB 控制方式时把模拟器选择清掉：模拟器下拉只在 ADB 分支渲染，留着
+    // 旧值用户既看不到也删不掉，而后端会把「配了模拟器」当成要用 ADB 的信号。
+    if (!isAdbController.value && maafwConfig.Emulator.Id !== '-') {
+      maafwConfig.Emulator.Id = '-'
+      maafwConfig.Emulator.Index = '-'
+      await handleChange('Emulator', 'Id', '-')
+      await handleChange('Emulator', 'Index', '-')
+    }
   }
 
   const handleResourceChange = async () => {
@@ -262,9 +278,14 @@ export function useMaaFWControlConfig(
     return emulatorType ? EMULATOR_TYPE_LABELS[emulatorType] : '模拟器类型加载中'
   })
 
+  // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断
+  const isMultiEmulatorConfig = computed(() =>
+    MULTI_EMULATOR_TYPES.has(selectedEmulatorType.value ?? '')
+  )
+
   const selectedEmulatorCapability = computed(() => {
     const emulatorType = selectedEmulatorType.value
-    if (!emulatorType) return null
+    if (!emulatorType || isMultiEmulatorConfig.value) return null
     return previewData.value?.controlCapabilities.emulatorExtras[emulatorType] || null
   })
 
@@ -276,6 +297,10 @@ export function useMaaFWControlConfig(
       return '读取 interface 后会展示当前 MaaFW 包可用的模拟器增强能力'
     }
 
+    if (isMultiEmulatorConfig.value) {
+      return '该配置纳管了多个模拟器，EmulatorExtras 能力按所选设备在运行时判定'
+    }
+
     const capability = selectedEmulatorCapability.value
     if (capability?.screencap || capability?.input) {
       return `已根据 ${selectedEmulatorLabel.value} 和当前 MaaFW 包能力启用可用的 EmulatorExtras`
@@ -285,6 +310,7 @@ export function useMaaFWControlConfig(
 
   const adbControlStrategyItems = computed(() => {
     const capability = selectedEmulatorCapability.value
+    const perDevice = isMultiEmulatorConfig.value
     const screencapWithExtras = Boolean(capability?.screencap)
     const inputWithExtras = Boolean(capability?.input)
 
@@ -295,9 +321,11 @@ export function useMaaFWControlConfig(
       },
       {
         label: t('misc.screenshot'),
-        value: screencapWithExtras
-          ? 'MaaFW 默认截图集合（包含 EmulatorExtras）'
-          : 'MaaFW 默认截图集合（不启用 EmulatorExtras）',
+        value: perDevice
+          ? '按所选设备在运行时判定'
+          : screencapWithExtras
+            ? 'MaaFW 默认截图集合（包含 EmulatorExtras）'
+            : 'MaaFW 默认截图集合（不启用 EmulatorExtras）',
       },
       {
         label: t('misc.input'),
@@ -446,6 +474,7 @@ export function useMaaFWControlConfig(
     emulatorOptions,
     emulatorDeviceOptions,
     emulatorTypeById,
+    isMultiEmulatorConfig,
     controllerOptions,
     unsupportedControllerOptions,
     unsupportedControllerMessage,

@@ -25,8 +25,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
@@ -1087,10 +1089,13 @@ class AutoProxyTask(TaskExecuteBase):
         if self.wait_event is not None:
             self.wait_event.set()
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"BetterGI 自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"BetterGI 自动代理任务出现异常: {e}",
+                ),
             )
         with suppress(Exception):
             await self.kill_managed_process()

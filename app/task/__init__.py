@@ -43,6 +43,7 @@ _LAZY_EXPORTS = {
     "OkNteManager": (".OkNte", "OkNteManager"),
     "HSRManager": (".HSR", "HSRManager"),
     "BetterGIManager": (".BetterGI", "BetterGIManager"),
+    "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
 }
 
@@ -59,6 +60,7 @@ def __getattr__(name: str):
 def __dir__() -> list[str]:
     return sorted(set(globals()) | set(_LAZY_EXPORTS))
 
+
 __all__ = [
     "MaaManager",
     "SrcManager",
@@ -69,5 +71,6 @@ __all__ = [
     "OkNteManager",
     "HSRManager",
     "BetterGIManager",
+    "ZzzOdManager",
     "MaaFWEmbeddedManager",
 ]

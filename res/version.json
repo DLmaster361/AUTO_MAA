@@ -3,12 +3,12 @@
     "version_info": {
         "v5.5.0-beta.3": {
             "破坏性变更": [
-                "森空岛获取凭据改为扫码登录，完善游戏社区签到、云游戏时长判断与日常便笺展示 by [@Lance0174](https://github.com/Lance0174)",
+                "森空岛获取凭据改为扫码登录，完善游戏社区签到、云游戏时长判断与日常便笺展示 by [@Lance0174](https://github.com/Lance0174) by [@jinghero](https://github.com/jinghero)",
                 "MFW 项目新增了自动更新时机设置，升级后**已有脚本一律默认为「运行前更新」**；不需要的话在项目配置里改成「不更新」 by [@qiyinxi](https://github.com/qiyinxi)",
                 "HSR 专项脚本页的「游戏启动参数」已移除，**旧配置中的该项会在下次保存时自动清除**；窗口大小改由「1920×1080 窗口模式」开关控制 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA 专项代理接管配置时**会强制开启「开始唤醒」的账号切换开关**，以确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA、SRC、MaaEnd 与 OK-NTE 用户页的「简洁 / 详细」配置模式**更名为「脚本 / 用户」**，含义不变，旧配置自动迁移 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MAA 计划表模式下不再强制关闭「库存保持」；此前在固定关卡模式开启过该开关的用户升级后会自动生效，**库存保持会先于理智作战执行**，不需要的话请在用户编辑页关闭"
+                "MAA 计划表模式下不再强制关闭「库存保持」；此前在固定关卡模式开启过该开关的用户升级后会自动生效，**库存保持会先于理智作战执行**，不需要的话请在用户编辑页关闭 by [@jinghero](https://github.com/jinghero)"
             ],
             "本次亮点": [
                 "新增绝区零一条龙（ZZZ-OD）专项适配，支持用户独立模式与直控模式 by [@qiyinxi](https://github.com/qiyinxi)",

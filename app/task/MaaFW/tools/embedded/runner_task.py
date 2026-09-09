@@ -49,6 +49,7 @@ from app.task.MaaFW.tools.notify import push_notification
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
+from app.utils.paths import SOURCE_ROOT
 
 from .project_path import release_project_path, try_reserve_project_path
 from .runtime_route import MaaFWManagedExecutionRoute, managed_execution_route
@@ -653,12 +654,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.script_config.get("Info", "Controller") or ""
         ).strip()
 
-        wants_adb = self.script_config.get("Emulator", "Id") != "-"
-        if wants_adb:
-            if configured_controller:
-                controller = _find_controller(interface_model, configured_controller)
-                if controller.type == "Adb":
-                    return controller.name
+        # 用户在脚本页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是
+        # 先在 ADB 模式下选过模拟器、之后把控制方式改成 Win32 的用户会被静默改回 ADB：
+        # Emulator.Id 还留着旧值（Win32 分支下模拟器下拉被隐藏，用户没有入口清它），
+        # 运行时回落到第一个 Adb controller，按 Win32 编排的任务被 run_plan 过滤掉，
+        # 或者直接报「当前 controller/resource 下没有可执行任务」。
+        if configured_controller:
+            with suppress(RuntimeError):
+                return _find_controller(interface_model, configured_controller).name
+            # 配置里的 controller 在当前 interface 中已不存在（项目更新改了名字），
+            # 落到下面按模拟器推断，保持旧的兜底行为
+        if self.script_config.get("Emulator", "Id") != "-":
             adb_controller = next(
                 (
                     controller
@@ -669,9 +675,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             if adb_controller is not None:
                 return adb_controller.name
-        if configured_controller:
-            return configured_controller
-        return None
+        return configured_controller or None
 
     def _select_resource_name(
         self,
@@ -1101,10 +1105,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     int(self.script_config.get("Run", "RunTimeLimit") or 30) * 60 + 600,
                 ),
                 # worker 跑在 runtime pool 的隔离 venv 里，代码要靠 PYTHONPATH
-                # 找到本仓。插件形态下这里给的是插件目录（get_plugin_import_paths），
-                # 树内对应物就是仓库根。只给代码路径、不给宿主 venv 的
-                # site-packages，隔离 venv 里的 maafw 因此仍然优先。
-                import_paths=[Path.cwd()],
+                # 找到本仓。这里必须是源码根而不是 Path.cwd()：受 Runtime 监督时
+                # 工作目录是 <app-root>、源码在 <app-root>/repo/，cwd 下没有 app/ 包。
+                # 只给代码路径、不给宿主 venv 的 site-packages，隔离 venv 里的
+                # maafw 因此仍然优先。
+                import_paths=[SOURCE_ROOT],
                 send_log=send_runner_log,
                 cancel_event=prepare_cancel_event,
             )

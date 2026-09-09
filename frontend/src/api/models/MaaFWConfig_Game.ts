@@ -12,6 +12,10 @@ export type MaaFWConfig_Game = {
      */
     LaunchPath?: (string | null);
     /**
+     * 安卓游戏包名，留空则从项目的 pipeline 中自动识别
+     */
+    PackageName?: (string | null);
+    /**
      * 游戏启动参数
      */
     Arguments?: (string | null);

@@ -246,6 +246,8 @@ export interface MaaFWScriptConfig {
   Game: {
     LaunchMode: MaaFWLaunchMode
     LaunchPath: string
+    /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
+    PackageName: string
     Arguments: string
     WaitTime: number
     CloseOnFinish: boolean

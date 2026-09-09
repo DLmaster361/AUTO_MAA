@@ -906,6 +906,10 @@ export default {
     masManagedConfigurationOff: 'MAS-managed configuration is off',
     masManagesGame: 'MAS manages the game',
     mfwAdbControllerUses: 'The MFW ADB controller uses this emulator configuration',
+    mfwGamePackageName: 'Game package name',
+    mfwGamePackageNamePassed:
+      'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
+    mfwGamePackageNamePlaceholder: 'Empty to auto-detect, e.g. com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:
@@ -1594,7 +1598,8 @@ export default {
     zzzodScriptConfiguration: 'ZZZ-OD script settings',
     zzzodScriptNameHint: 'Distinguishes this ZZZ-OD script instance from others',
     zzzodRootPath: 'ZZZ-OD install directory',
-    zzzodRootPathHint: 'Pick the OneDragon install root (contains the OneDragon launcher and the config folder)',
+    zzzodRootPathHint:
+      'Pick the OneDragon install root (contains the OneDragon launcher and the config folder)',
     zzzodRootPathPlaceholder: 'Pick the OneDragon install root directory',
     zzzodRootPathRequired: 'Pick the ZZZ-OD install directory',
     zzzodRootPathSaved: 'ZZZ-OD install directory saved',
@@ -1605,23 +1610,26 @@ export default {
     zzzodCloseGameOnFinish: 'Close the game after the run',
     zzzodAccountSwitch: 'Account switching',
     zzzodAccountSwitchHint:
-      'Multi-user runs switch each user\'s account per the selected method; hover a dropdown option for its details',
+      "Multi-user runs switch each user's account per the selected method; hover a dropdown option for its details",
     zzzodAccountSwitchSingle: 'Single-instance (recommended)',
     zzzodAccountSwitchSingleHint:
-      "Each user gets an independent one-dragon session: inject that user config → single-instance run (no cross-slot switching) → finish and close → next user. A failure only restarts the failed user; users are fully isolated",
+      'Each user gets an independent one-dragon session: inject that user config → single-instance run (no cross-slot switching) → finish and close → next user. A failure only restarts the failed user; users are fully isolated',
     zzzodAccountSwitchMulti: 'Multi-instance (not recommended)',
     zzzodAccountSwitchMultiHint:
       'All users merge into one multi-account run with the one-dragon switching accounts internally; shortest total time, but one bad slot or failed switch drags the whole round into retries and users are not isolated',
     zzzodAccountSwitchMas: 'MAS switching (not yet available)',
     zzzodAccountSwitchMasHint:
       'MAS drives the game to switch accounts then hands over to the one-dragon; not yet available',
-    zzzodCloseGameOnFinishHint: 'MAS closes the game after the run; the game is also closed when you manually stop the schedule (recommended for multi-account runs)',
+    zzzodCloseGameOnFinishHint:
+      'MAS closes the game after the run; the game is also closed when you manually stop the schedule (recommended for multi-account runs)',
     zzzodLaunchBeforeTaskHint:
       'MAS starts the game before running; skipped when the game is already running',
     zzzodGameArgumentsHint: 'Game launch arguments (not the one-dragon launcher arguments)',
     zzzodRetryLimitHint: 'Give up after this many failures; re-runs skip already completed tasks',
-    zzzodRunTimeoutHint: 'Times out when the log stays silent; a full one-dragon run usually needs 180+ minutes',
-    zzzodDuplicateUserName: 'Another user with this name already exists in this script; pick a different name',
+    zzzodRunTimeoutHint:
+      'Times out when the log stays silent; a full one-dragon run usually needs 180+ minutes',
+    zzzodDuplicateUserName:
+      'Another user with this name already exists in this script; pick a different name',
     zzzodTaskConfigHint: 'Click for quick config',
     zzzodTaskConfigLoadFailed: 'Could not load the task config',
     zzzodTaskConfigSaveFailed: 'Could not save the task config',
@@ -1646,8 +1654,7 @@ export default {
     zzzodLauncherIntegrated: 'Integrated',
     zzzodLauncherAutoHint:
       'Prefer the last successful launcher; on startup failure, retry with the other one and remember the next successful one',
-    zzzodLauncherOriginalHint:
-      'Always use the original launcher (OneDragon-Launcher.exe)',
+    zzzodLauncherOriginalHint: 'Always use the original launcher (OneDragon-Launcher.exe)',
     zzzodLauncherIntegratedHint:
       'Always use the integrated launcher (OneDragon-RuntimeLauncher.exe, bundled runtime)',
     zzzodLauncherLoadFailed: 'Failed to load launcher availability',
@@ -1668,7 +1675,8 @@ export default {
       'Backups of the standalone MAS user config; restoring applies directly to the MAS config page. Created automatically (dedup) before running {script} or opening its config, latest 10 kept',
     configRestoreScriptDesc:
       'Backups of the {script} native config; restoring applies directly to {script} itself. Created automatically (dedup) before running {script}, editing in direct-control mode, or opening its config, latest 10 kept',
-    configRestoreEmpty: 'No backups yet; they are created automatically before runs or config sessions',
+    configRestoreEmpty:
+      'No backups yet; they are created automatically before runs or config sessions',
     configRestorePreview: 'Preview config',
     configRestorePreviewTitle: 'Config preview',
     configRestorePreviewFailed: 'Failed to load config preview',
@@ -1678,7 +1686,8 @@ export default {
     configRestorePreviewActive: 'Active',
     configRestoreListFailed: 'Failed to load backups',
     configRestoreDetailView: 'View details',
-    configRestoreDetailHint: 'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
+    configRestoreDetailHint:
+      'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
     configRestoreAction: 'Restore',
     configRestoreSuccess: 'Config restored',
     configRestoreFailed: 'Failed to restore config',
@@ -1699,7 +1708,8 @@ export default {
     zzzodOpenNativeConfigHint:
       'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-<user>) seeded from this page, task list and account changes made in the GUI read back here automatically, and the previous active instance is restored on close',
     zzzodConfiguringTitle: 'ZZZ-OD setup in progress',
-    zzzodConfiguringDesc: 'Switched to the dedicated instance bound to this user; finish team setup there.',
+    zzzodConfiguringDesc:
+      'Switched to the dedicated instance bound to this user; finish team setup there.',
     zzzodConfiguringDesc2:
       'Task and account changes in the GUI read back to this page; click "Save settings" to end this session when done.',
     zzzodScriptFallbackName: 'ZZZ-OD script',
@@ -1709,10 +1719,12 @@ export default {
     zzzodSessionFailed: 'ZZZ-OD setup failed: {p0}',
     zzzodSessionOpened: 'ZZZ-OD setup opened',
     zzzodViewOpened: 'ZZZ-OD viewer opened',
-    zzzodSessionTimeoutWarn: 'The ZZZ-OD setup session is about to time out and will be saved in 30 seconds',
+    zzzodSessionTimeoutWarn:
+      'The ZZZ-OD setup session is about to time out and will be saved in 30 seconds',
     zzzodViewingTitle: 'Viewing ZZZ-OD config',
     zzzodViewingDesc: 'The OneDragon window shows the selected backup, for viewing only.',
-    zzzodViewingDesc2: 'Viewing does not change the fields on this page; click "Close viewer" when done.',
+    zzzodViewingDesc2:
+      'Viewing does not change the fields on this page; click "Close viewer" when done.',
     zzzodViewClose: 'Close viewer',
     zzzodSettingsSaved: 'ZZZ-OD settings saved',
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',
@@ -1720,10 +1732,9 @@ export default {
     zzzodConfigSourceUserAlert:
       'Account and task list follow this page; AUTO-MAS injects them into the one-dragon at run time',
     zzzodConfigSourceDirectAlert:
-      'Direct mode edits the selected instance\'s native one-dragon config and runs with that instance\'s config; MAS does not inject or interfere',
+      "Direct mode edits the selected instance's native one-dragon config and runs with that instance's config; MAS does not inject or interfere",
     zzzodModeUser: 'User',
-    zzzodModeUserDesc:
-      "Use this user's independent config, isolated from the native one.",
+    zzzodModeUserDesc: "Use this user's independent config, isolated from the native one.",
     zzzodModeDirectDesc:
       "Edit the one-dragon's native config directly; configure multiple accounts in the Instance management on this page\n(one direct-control user per script)",
     zzzodDirectInstance: 'Instance to edit',
@@ -1732,7 +1743,7 @@ export default {
     zzzodDirectPickInstance: 'Pick the instance to edit',
     zzzodDirectPickInstanceFirst: 'Pick an instance above first',
     zzzodDirectModeLimit:
-      'Only one direct-control user is allowed per script; configure multiple accounts in that user\'s Instance management',
+      "Only one direct-control user is allowed per script; configure multiple accounts in that user's Instance management",
     zzzodDirectInstanceRun: 'Run instances',
     zzzodDirectInstanceRunHint:
       'Run current only = run just the selected account; all enabled instances = run every account whose "Launch instance" switch is on, in the one-dragon\'s own order',
@@ -1741,9 +1752,10 @@ export default {
     zzzodDirectBindAlert:
       'Account fields only write back when you click Save settings; task toggles and Run instances take effect immediately. Entering/leaving Direct mode auto-creates a backup you can restore from Config restore',
     zzzodDirectTasksDesc:
-      'Task switches and order are written straight back to the selected instance\'s native task list; flip a switch to include it, drag the card handle to reorder. Disabled tasks can stay anywhere in the list.',
+      "Task switches and order are written straight back to the selected instance's native task list; flip a switch to include it, drag the card handle to reorder. Disabled tasks can stay anywhere in the list.",
     zzzodSortTasks: 'Tidy up',
-    zzzodSortTasksHint: 'Move enabled tasks before disabled ones (keeping their relative order) and write back',
+    zzzodSortTasksHint:
+      'Move enabled tasks before disabled ones (keeping their relative order) and write back',
     zzzodDragSortHint: 'Drag to reorder',
     zzzodInstancesManage: 'Instance management',
     zzzodInstancesManageHint:
@@ -1782,12 +1794,13 @@ export default {
     zzzodDeleteInstanceSuccess: 'Instance deleted',
     zzzodNativeLoadFailed: 'Could not load the instance native config',
     zzzodNativeSaveFailed: 'Could not save the instance native config',
-    zzzodNativeSaved: 'Saved to the selected instance\'s native one-dragon config',
+    zzzodNativeSaved: "Saved to the selected instance's native one-dragon config",
     zzzodBackupFailed:
       'Could not back up the direct-control config; check Config restore for a recovery point',
     zzzodLoadInstancesFailed: 'Could not load the instance list',
     zzzodGameRegion: 'Game region',
-    zzzodGameRegionHint: 'The region of this account; regions differ in client and daily reset time',
+    zzzodGameRegionHint:
+      'The region of this account; regions differ in client and daily reset time',
     zzzodRegionCn: 'CN',
     zzzodRegionCnB: 'CN (Bilibili)',
     zzzodRegionUs: 'US',
@@ -3155,8 +3168,10 @@ export default {
       checkIssue: 'Check did not pass',
       monitors: 'Monitors during the check',
       download: 'Download the Parsec virtual display driver (GitHub)',
-      driverUnavailable: 'No usable virtual display driver detected ({reason}); the switch is unavailable',
-      enabledButUnavailable: 'The switch is on, but no usable driver is detected ({reason}); this feature will not take effect',
+      driverUnavailable:
+        'No usable virtual display driver detected ({reason}); the switch is unavailable',
+      enabledButUnavailable:
+        'The switch is on, but no usable driver is detected ({reason}); this feature will not take effect',
       stage: {
         installed: 'Driver installed',
         openable: 'Driver reachable',

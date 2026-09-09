@@ -504,11 +504,23 @@ class ZzzOdBackupPreviewOut(OutBase):
     )
 
 
+class MaaEndEssenceTargetGroup(BaseModel):
+    value: str = Field(..., description="武器类型标识")
+    label: str = Field(..., description="武器类型展示名")
+    options: List[ComboBoxItem] = Field(..., description="该类型可选武器")
+
+
 class MaaEndOptionsOut(OutBase):
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
     essenceLocations: List[ComboBoxItem] = Field(
         ..., description="MaaEnd 基质刷取地点选项"
+    )
+    essenceMenus: List[ComboBoxItem] = Field(
+        ..., description="MaaEnd 基质刷取模式选项"
+    )
+    essenceTargetWeaponGroups: List[MaaEndEssenceTargetGroup] = Field(
+        ..., description="MaaEnd 基质目标武器分组"
     )
 
 
@@ -1979,6 +1991,12 @@ class MaaEndUserConfig_Task(BaseModel):
     AutoEssenceSpecifiedLocation: Optional[str] = Field(
         default=None, description="基质刷取指定地点"
     )
+    AutoEssenceMenu: Optional[Literal["Random", "Location", "Target"]] = Field(
+        default=None, description="基质刷取模式"
+    )
+    AutoEssenceTargetWeapons: Optional[list[str]] = Field(
+        default=None, description="基质目标武器 ID 列表"
+    )
     IfSanity: Optional[bool] = Field(default=None, description="理智任务")
     IfAutoUseSpMedication: Optional[bool] = Field(
         default=None, description="应急理智加强剂"
@@ -3440,6 +3458,12 @@ class MaaEndAutoEssencePlanKey(BaseModel):
     )
     AutoEssenceSpecifiedLocation: str = Field(
         default="", description="基质刷取指定地点"
+    )
+    AutoEssenceMenu: Optional[Literal["Random", "Location", "Target"]] = Field(
+        default=None, description="基质刷取模式"
+    )
+    AutoEssenceTargetWeapons: list[str] = Field(
+        default_factory=list, description="基质目标武器 ID 列表"
     )
 
 

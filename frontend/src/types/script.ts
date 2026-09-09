@@ -14,6 +14,7 @@ import type {
 } from '@/api'
 import type {
   AutoEssenceLocation,
+  AutoEssenceMenu,
   MaaEndAutoCollectCommonRoute,
   MaaEndAutoCollectMode,
   MaaEndAutoCollectRoute,
@@ -158,6 +159,8 @@ export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
   CrisisDrills: ProtocolSpaceTaskValue
   RewardsSetOption: RewardSetOption
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
+  AutoEssenceMenu: AutoEssenceMenu
+  AutoEssenceTargetWeapons: string[]
 }
 
 // MaaEnd脚本配置
@@ -611,6 +614,8 @@ export interface User {
     CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
     RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
     AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
+    AutoEssenceMenu?: MaaEndTaskConfig['AutoEssenceMenu']
+    AutoEssenceTargetWeapons?: MaaEndTaskConfig['AutoEssenceTargetWeapons']
   }
   QFluentWidgets: {
     ThemeColor: string

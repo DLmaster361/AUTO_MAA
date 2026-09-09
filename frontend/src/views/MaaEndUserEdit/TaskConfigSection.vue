@@ -88,6 +88,23 @@
         </a-form-item>
       </a-col>
 
+      <a-col v-if="effectiveSanityTaskType === 'Essence'" :span="optionColumnSpan">
+        <a-form-item label="基质刷取模式">
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <span>{{ displayEssenceMenu }}</span>
+            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+          </div>
+          <a-select
+            v-else
+            :value="formData.Task.AutoEssenceMenu"
+            :options="resolvedEssenceMenuOptions"
+            :disabled="optionControlsDisabled"
+            size="large"
+            @change="handleEssenceMenuChange"
+          />
+        </a-form-item>
+      </a-col>
+
       <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
@@ -131,6 +148,7 @@
             v-else
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
+            :mode="isTargetEssenceMode ? 'multiple' : undefined"
             :disabled="optionControlsDisabled"
             :loading="normalizedSanityTaskType === 'Essence' && optionsLoading"
             size="large"
@@ -188,6 +206,9 @@ import {
   getSanityTaskDisplayValue,
   isProtocolSpaceRewardEnabled,
   normalizeMaaEndSanityConfig,
+  AUTO_ESSENCE_MENU_OPTIONS,
+  type AutoEssenceMenu,
+  type MaaEndEssenceTargetGroup,
   type MaaEndSanityConfig,
   type MaaEndTaskSwitch,
   type ProtocolSpaceTab,
@@ -207,6 +228,8 @@ const props = withDefaults(
     loading?: boolean
     ifQuickConfig?: boolean
     essenceLocationOptions: ComboBoxItem[]
+    essenceMenuOptions?: ComboBoxItem[]
+    essenceTargetWeaponGroups?: MaaEndEssenceTargetGroup[]
     optionsLoading?: boolean
     optionsLoaded?: boolean
     isPlanMode?: boolean
@@ -222,6 +245,8 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
+    essenceMenuOptions: () => [],
+    essenceTargetWeaponGroups: () => [],
     planModeConfig: null,
   }
 )
@@ -288,6 +313,16 @@ const displayCurrentTask = computed(() =>
     ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
     : '未读取到计划表配置'
 )
+const displayEssenceMenu = computed(() => {
+  if (!displayPlanConfig.value || displayPlanConfig.value.SanityTaskType !== 'Essence') {
+    return '未读取到计划表配置'
+  }
+  return (
+    resolvedEssenceMenuOptions.value.find(
+      option => option.value === displayPlanConfig.value?.AutoEssenceMenu
+    )?.label ?? displayPlanConfig.value.AutoEssenceMenu
+  )
+})
 const displayRewardsSet = computed(() =>
   displayPlanConfig.value
     ? REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
@@ -297,8 +332,50 @@ const displayRewardsSet = computed(() =>
 const sanityTaskTypeOptions = computed(() =>
   SANITY_TASK_TYPE_OPTIONS.filter(
     option =>
-      option.value !== 'Essence' || !props.optionsLoaded || props.essenceLocationOptions.length > 0
+      option.value !== 'Essence' ||
+      !props.optionsLoaded ||
+      props.essenceLocationOptions.length > 0 ||
+      props.essenceTargetWeaponGroups.length > 0
   )
+)
+
+const resolvedEssenceMenuOptions = computed(() => {
+  if (props.essenceMenuOptions.length) return props.essenceMenuOptions
+  // 旧版 MaaEnd 没有 AutoEssenceMenu；只暴露 MAS 原有的指定地点语义。
+  if (props.optionsLoaded) return [{ label: '指定地点', value: 'Location' }]
+  return AUTO_ESSENCE_MENU_OPTIONS.map(option => ({
+    label: option.label,
+    value: option.value,
+  }))
+})
+
+const essenceTargetWeaponOptions = computed<ComboBoxItem[]>(() => {
+  const options = props.essenceTargetWeaponGroups.flatMap(group =>
+    group.options.map(option => ({
+      label: `${group.label} · ${option.label}`,
+      value: option.value,
+    }))
+  )
+  const values = new Set(options.map(option => option.value))
+  const selected = Array.isArray(formData.Task.AutoEssenceTargetWeapons)
+    ? formData.Task.AutoEssenceTargetWeapons
+    : []
+  for (const value of selected) {
+    if (typeof value === 'string' && value && !values.has(value)) {
+      options.unshift({ label: value, value })
+    }
+  }
+  return options
+})
+
+const effectiveEssenceMenu = computed<AutoEssenceMenu>(() => {
+  const value = displayPlanConfig.value?.AutoEssenceMenu ?? formData.Task.AutoEssenceMenu
+  return resolvedEssenceMenuOptions.value.some(option => option.value === value)
+    ? value
+    : 'Location'
+})
+const isTargetEssenceMode = computed(
+  () => normalizedSanityTaskType.value === 'Essence' && effectiveEssenceMenu.value === 'Target'
 )
 
 const normalizedSanityTaskType = computed<SanityTaskType>(() =>
@@ -316,13 +393,17 @@ const currentField = computed(
 )
 const currentTaskSaveKey = computed(() =>
   normalizedSanityTaskType.value === 'Essence'
-    ? 'Task.AutoEssenceSpecifiedLocation'
+    ? isTargetEssenceMode.value
+      ? 'Task.AutoEssenceTargetWeapons'
+      : 'Task.AutoEssenceSpecifiedLocation'
     : `Task.${currentField.value}`
 )
 
 const currentTaskOptions = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') {
-    return props.essenceLocationOptions
+    return isTargetEssenceMode.value
+      ? essenceTargetWeaponOptions.value
+      : props.essenceLocationOptions
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
 })
@@ -330,13 +411,19 @@ const currentTaskOptions = computed(() => {
 const currentTaskValue = computed({
   get: () => {
     if (normalizedSanityTaskType.value === 'Essence') {
-      return formData.Task.AutoEssenceSpecifiedLocation
+      return isTargetEssenceMode.value
+        ? formData.Task.AutoEssenceTargetWeapons
+        : formData.Task.AutoEssenceSpecifiedLocation
     }
     return formData.Task[currentField.value]
   },
   set: value => {
     if (normalizedSanityTaskType.value === 'Essence') {
-      formData.Task.AutoEssenceSpecifiedLocation = value
+      if (isTargetEssenceMode.value) {
+        formData.Task.AutoEssenceTargetWeapons = Array.isArray(value) ? value : []
+      } else {
+        formData.Task.AutoEssenceSpecifiedLocation = value
+      }
       return
     }
     formData.Task[currentField.value] = value
@@ -358,14 +445,18 @@ const rewardGroupEnabled = computed(() => {
 
 const taskOptionLabel = computed(() =>
   effectiveSanityTaskType.value === 'Essence'
-    ? '基质地点'
+    ? effectiveEssenceMenu.value === 'Target'
+      ? '目标武器'
+      : '基质地点'
     : (PROTOCOL_SPACE_TASK_TITLE_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
   effectiveSanityTaskType.value === 'Essence'
-    ? '选择当前基质刷取地点'
+    ? effectiveEssenceMenu.value === 'Target'
+      ? '选择需要刷取的目标武器，留空表示不限制武器'
+      : '选择当前基质刷取地点'
     : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[effectiveSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
@@ -382,6 +473,19 @@ const handleDailyOnceTasksChange = (values: string[]) => {
   formData.Task.DailyOnceTasks = serialized
   // 非快速配置同样开放此用户级选项，不能走仅允许快速配置任务开关的 emitSave。
   emit('save', 'Task.DailyOnceTasks', serialized)
+}
+
+const handleEssenceMenuChange = (value: AutoEssenceMenu) => {
+  if (optionControlsDisabled.value) return
+  const normalized = AUTO_ESSENCE_MENU_OPTIONS.some(option => option.value === value)
+    ? value
+    : 'Location'
+  formData.Task.AutoEssenceMenu = normalized
+  const taskValueChange = ensureCurrentTaskValue()
+  emitSaveBatch([
+    { key: 'Task.AutoEssenceMenu', value: normalized },
+    ...(taskValueChange ? [taskValueChange] : []),
+  ])
 }
 
 const taskSwitchKey = (taskName: MaaEndTaskSwitch) => `If${taskName}` as const
@@ -434,6 +538,16 @@ const ensureCurrentTaskValue = (): FieldChange | null => {
   if (optionControlsDisabled.value) return null
   const options = currentTaskOptions.value
   if (!options.length) return null
+  if (isTargetEssenceMode.value) {
+    const selected = Array.isArray(currentTaskValue.value) ? currentTaskValue.value : []
+    const validValues = new Set(options.map(option => option.value).filter(Boolean))
+    const normalized = selected.filter((value: unknown): value is string =>
+      typeof value === 'string' && validValues.has(value)
+    )
+    if (JSON.stringify(normalized) === JSON.stringify(selected)) return null
+    currentTaskValue.value = normalized
+    return { key: currentTaskSaveKey.value, value: normalized }
+  }
   if (options.some(option => option.value === currentTaskValue.value)) return null
 
   currentTaskValue.value = options[0].value
@@ -484,6 +598,9 @@ watch(
     () => props.optionsLoading,
     () => formData.Task.SanityTaskType,
     () => props.essenceLocationOptions,
+    () => props.essenceMenuOptions,
+    () => props.essenceTargetWeaponGroups,
+    () => formData.Task.AutoEssenceMenu,
   ],
   () => {
     if (optionControlsDisabled.value) return

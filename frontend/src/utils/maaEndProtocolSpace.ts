@@ -180,6 +180,14 @@ export const SANITY_TASK_TYPE_OPTIONS = [
 
 export type SanityTaskType = (typeof SANITY_TASK_TYPE_OPTIONS)[number]['value']
 
+export const AUTO_ESSENCE_MENU_OPTIONS = [
+  { label: '随机', value: 'Random' },
+  { label: '指定地点', value: 'Location' },
+  { label: '目标武器', value: 'Target' },
+] as const
+
+export type AutoEssenceMenu = (typeof AUTO_ESSENCE_MENU_OPTIONS)[number]['value']
+
 export const REWARD_OPTIONS = [
   { label: '奖励组 A', value: 'RewardsSetA' },
   { label: '奖励组 B', value: 'RewardsSetB' },
@@ -188,6 +196,12 @@ export const REWARD_OPTIONS = [
 export type RewardSetOption = (typeof REWARD_OPTIONS)[number]['value']
 
 export type AutoEssenceLocation = string
+
+export interface MaaEndEssenceTargetGroup {
+  value: string
+  label: string
+  options: ComboBoxItem[]
+}
 
 export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
   OperatorProgression: [
@@ -211,7 +225,7 @@ export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
 
 export type ProtocolSpaceTaskValue =
   (typeof PROTOCOL_SPACE_TASK_OPTIONS_MAP)[ProtocolSpaceTab][number]['value']
-export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation
+export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation | string[]
 
 export const MAAEND_TASK_GROUPS = [
   {
@@ -298,6 +312,8 @@ export interface MaaEndSanityConfig {
   CrisisDrills: ProtocolSpaceTaskValue
   RewardsSetOption: RewardSetOption
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
+  AutoEssenceMenu: AutoEssenceMenu
+  AutoEssenceTargetWeapons: string[]
 }
 
 export interface MaaEndProtocolSpacePlanKey {
@@ -311,6 +327,8 @@ export interface MaaEndProtocolSpacePlanKey {
 export interface MaaEndAutoEssencePlanKey {
   SanityTaskType: 'Essence'
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
+  AutoEssenceMenu?: AutoEssenceMenu
+  AutoEssenceTargetWeapons?: string[]
 }
 
 export type MaaEndPlanKey = MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey
@@ -376,6 +394,8 @@ export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
   CrisisDrills: 'AdvancedProgression1',
   RewardsSetOption: 'RewardsSetA',
   AutoEssenceSpecifiedLocation: '',
+  AutoEssenceMenu: 'Location',
+  AutoEssenceTargetWeapons: [],
 })
 
 export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
@@ -390,7 +410,9 @@ export const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): Protoco
 
 export const getCurrentTaskValue = (config: MaaEndSanityConfig): CurrentTaskValue => {
   if (config.SanityTaskType === 'Essence') {
-    return config.AutoEssenceSpecifiedLocation
+    return config.AutoEssenceMenu === 'Target'
+      ? config.AutoEssenceTargetWeapons
+      : config.AutoEssenceSpecifiedLocation
   }
   return getCurrentProtocolTaskValue(config)
 }
@@ -408,6 +430,11 @@ export const getSanityTaskDisplayValue = (
 ) => {
   const config = normalizeMaaEndSanityConfig(rawConfig)
   if (config.SanityTaskType === 'Essence') {
+    if (config.AutoEssenceMenu === 'Target') {
+      return config.AutoEssenceTargetWeapons.length
+        ? `目标武器（${config.AutoEssenceTargetWeapons.length} 件）`
+        : '目标武器（未限制）'
+    }
     return (
       essenceLocationOptions.find(option => option.value === config.AutoEssenceSpecifiedLocation)
         ?.label || config.AutoEssenceSpecifiedLocation
@@ -430,6 +457,31 @@ export const normalizeMaaEndSanityConfig = (
   if (!REWARD_LABEL_MAP[config.RewardsSetOption]) {
     config.RewardsSetOption = 'RewardsSetA'
   }
+
+  const rawHasEssenceMenu = Boolean(
+    rawConfig && Object.prototype.hasOwnProperty.call(rawConfig, 'AutoEssenceMenu')
+  )
+  if (
+    !rawHasEssenceMenu &&
+    Array.isArray(config.AutoEssenceTargetWeapons) &&
+    config.AutoEssenceTargetWeapons.length
+  ) {
+    config.AutoEssenceMenu = 'Target'
+  } else if (!AUTO_ESSENCE_MENU_OPTIONS.some(option => option.value === config.AutoEssenceMenu)) {
+    config.AutoEssenceMenu =
+      Array.isArray(config.AutoEssenceTargetWeapons) && config.AutoEssenceTargetWeapons.length
+        ? 'Target'
+        : 'Location'
+  }
+  config.AutoEssenceTargetWeapons = Array.isArray(config.AutoEssenceTargetWeapons)
+    ? Array.from(
+        new Set(
+          config.AutoEssenceTargetWeapons.filter(
+            (item): item is string => typeof item === 'string' && item.length > 0
+          )
+        )
+      )
+    : []
 
   if (config.SanityTaskType !== 'Essence') {
     const currentField = getProtocolSpaceTaskField(config.SanityTaskType)
@@ -468,9 +520,19 @@ export const maaEndPlanKeyToSanityConfig = (rawSlot?: unknown): MaaEndSanityConf
 export const normalizeMaaEndPlanKey = (rawSlot?: unknown): MaaEndPlanKey => {
   const config = maaEndPlanKeyToSanityConfig(rawSlot)
   if (config.SanityTaskType === 'Essence') {
+    const rawObject = rawSlot && typeof rawSlot === 'object' ? (rawSlot as Record<string, unknown>) : {}
+    const rawKey = rawObject.Key && typeof rawObject.Key === 'object'
+      ? (rawObject.Key as Record<string, unknown>)
+      : rawObject
     return {
       SanityTaskType: 'Essence',
       AutoEssenceSpecifiedLocation: config.AutoEssenceSpecifiedLocation,
+      ...(rawKey.AutoEssenceMenu !== undefined
+        ? { AutoEssenceMenu: config.AutoEssenceMenu }
+        : {}),
+      ...(config.AutoEssenceTargetWeapons.length
+        ? { AutoEssenceTargetWeapons: config.AutoEssenceTargetWeapons }
+        : {}),
     }
   }
 

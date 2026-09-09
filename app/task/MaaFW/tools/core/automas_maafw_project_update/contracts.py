@@ -28,6 +28,15 @@ UpdateStatus = Literal[
 
 RESERVED_PROJECT_DIRS = frozenset({".mas-update", ".mas-update-cache"})
 
+# 指纹只回答「项目是否还是我们装下去的那份」，必须排除运行期产物：MaaFW 每次启动都往
+# 项目目录写 debug/ 日志，runner 还会重写 config/maa_option.json，Python agent 会留下
+# __pycache__。把它们算进哈希，项目跑过一次后差量更新的基线校验就永远对不上，而那条
+# 路径没有回退全量包的分支——Mirror 酱源于是再也装不上更新。
+# 与 RESERVED_PROJECT_DIRS 分开：那个还用于拒绝更新包写入保留路径，把运行期目录塞进去
+# 会让本来就带 config/ 的合法包直接装不上。
+FINGERPRINT_IGNORED_DIRS = frozenset({"debug", "logs", "temp", "__pycache__"})
+FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json"})
+
 
 def artifact_id_for(
     source: str,
@@ -79,6 +88,10 @@ def project_fingerprint(project_path: str | Path) -> str | None:
             continue
         if any(part in RESERVED_PROJECT_DIRS for part in relative.parts):
             continue
+        if any(part in FINGERPRINT_IGNORED_DIRS for part in relative.parts):
+            continue
+        if relative.as_posix().casefold() in FINGERPRINT_IGNORED_FILES:
+            continue
         if candidate.is_symlink():
             return None
         if candidate.is_file():
@@ -128,6 +141,8 @@ def safe_relative_path(raw_path: str) -> str:
 
 __all__ = [
     "ArtifactType",
+    "FINGERPRINT_IGNORED_DIRS",
+    "FINGERPRINT_IGNORED_FILES",
     "RESERVED_PROJECT_DIRS",
     "UpdateStatus",
     "artifact_id_for",

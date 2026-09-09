@@ -4290,6 +4290,47 @@ class AppConfig(GlobalConfig):
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
 
+    async def clean_maafw_native_debug_logs(self) -> None:
+        """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
+
+        MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
+        ``debug/maafw.bak.<时间戳>.log`` 再开新的，但从不回收旧的——一个每天跑
+        的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
+        ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
+        保留时长沿用历史记录的保留天数设置。
+        """
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
+            return
+
+        from app.models.config import MaaFWConfig
+
+        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        deleted_count = 0
+        for script_config in self.ScriptConfig.values():
+            if not isinstance(script_config, MaaFWConfig):
+                continue
+            project_path = str(script_config.get("Info", "Path") or "").strip()
+            if not project_path:
+                continue
+            debug_folder = Path(project_path) / "debug"
+            if not debug_folder.is_dir():
+                continue
+            # 备份文件名由 MaaFramework 决定，与 runner_task 里
+            # _iter_rotated_native_debug_logs 认的是同一套。
+            for file in debug_folder.glob("maafw.bak.*.log"):
+                try:
+                    if file.stat().st_mtime >= cutoff:
+                        continue
+                    file.unlink()
+                except OSError as exc:
+                    logger.warning(f"MFW 原生日志备份清理失败: {file} - {exc}")
+                    continue
+                deleted_count += 1
+        if deleted_count:
+            logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
+
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""
 

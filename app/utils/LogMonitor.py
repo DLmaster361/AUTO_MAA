@@ -209,6 +209,12 @@ class LogMonitor:
                         log_start_time,
                     )
                     offset = 0
+                    # 与上面路径切换分支同理：排空可能一行未得（旧文件在轮转
+                    # 前一轮已读空），无行触发回调时 last_callback_time 仍停在
+                    # 轮转前；无日期时间格式的跨零点首行会被补到 24 小时前，
+                    # check_log 随即误判运行超时（ZZZ-OD 实测）。必须在找回
+                    # 之后刷新
+                    self.last_callback_time = datetime.now()
 
                 log_stat = current_stat
 

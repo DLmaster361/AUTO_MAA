@@ -51,6 +51,10 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         "echo_of_war_timestamp",
         "echo_of_war_start_day_of_week",
         "currencywars_remembrance_trailblazer_name",
+        # 与 echo_of_war_timestamp 同理：MAS 在 patch 里把这两个周常时间戳归零，
+        # 这里挡住 _apply_managed_patch 用 native config.yaml 的值把它们覆盖回去。
+        "weekly_divergent_timestamp",
+        "currencywars_timestamp",
     }
 )
 
@@ -661,6 +665,11 @@ def build_divergent_universe_patch(
             )
         ),
         "weekly_divergent_stable_mode": low_perf_mode,
+        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个用户打满后写进共享的
+        # config.yaml，下一个用户的 patch 以这份文件为底合并，M7A 就跳过积分复核、
+        # 不再打印 MAS 唯一认的完成 marker，于是第二个用户起永远记不到完成、天天重跑。
+        # 与日常 patch 归零 echo_of_war_timestamp 是同一口径。
+        "weekly_divergent_timestamp": 0,
     }
     if patch["weekly_divergent_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -716,6 +725,9 @@ def build_currency_wars_patch(
                 "currencywars_bonus_enable", M7A_CURRENCY_WARS_BONUS_ENABLE
             )
         ),
+        # 同 weekly_divergent_timestamp：按安装目录存的时间戳会让共用一套 M7A 的
+        # 第二个用户起永远记不到完成。
+        "currencywars_timestamp": 0,
     }
     if patch["currencywars_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -747,6 +759,10 @@ M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset(
         "currencywars_bonus_enable",
         "instance_names",
         "cloud_game_enable",
+        # 两个周常时间戳必须在白名单里，否则 write_m7a_patch 的 merge_whitelist
+        # 会把 patch 里归零的值直接丢掉，写不进 config.yaml
+        "weekly_divergent_timestamp",
+        "currencywars_timestamp",
     }
 )
 

@@ -367,6 +367,23 @@ jobs:
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
 
+      - name: 同步发行版分支到 CNB
+        # 同步失败不该阻断发版：本改动进入默认分支之前，dispatch 会因为默认分支上的
+        # sync-cnb.yml 还没有 workflow_dispatch 而被拒，那时这一步必然报错。
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 上一步用 GITHUB_TOKEN 推分支和 tag，而 GITHUB_TOKEN 造成的 push / create
+          # 不会触发 sync-cnb.yml，CNB 上于是没有当版 release/vX.Y.Z 分支。Runtime 首次
+          # 克隆受管工作区按 [cnb, github] 顺序找这个分支，国内用户在 cnb 上找不到、又
+          # 连不上 github，初始化直接卡死（GIT_CLONE_FAILED）。
+          # workflow_dispatch 是该限制的明确例外，可以用 GITHUB_TOKEN 调起。
+          # 在触发本次构建的分支上 dispatch：sync-cnb 的 checkout 用 fetch-depth: 0，
+          # 本来就会取到全部分支与 tag 再整体镜像过去，跑在哪个分支上都能带上刚推的
+          # 发行版分支。
+          gh workflow run sync-cnb.yml --ref "$GITHUB_REF_NAME"
+
       - name: 发布发行版
         uses: softprops/action-gh-release@v3.0.2
         with:

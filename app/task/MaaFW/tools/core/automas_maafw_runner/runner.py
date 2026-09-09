@@ -32,7 +32,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Literal, TextIO
+from typing import Any, BinaryIO, Callable, TextIO
 
 import maa as maa_package
 from maa.agent_client import AgentClient
@@ -62,6 +62,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
 )
 
 try:
+    from .models import MaaFWDeviceConfig
     from .run_plan import (
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -73,6 +74,7 @@ try:
         route_managed_python_agents_to_shared_runtime,
     )
 except ImportError:
+    from models import MaaFWDeviceConfig  # type: ignore[no-redef]
     from run_plan import (  # type: ignore[no-redef]
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -104,7 +106,6 @@ _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
 
 
-MaaFWControllerType = Literal["Adb", "Win32"]
 AGENT_CONNECT_RETRY_COUNT = 30
 AGENT_CONNECT_RETRY_INTERVAL = 0.2
 AGENT_CONNECT_TIMEOUT_MS = 1000
@@ -502,17 +503,11 @@ def _ensure_maafw_global_init(
         _MAAFW_INITIALIZED = True
 
 
-class MaaFWDeviceConfig(BaseModel):
-    type: MaaFWControllerType
-    adbPath: str | None = None
-    address: str | None = None
-    hWnd: int | None = None
-    screencapMethods: int = MaaAdbScreencapMethodEnum.Default
-    inputMethods: int = MaaAdbInputMethodEnum.Default
-    screencapMethod: int = MaaWin32ScreencapMethodEnum.DXGI_DesktopDup
-    mouseMethod: int = MaaWin32InputMethodEnum.Seize
-    keyboardMethod: int = MaaWin32InputMethodEnum.Seize
-    config: dict[str, Any] = Field(default_factory=dict)
+# MaaFWDeviceConfig 统一从 models 导入（见文件头部的 import）。这里原本还有一份同名
+# 类，比 models 那份少了 adbReadyTimeout；宿主按 models 那份序列化 job 文件、worker 按
+# 这份反序列化，pydantic 默认 extra="ignore" 把该字段静默丢掉，模拟器等待时长设置因此
+# 从落地起就没生效过。各方法的默认值不会因此改变：宿主每次都显式写全本 controller 用到
+# 的字段，另一类 controller 的字段消费点本来就写成 `... or XxxEnum.Default`。
 
 
 class MaaFWRunResult(BaseModel):
@@ -1882,6 +1877,10 @@ class MaaFWRunner:
         env.pop("PIP_TARGET", None)
         env.pop("PIP_PREFIX", None)
         env.pop("PIP_USER", None)
+        # worker 自己需要 PYTHONSAFEPATH（见 build_runner_environment），但不能透传给
+        # 项目 agent：agent 以 `python ./agent/main.py` 启动，靠脚本目录进 sys.path[0]
+        # 才能 import 同级模块，官方模板就是这么写的，继承过去会当场 ModuleNotFoundError。
+        env.pop("PYTHONSAFEPATH", None)
         # 不继承 MAS 的 PYTHONPATH，显式设置为当前项目根目录
         python_path_items: list[str] = []
         if getattr(agent_plan, "runtimeKind", None) == "isolated_venv":
@@ -2224,6 +2223,8 @@ class MaaFWRunner:
         env.pop("PIP_TARGET", None)
         env.pop("PIP_PREFIX", None)
         env.pop("PIP_USER", None)
+        # 与 _build_agent_env 同理：agent 侧不能带 PYTHONSAFEPATH
+        env.pop("PYTHONSAFEPATH", None)
         env["PYTHONPATH"] = str(project_path)
         return env
 

@@ -234,6 +234,15 @@ export function useMaaFWControlConfig(
     maafwConfig.Info.Resource = nextResource
     await handleChange('Info', 'Controller', maafwConfig.Info.Controller)
     await handleChange('Info', 'Resource', maafwConfig.Info.Resource)
+
+    // 切到非 ADB 控制方式时把模拟器选择清掉：模拟器下拉只在 ADB 分支渲染，留着
+    // 旧值用户既看不到也删不掉，而后端会把「配了模拟器」当成要用 ADB 的信号。
+    if (!isAdbController.value && maafwConfig.Emulator.Id !== '-') {
+      maafwConfig.Emulator.Id = '-'
+      maafwConfig.Emulator.Index = '-'
+      await handleChange('Emulator', 'Id', '-')
+      await handleChange('Emulator', 'Index', '-')
+    }
   }
 
   const handleResourceChange = async () => {

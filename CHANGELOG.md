@@ -98,6 +98,10 @@
 - MAA专项 代理接管 MAA 配置时强制开启开始唤醒的账号切换开关，确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
 - MFW专项 进入项目配置页不再每次都要等一遍运行环境确认，开启自动更新时环境准备也提前到任务开始之前完成 by [@qiyinxi](https://github.com/qiyinxi)
 
+### 移除
+
+- 移除米游币获取任务，保留米游社各游戏签到。
+
 ### 修复
 
 - 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因 by [@Lance0174](https://github.com/Lance0174)

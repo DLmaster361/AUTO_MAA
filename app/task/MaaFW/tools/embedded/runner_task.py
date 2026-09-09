@@ -445,6 +445,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
         try:
+            # 执行任务前脚本（每用户仅一次，重试不重复跑）。
+            # 和下面 finally 里的后脚本放进同一个 try，两者严格配对：
+            # 跑过前脚本就一定会跑后脚本。
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
+
             await self._run_pretasks()
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
@@ -454,11 +463,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} - 尝试次数: "
                     f"{index + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
-                if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                    await execute_script_task(
-                        Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                        "脚本前任务",
-                    )
 
                 try:
                     if self.run_plan is None or self.interface_model is None:
@@ -490,12 +494,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if unretryable:
                         break
                     continue
-                finally:
-                    if self.cur_user_config.get("Info", "IfScriptAfterTask"):
-                        await execute_script_task(
-                            Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
-                            "脚本后任务",
-                        )
 
                 await self._mark_period_tasks_completed(result.completedTasks)
                 if result.success:
@@ -527,6 +525,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self.run_complete = True
                         self._append_log("MaaFW 剩余周期任务已完成，停止本轮重试")
         finally:
+            # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
+            # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
+            # 位置在清理之前，与 MAA 一致——收尾脚本可能还要用模拟器里的东西。
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
+
             await self._shutdown_runner()
             await self._close_emulator()
             await self._close_game()

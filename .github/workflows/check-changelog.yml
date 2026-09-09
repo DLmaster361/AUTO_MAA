@@ -1,0 +1,63 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+name: 检查更新日志
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-changelog:
+    name: 检查 CHANGELOG.md 与生成物一致
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7.0.1
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      # CHANGELOG.md 是唯一手写来源，res/version.json 与四处版本号都由它生成。
+      # 这一步同时校验更新日志格式、五处版本号一致、生成物是最新的。
+      - name: 检查更新日志格式与版本号一致性
+        run: python scripts/changelog.py check
+
+      - name: 检查 PR 文件列表
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+
+            if (!files.some(file => file.filename === 'CHANGELOG.md')) {
+              core.setFailed('每个 PR 都必须包含对 CHANGELOG.md 的更改。');
+            }

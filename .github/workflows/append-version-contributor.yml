@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: version-contributors-dev
@@ -32,11 +33,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: git fetch --no-tags origin "pull/${PR_NUMBER}/head:refs/remotes/origin/pr-${PR_NUMBER}"
 
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
       - name: 标记更新条目贡献者
         id: append
         env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_AUTHOR_URL: ${{ github.event.pull_request.user.html_url }}
+          GH_TOKEN: ${{ github.token }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
@@ -44,58 +49,113 @@ jobs:
           import json
           import os
           import subprocess
-          from pathlib import Path
+          import sys
 
-          def load_version(ref: str) -> dict:
-              content = subprocess.check_output(
-                  ["git", "show", f"{ref}:res/version.json"],
+          sys.path.insert(0, "scripts")
+          import changelog
+
+          def load(ref: str) -> dict:
+              """取某个 ref 上的 CHANGELOG.md；取不到或格式不对都当作空，不阻断合并后流程。"""
+              try:
+                  content = subprocess.check_output(
+                      ["git", "show", f"{ref}:CHANGELOG.md"],
+                      text=True,
+                      encoding="utf-8",
+                      stderr=subprocess.DEVNULL,
+                  )
+              except subprocess.CalledProcessError:
+                  print(f"{ref} 上没有 CHANGELOG.md，跳过对比")
+                  return {}
+              try:
+                  return changelog.parse_changelog(content)[1]
+              except changelog.ChangelogError as error:
+                  print(f"{ref} 上的 CHANGELOG.md 无法解析，跳过对比：{error}")
+                  return {}
+
+          base = load(os.environ["PR_BASE_SHA"])
+          head = load(f"origin/pr-{os.environ['PR_NUMBER']}")
+          metadata = json.loads(
+              subprocess.check_output(
+                  [
+                      "gh",
+                      "pr",
+                      "view",
+                      os.environ["PR_NUMBER"],
+                      "--json",
+                      "author,commits",
+                  ],
                   text=True,
                   encoding="utf-8",
               )
-              return json.loads(content)
+          )
+          authors = [metadata["author"]]
+          for commit in metadata["commits"]:
+              authors.extend(commit.get("authors", []))
 
-          path = Path("res/version.json")
-          current = json.loads(path.read_text(encoding="utf-8"))
-          base = load_version(os.environ["PR_BASE_SHA"])
-          head = load_version(f"origin/pr-{os.environ['PR_NUMBER']}")
-          suffix = f" by [@{os.environ['PR_AUTHOR']}]({os.environ['PR_AUTHOR_URL']})"
-          additions: set[tuple[str, str, str]] = set()
+          seen = set()
+          suffixes = []
+          for author in authors:
+              login = author.get("login")
+              key = login.lower() if login else None
+              if key is None or key in seen:
+                  continue
+              seen.add(key)
+              suffixes.append(f" by [@{login}](https://github.com/{login})")
 
-          for version, info in head.get("version_info", {}).items():
-              base_info = base.get("version_info", {}).get(version, {})
-              for category, items in info.items():
-                  if not isinstance(items, list):
-                      continue
-                  base_items = set(base_info.get(category, []))
+          # 本次 PR 新增的条目 = head 有而 base 没有的。按 (版本, 分类, 原文) 三元组记，
+          # 否则同一句话若在旧版本段里也存在，那一条会被一起补上署名。
+          additions = set()
+          for version, categories in head.items():
+              base_categories = base.get(version, {})
+              for category, items in categories.items():
+                  base_items = set(base_categories.get(category, []))
                   additions.update(
                       (version, category, item)
                       for item in items
-                      if isinstance(item, str) and item not in base_items
+                      if item not in base_items
                   )
 
+          _, current, current_dates = changelog.parse_changelog(
+              changelog.read_text(changelog.CHANGELOG_PATH)
+          )
+
           changed = False
-          for version, category, item in additions:
-              items = current.get("version_info", {}).get(version, {}).get(category, [])
-              if item in items and suffix not in item:
-                  items[items.index(item)] = f"{item}{suffix}"
-                  changed = True
+          for version, categories in current.items():
+              for category, items in categories.items():
+                  for index, item in enumerate(items):
+                      if (version, category, item) not in additions:
+                          continue
+
+                      updated = item
+                      for suffix in suffixes:
+                          if suffix not in updated:
+                              updated = f"{updated}{suffix}"
+                      if updated != item:
+                          items[index] = updated
+                          changed = True
 
           if changed:
-              path.write_text(
-                  json.dumps(current, ensure_ascii=False, indent=4) + "\n",
-                  encoding="utf-8",
+              changelog.write_text(
+                  changelog.CHANGELOG_PATH,
+                  changelog.render_changelog(current, current_dates),
               )
 
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"changed={str(changed).lower()}\n")
           PY
+
+      # 署名写进 CHANGELOG.md 正文后，res/version.json 要跟着重算。
+      - name: 重新生成版本信息
+        if: steps.append.outputs.changed == 'true'
+        run: python scripts/changelog.py sync
 
       - name: 提交贡献者信息
         if: steps.append.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add res/version.json
+          # sync 只有在 dev 本来就不一致时才会动后四个文件，一并纳入避免 rebase 撞未暂存改动。
+          git add CHANGELOG.md res/version.json frontend/package.json app/core/config.py pyproject.toml uv.lock
           git commit -m "chore(version): mark PR entry contributors"
           git pull --rebase origin dev
           git push origin HEAD:dev

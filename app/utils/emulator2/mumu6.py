@@ -49,6 +49,7 @@ from app.models.emulator import DeviceRef
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.mumu import MumuManager
 
+from .applaunch import AppLaunchMixin
 from .settings import (
     FieldValue,
     InstanceSettings,
@@ -139,8 +140,32 @@ def parse_mem_list(raw: str | None) -> list[int]:
     return values
 
 
-class MuMu6Manager(MumuManager):
-    """一条 MuMu 6 安装的管理器。"""
+class MuMu6Manager(AppLaunchMixin, MumuManager):
+    """一条 MuMu 6 安装的管理器。
+
+    ``AppLaunchMixin`` 必须排在 ``MumuManager`` 前面：带包启动改走
+    「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``control launch -pkg``。
+    """
+
+    async def vendor_launch_app(self, idx: str, package_name: str) -> object:
+        """``MuMuManager control -v N app launch -pkg``。
+
+        与被否掉的 ``control launch -pkg`` 不是同一条命令：那条是「开模拟器顺便开应用」，
+        这条是对**已经在跑**的实例启动应用。实测 0.06 秒到前台。
+        """
+        return await ProcessRunner.run_process(
+            self.emulator_path,
+            "control",
+            "-v",
+            idx,
+            "app",
+            "launch",
+            "-pkg",
+            package_name,
+            timeout=self.config.get("Info", "MaxWaitTime"),
+            if_merge_std=True,
+            breakaway=True,
+        )
 
     async def _run(self, *args: str) -> str:
         result = await ProcessRunner.run_process(

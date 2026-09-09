@@ -104,6 +104,7 @@
 
 ### 修复
 
+- Emulator 2.0 修复模拟器已经在运行时不打开游戏、以及雷电 0 号与 MuMu 同时运行时操作会打到另一台模拟器上的问题
 - 日志采集 修复任务运行期间脚本日志按天滚动（跨零点）后，零点前的运行日志历史与节点详情丢失的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
 - 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因 by [@Lance0174](https://github.com/Lance0174)
 - Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)

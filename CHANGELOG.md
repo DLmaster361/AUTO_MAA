@@ -134,7 +134,7 @@
 - BetterGI专项 清理未达提交规范的测试文件及其格式、静态检查问题，并移除误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)
 - BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)
 - 开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)
-- 将更新日志检查与署名工作流同步到默认分支，并为共同作者一并补充更新日志署名。
+- 将更新日志检查与署名工作流同步到默认分支，为共同作者补充署名并过滤自动化账号。
 
 ## [v5.5.0-beta.2] - 2026-08-31
 

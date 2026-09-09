@@ -92,12 +92,18 @@ jobs:
           for commit in metadata["commits"]:
               authors.extend(commit.get("authors", []))
 
+          ignored_logins = {"claude", "copilot"}
           seen = set()
           suffixes = []
           for author in authors:
               login = author.get("login")
               key = login.lower() if login else None
-              if key is None or key in seen:
+              if (
+                  key is None
+                  or key in seen
+                  or key in ignored_logins
+                  or key.endswith("[bot]")
+              ):
                   continue
               seen.add(key)
               suffixes.append(f" by [@{login}](https://github.com/{login})")

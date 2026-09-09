@@ -37,6 +37,12 @@ RESERVED_PROJECT_DIRS = frozenset({".mas-update", ".mas-update-cache"})
 FINGERPRINT_IGNORED_DIRS = frozenset({"debug", "logs", "temp", "__pycache__"})
 FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json"})
 
+# 受管项目跑起来时，runner 会往 <项目>/maafw/ 铺一层共享的 MaaFramework 原生运行时，
+# 并留下这个标记文件。带标记的 maafw/ 是运行期产物，同样要排除；没有标记的 maafw/ 是
+# 发行包自带的，必须照常算进指纹。
+NATIVE_RUNTIME_OVERLAY_DIR = "maafw"
+NATIVE_RUNTIME_OVERLAY_MARKER = ".auto_mas_maafw_native_runtime.json"
+
 
 def artifact_id_for(
     source: str,
@@ -80,6 +86,11 @@ def project_fingerprint(project_path: str | Path) -> str | None:
     if not root.is_dir():
         return None
     digest = hashlib.sha256()
+    ignored_dirs = set(FINGERPRINT_IGNORED_DIRS)
+    if (
+        root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER
+    ).is_file():
+        ignored_dirs.add(NATIVE_RUNTIME_OVERLAY_DIR)
     files: list[Path] = []
     for candidate in root.rglob("*"):
         try:
@@ -88,7 +99,7 @@ def project_fingerprint(project_path: str | Path) -> str | None:
             continue
         if any(part in RESERVED_PROJECT_DIRS for part in relative.parts):
             continue
-        if any(part in FINGERPRINT_IGNORED_DIRS for part in relative.parts):
+        if any(part in ignored_dirs for part in relative.parts):
             continue
         if relative.as_posix().casefold() in FINGERPRINT_IGNORED_FILES:
             continue
@@ -143,6 +154,8 @@ __all__ = [
     "ArtifactType",
     "FINGERPRINT_IGNORED_DIRS",
     "FINGERPRINT_IGNORED_FILES",
+    "NATIVE_RUNTIME_OVERLAY_DIR",
+    "NATIVE_RUNTIME_OVERLAY_MARKER",
     "RESERVED_PROJECT_DIRS",
     "UpdateStatus",
     "artifact_id_for",

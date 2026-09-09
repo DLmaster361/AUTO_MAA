@@ -1877,6 +1877,10 @@ class MaaFWRunner:
         env.pop("PIP_TARGET", None)
         env.pop("PIP_PREFIX", None)
         env.pop("PIP_USER", None)
+        # worker 自己需要 PYTHONSAFEPATH（见 build_runner_environment），但不能透传给
+        # 项目 agent：agent 以 `python ./agent/main.py` 启动，靠脚本目录进 sys.path[0]
+        # 才能 import 同级模块，官方模板就是这么写的，继承过去会当场 ModuleNotFoundError。
+        env.pop("PYTHONSAFEPATH", None)
         # 不继承 MAS 的 PYTHONPATH，显式设置为当前项目根目录
         python_path_items: list[str] = []
         if getattr(agent_plan, "runtimeKind", None) == "isolated_venv":
@@ -2219,6 +2223,8 @@ class MaaFWRunner:
         env.pop("PIP_TARGET", None)
         env.pop("PIP_PREFIX", None)
         env.pop("PIP_USER", None)
+        # 与 _build_agent_env 同理：agent 侧不能带 PYTHONSAFEPATH
+        env.pop("PYTHONSAFEPATH", None)
         env["PYTHONPATH"] = str(project_path)
         return env
 

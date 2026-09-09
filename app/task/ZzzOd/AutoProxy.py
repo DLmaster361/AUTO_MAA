@@ -56,9 +56,11 @@ from typing import Any
 import psutil
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
@@ -828,10 +830,10 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     for warning in self._guard_warnings:
                         await self._push_dispatch_log(warning)
-                        await Config.send_websocket_message(
+                        await Publisher.send(
                             id=self.task_info.task_id,
-                            type="Info",
-                            data={"Error": warning},
+                            type=protocol.TASK_NOTICE,
+                            data=WSTaskNoticeData(level="error", message=warning),
                         )
                 else:
                     # 单实例切换：仅当前用户（逐用户循环）
@@ -1421,10 +1423,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.wait_event is not None:
             self.wait_event.set()
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"ZZZ-OD 自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"ZZZ-OD 自动代理任务出现异常: {e}"),
             )
         with suppress(Exception):
             await self.kill_managed_process(kill_game=self._mas_should_close_game())

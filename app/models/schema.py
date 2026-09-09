@@ -2916,6 +2916,10 @@ class MaaFWConfig_Game(BaseModel):
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
     )
+    PackageName: Optional[str] = Field(
+        default=None,
+        description="安卓游戏包名，留空则从项目的 pipeline 中自动识别",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"

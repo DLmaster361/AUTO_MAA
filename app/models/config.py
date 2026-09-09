@@ -2479,6 +2479,10 @@ class MaaFWConfig(ConfigBase):
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
+        ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
+        ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
+        self.Game_PackageName = ConfigItem("Game", "PackageName", "")
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）

@@ -50,6 +50,7 @@ from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
 
+from .game_package import resolve_game_package
 from .project_path import release_project_path, try_reserve_project_path
 from .runtime_route import MaaFWManagedExecutionRoute, managed_execution_route
 
@@ -737,6 +738,54 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         raise RuntimeError(f"当前仅支持 Adb/Win32 controller: {plan.controllerType}")
 
+    async def _resolve_game_package(self) -> str:
+        """这次要不要顺带把游戏拉起来，拉哪个包。返回空串表示只开模拟器。
+
+        脚本配置里填了就以它为准：从项目里认包名是启发式的（``StartApp`` 只是约定，
+        不是 interface 规格里的字段），用户必须有办法推翻它。
+
+        认不出来不是错误——很多项目本来就自己在 pipeline 里开游戏。但要让用户看得见
+        为什么没启动，否则「填了没反应」和「没填也没反应」在界面上长得一模一样。
+        """
+        manual = str(self.script_config.get("Game", "PackageName") or "").strip()
+        if manual:
+            self._append_log(f"游戏包名: {manual}（脚本配置）")
+            return manual
+
+        if self.run_plan is None:
+            return ""
+
+        resolution = await asyncio.to_thread(
+            resolve_game_package,
+            [
+                Path(item.resolved)
+                for item in self.run_plan.resource.paths
+                if item.exists and item.isDir
+            ],
+            [
+                task.pipelineOverride
+                for task in self.run_plan.tasks
+                if task.pipelineOverride
+            ],
+        )
+
+        if resolution.reason == "resolved":
+            self._append_log(f"游戏包名: {resolution.package}（从项目识别）")
+            return resolution.package
+
+        if resolution.reason == "ambiguous":
+            self._append_log(
+                f"项目里识别到多个游戏包名（{'、'.join(resolution.candidates)}），"
+                "无法确定用哪个，本次不随模拟器启动游戏；"
+                "需要的话在脚本管理页填写游戏包名"
+            )
+        else:
+            self._append_log(
+                "未能从项目里识别出游戏包名，本次不随模拟器启动游戏；"
+                "需要的话在脚本管理页填写游戏包名"
+            )
+        return ""
+
     async def _resolve_adb_address(self) -> tuple[str, DeviceInfo | None]:
         if self._cached_adb_address is not None:
             return self._cached_adb_address, self._cached_device_info
@@ -747,9 +796,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if emulator_index in ("", "-"):
             raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
 
+        package_name = await self._resolve_game_package()
         self._append_log(f"正在启动模拟器: {emulator_index}")
         self.opened_emulator = True
-        device_info = await self.emulator_manager.open(emulator_index)
+        device_info = await self.emulator_manager.open(emulator_index, package_name)
         if Config.get("Function", "IfSilence"):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)

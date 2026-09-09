@@ -85,6 +85,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   Game: {
     LaunchMode: 'AttachOnly',
     LaunchPath: '',
+    PackageName: '',
     Arguments: '',
     WaitTime: 60,
     CloseOnFinish: true,

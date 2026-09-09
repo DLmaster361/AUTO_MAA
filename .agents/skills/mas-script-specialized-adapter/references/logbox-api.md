@@ -81,9 +81,10 @@ col = log_box.get_collect(
 单个被采集文件按 **offset 增量读取**，`close()` 收尾时一次性读完会话剩余内容：
 
 - **轮转补偿**：检测到文件身份变化（inode/Windows 创建时间任一变化）时，先找回被
-  轮换的旧日志中**尚未读过**的部分，再从头读新文件，避免轮转前内容静默丢失。缺省
-  按 inode 在同目录找回被重命名的旧文件（与运行日志监控 LogMonitor 同逻辑，见下节）；
-  inode 不可用时按 `rotated_name` 模板或 `.bak` 约定探测（日期式命名需声明模板）。
+  轮换的旧日志中**尚未读过**的部分，再从头读新文件，避免轮转前内容静默丢失。有
+  inode 时一律按 inode 在同目录找回被重命名的旧文件（与运行日志监控 LogMonitor
+  同逻辑，见下节）；inode 不可用时按 `rotated_name` 模板或 `.bak` 约定探测
+  （日期式命名需声明模板）。
 - **截断**：文件变小但身份未变时，重置到文件头重读。
 - **会话外内容**：`start_from_end=True` 时只采会话内新增，会话开始（`open()`）前的
   历史内容不进入结果。
@@ -97,18 +98,19 @@ col = log_box.get_collect(
 `log.txt` → `log.txt.YYYY-MM-DD`）时，LogSource 靠「轮转补偿」把旧文件里尚未
 读过的部分接回来。各脚本滚动命名各不相同，但缺省逻辑与命名无关：
 
-**缺省找回（与运行日志监控 LogMonitor 同一逻辑）**：脚本**重命名式滚动**
-（把正在写的日志改名后新建）时，重命名不改变 inode，缺省即按离开时的 inode
-在同目录找回旧文件并从未读 offset 续读——不依赖命名猜测、不会误读同名旧
-残留。`.bak` 改名式滚动（``xxx.log`` → ``xxx.log.bak``）同样命中。
+**找回优先级（与运行日志监控 LogMonitor 同一逻辑）**：有 inode（本地 NTFS
+均可用）时**一律按 inode** 在同目录找回被重命名的旧文件并从未读 offset 续读
+——不依赖命名猜测、不会误读同名旧残留，声明模板也不参与；inode 可用但未命中
+（删除重建等非重命名式换身份）时宁缺勿错，不猜名字。`.bak` 改名式滚动
+（``xxx.log`` → ``xxx.log.bak``）同样命中。
 
-**rotated_name 显式模板**：**日期式滚动命名必须声明**——完整轮转文件名的
-strftime 模板（相对日志所在目录，log_box 按昨天/今天生成候选，声明后只按
-模板探测）。文件系统不提供 inode（`st_ino` 为 0，如 FAT32 / exFAT / 部分
-网络盘）时 inode 找回不可用，声明模板是唯一兜底；缺省仅回退 `.bak` 约定
-猜测，日期式命名不在通用组件里猜测。
+**rotated_name 模板（仅无 inode 文件系统生效）**：文件系统不提供 inode
+（`st_ino` 为 0，如 FAT32 / exFAT / 部分网络盘）时 inode 找回不可用，按模板
+探测——完整轮转文件名的 strftime 模板（相对日志所在目录，log_box 按昨天/
+今天生成候选）；未声明回退 `.bak` 约定猜测。日期式命名**必须声明**，不在
+通用组件里猜测。
 
-| 脚本 | 轮转命名 | rotated_name |
+| 脚本 | 轮转命名 | rotated_name（仅无 inode 文件系统生效） |
 |---|---|---|
 | ZZZ-OD | `log.txt` → `log.txt.2026-09-07`（日期在名字末尾） | `f"{path.name}.%Y-%m-%d"` |
 | OK 系（ok-script 家族） | `ok-script.log` → `ok-script.2026-09-04.log`（日期在中段） | `f"{path.stem}.%Y-%m-%d{path.suffix}"` |
@@ -120,8 +122,9 @@ strftime 模板（相对日志所在目录，log_box 按昨天/今天生成候�
    `TimedRotatingFileHandler`/自定义 namer 配置，或实测跨零点）。重命名式
    缺省即覆盖；删除重建式旧文件已不存在、截断式内容被销毁，均无法自动找回，
    需专项另行评估。
-2. 滚动命名是否为日期式：是则传 `rotated_name`（无 inode 文件系统上的唯一
-   兜底）；`.bak` 式无需声明。
+2. 运行日志盘是否提供 inode（本地 NTFS 均提供）：不提供且滚动命名是日期式
+   时传 `rotated_name`（唯一兜底）；有 inode 时模板不参与、无需声明，
+   `.bak` 式同样无需声明。
 3. offset 续读语义不变：找回的旧文件与 open 时是同一文件，从记录的 offset
    续读恰好是未读内容；比 offset 还小时回退从头读（既有行为）。
 
@@ -268,7 +271,7 @@ self.log_collect = log_box.get_collect(
     paths=[self.script_log_path],  # 相对 RootPath 派生，不硬编码绝对路径
     sink=self._append_push_log,    # 注入到 cur_user_item.push_log
     start_from_end=True,
-    rotated_name=...,              # 日期式滚动命名必须声明（无 inode 文件系统唯一兜底）
+    rotated_name=...,              # 仅无 inode 文件系统生效（日期式滚动唯一兜底）
 )
 self.log_collect.open(translator.translate)          # 前置翻译
 for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态标记规则）
@@ -381,7 +384,7 @@ col.close()   # 脚本正常退出时 atexit 也会自动收尾
    MAS 未把脚本 stdout 接入 `check_log` 且未注入该环境变量。专项（MAS 宿主）请始终
    显式传 `paths`，不要依赖该 env（它只在脚本宿主接通后生效）。
 
-8. **脚本滚动不是重命名式**：缺省找回按 inode 定位被重命名的旧文件，只对
+8. **脚本滚动不是重命名式**：找回按 inode 定位被重命名的旧文件，只对
    「改名旧文件后新建」式滚动生效；脚本若删除重建或原地截断日志，旧内容无从
-   找回。日期式滚动命名必须声明 `rotated_name`（无 inode 文件系统上的唯一
-   兜底），接入前按「日志轮转补偿」确认滚动方式。
+   找回（有 inode 时声明模板也不猜名字，宁缺勿错）。仅无 inode 文件系统需要
+   声明 `rotated_name`，接入前按「日志轮转补偿」确认滚动方式。

@@ -34,10 +34,10 @@ class LogBox:
             start_from_end: 是否从文件末尾起始采集（仅采集会话内新增内容）。
             rotated_name: 轮转文件名的 strftime 模板（完整文件名，相对日志所在
                 目录，如 ``ok-script.%Y-%m-%d.log``、``log.txt.%Y-%m-%d``）。
-                缺省按 inode 在同目录找回被重命名的旧日志（与 LogMonitor 同
-                逻辑），重命名式滚动无需声明；日期式滚动命名应声明（文件系统
-                不提供 inode 时这是唯一兜底），声明后只按模板探测，缺省仅回退
-                ``.bak`` 约定猜测。
+                有 inode 时一律按 inode 在同目录找回被重命名的旧日志（与
+                LogMonitor 同逻辑），重命名式滚动无需声明、声明也不改变行为；
+                仅文件系统不提供 inode（FAT32/exFAT/网络盘）时按该模板探测
+                （日期式滚动命名的唯一兜底），未声明回退 ``.bak`` 约定猜测。
 
         Returns:
             LogCollect 实例

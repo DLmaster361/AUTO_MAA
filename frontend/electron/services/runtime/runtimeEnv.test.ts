@@ -13,12 +13,13 @@ import {
 } from './runtimeEnv'
 
 const warn = vi.fn()
+const info = vi.fn()
 
 vi.mock('../logger', () => ({
   getLogger: () => ({
     error: vi.fn(),
     warn: (...args: unknown[]) => warn(...args),
-    info: vi.fn(),
+    info: (...args: unknown[]) => info(...args),
     verbose: vi.fn(),
     debug: vi.fn(),
     silly: vi.fn(),
@@ -35,6 +36,7 @@ function writeBackendConfig(value: unknown): void {
 
 beforeEach(() => {
   warn.mockClear()
+  info.mockClear()
   appRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-mas-runtime-env-'))
 })
 
@@ -75,6 +77,20 @@ describe('buildRuntimeEnv', () => {
     expect(env).not.toHaveProperty('--offline')
   })
 
+  // JSON.parse('null') 与 JSON.parse('[]') 都是合法的；不排掉的话取字段会抛出去，
+  // 打断的正是「初始化卡住」时唯一还能跑的那段。
+  it('Config.json 内容为 null 或数组时按缺省处理而不是抛异常', () => {
+    const configDir = path.join(appRoot, 'config')
+    fs.mkdirSync(configDir, { recursive: true })
+
+    fs.writeFileSync(path.join(configDir, 'Config.json'), 'null', 'utf8')
+    expect(() => buildRuntimeEnv(appRoot)).not.toThrow()
+    expect(buildRuntimeEnv(appRoot)).toEqual({})
+
+    fs.writeFileSync(path.join(configDir, 'Config.json'), '[]', 'utf8')
+    expect(buildRuntimeEnv(appRoot)).toEqual({})
+  })
+
   it('Config.json 损坏时记 warning 并按开启处理', () => {
     const configDir = path.join(appRoot, 'config')
     fs.mkdirSync(configDir, { recursive: true })
@@ -90,8 +106,8 @@ describe('buildRuntimeEnv：出站代理', () => {
     writeBackendConfig({ Update: { ProxyAddress: 'http://127.0.0.1:7890' } })
 
     expect(buildRuntimeEnv(appRoot)).toEqual({
-      [RUNTIME_HTTP_PROXY_ENV]: 'http://127.0.0.1:7890/',
-      [RUNTIME_HTTPS_PROXY_ENV]: 'http://127.0.0.1:7890/',
+      [RUNTIME_HTTP_PROXY_ENV]: 'http://127.0.0.1:7890',
+      [RUNTIME_HTTPS_PROXY_ENV]: 'http://127.0.0.1:7890',
       [RUNTIME_NO_PROXY_ENV]: '127.0.0.1,localhost,::1',
     })
     expect(warn).not.toHaveBeenCalled()
@@ -137,6 +153,42 @@ describe('buildRuntimeEnv：出站代理', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  // 后端同一字段的消费者（app/core/config.py 的 GlobalConfig.proxy）一直会给不带协议的
+  // 地址补 http://。这里不补的话，用户填 127.0.0.1:7890 会出现「更新检查走了代理、
+  // Runtime 仍在裸连」，正是本改动要消灭的现象。
+  it('不带协议的地址补 http:// 后透传，与后端口径一致', () => {
+    writeBackendConfig({ Update: { ProxyAddress: '127.0.0.1:7890' } })
+
+    expect(buildRuntimeEnv(appRoot)[RUNTIME_HTTPS_PROXY_ENV]).toBe('http://127.0.0.1:7890')
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('不带协议的域名同样补 http://', () => {
+    writeBackendConfig({ Update: { ProxyAddress: 'proxy.example.com:8080' } })
+
+    expect(buildRuntimeEnv(appRoot)[RUNTIME_HTTPS_PROXY_ENV]).toBe('http://proxy.example.com:8080')
+  })
+
+  // 后端放行 socks4，但 Go 的 ProxyFromEnvironment 不支持，这里必须拒绝。
+  it('socks4 仍然拒绝', () => {
+    writeBackendConfig({ Update: { ProxyAddress: 'socks4://127.0.0.1:1080' } })
+
+    expect(buildRuntimeEnv(appRoot)).toEqual({})
+    expect(warn).toHaveBeenCalledOnce()
+  })
+
+  // frontend.log 会被用户直接贴进 issue。
+  it('日志里遮蔽代理地址中的凭据，环境变量本身仍是原值', () => {
+    writeBackendConfig({ Update: { ProxyAddress: 'http://user:secret@127.0.0.1:7890' } })
+
+    const env = buildRuntimeEnv(appRoot)
+    expect(env[RUNTIME_HTTPS_PROXY_ENV]).toBe('http://user:secret@127.0.0.1:7890')
+
+    const logged = info.mock.calls.map(call => String(call[0])).join('\n')
+    expect(logged).toContain('http://***@127.0.0.1:7890')
+    expect(logged).not.toContain('secret')
+  })
+
   it('代理与遥测开关互不影响', () => {
     writeBackendConfig({
       Function: { IfEnableTelemetry: false },
@@ -145,7 +197,7 @@ describe('buildRuntimeEnv：出站代理', () => {
 
     const env = buildRuntimeEnv(appRoot)
     expect(env[RUNTIME_TELEMETRY_ENV]).toBe('disabled')
-    expect(env[RUNTIME_HTTPS_PROXY_ENV]).toBe('http://127.0.0.1:7890/')
+    expect(env[RUNTIME_HTTPS_PROXY_ENV]).toBe('http://127.0.0.1:7890')
   })
 })
 

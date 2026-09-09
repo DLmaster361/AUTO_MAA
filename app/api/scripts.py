@@ -651,11 +651,31 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
     status_code=200,
 )
 async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
+    data = user.data.model_dump(exclude_unset=True)
+
+    # 队列是唯一真相源：落盘 OneDragon.Queue 时，清理 Plan 中不再被引用的战斗实例
+    # （前端删除队列行只改 Queue，Plan 对应实例会残留成孤儿）。仅当 patch 含 Queue 时触发，
+    # 避免其它字段保存误伤；被关闭（enabled=false）但仍在队列的行其实例保留。
+    od = data.get("OneDragon") if isinstance(data, dict) else None
+    if isinstance(od, dict) and "Queue" in od:
+        try:
+            from app.task.BetterGI.tools import one_dragon_plan
+            script_cfg = Config.ScriptConfig[uuid.UUID(user.scriptId)]
+            uc = script_cfg.UserData[uuid.UUID(user.userId)]
+            plan = uc.get("OneDragon", "Plan") or ""
+            groups = uc.get("OneDragon", "Groups") or []
+            new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
+            if new_plan != plan:
+                od["Plan"] = new_plan
+        except Exception as e:  # pragma: no cover - 兜底：同步失败不应阻断保存
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "队列变更同步清理 Plan 孤儿实例失败（已忽略）: %s", e
+            )
 
     try:
-        await Config.update_user(
-            user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
-        )
+        await Config.update_user(user.scriptId, user.userId, data)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -1501,6 +1521,8 @@ async def set_one_dragon_plan_step_enabled(
     步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
     后端无步骤可写，刷新后回退。
     """
+    from app.task.BetterGI.tools import one_dragon_plan
+
     try:
         script_config = _bettergi_script_config(scriptId)
         _bettergi_user_id(script_config, userId)

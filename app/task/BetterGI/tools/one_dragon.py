@@ -638,12 +638,16 @@ def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
             kind = str(item.get("kind", "")).strip()
             if kind not in ("js", "pathing", "scriptgroup", "custom"):
                 kind = "custom"
-        entry: dict[str, str] = {"kind": kind, "name": name}
+        entry: dict[str, Any] = {"kind": kind, "name": name}
         # 保留前端条目 planUid（其绑定的执行层 Plan 步骤 uid）：同名多实例如
         # 「自动秘境」×3 依赖它定向排序，否则只能按 Plan 原顺序 FIFO。
         item_plan_uid = str(item.get("planUid", "")).strip()
         if item_plan_uid:
             entry["planUid"] = item_plan_uid
+        # 保留行 uid：与前端 stepNameIn 规则一致，可由 (name, uid) 推导出该行对应的
+        # Plan 步骤名——队列中无 planUid 的存量数据也能逐实例定向排序。
+        if isinstance(item.get("uid"), int):
+            entry["uid"] = item["uid"]
         out.append(entry)
     return out
 
@@ -933,6 +937,17 @@ def write_user_one_dragon(
         slot_config["AutoBossTeamName"] = party_name
     if auto_boss_strategy_name:
         slot_config["AutoBossStrategyName"] = auto_boss_strategy_name
+    # 通用战斗队伍/策略权威覆盖周表「默认」行：周表默认行本即「通用队伍」映射，
+    # 应与顶部「通用战斗队伍/策略」同源生效，否则会以其旧值遮挡通用队伍/策略
+    # （main.js 选队：秘境 todayRow||defaultRow||s.partyName 与 todayRow||defaultRow||s.combatStrategyPath；
+    #  地脉花 wdRow||def||s.team 与 wdRow||def||s.combatStrategyPath）。per-day 行各自独立保留。
+    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+        _wd = slot_config.get(_wd_key)
+        if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
+            if party_name:
+                _wd["default"][_team_key] = party_name
+            if auto_boss_strategy_name:
+                _wd["default"]["strategy"] = auto_boss_strategy_name
 
     materialized = materialize_user_script_groups(root, script_id, user_id, slot_config)
 

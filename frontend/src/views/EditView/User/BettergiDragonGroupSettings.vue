@@ -155,6 +155,19 @@
                 <a-tooltip v-if="section.enableField?.help" :title="section.enableField?.help">
                   <QuestionCircleOutlined class="bettergi-setting-help-icon" />
                 </a-tooltip>
+                <a-popconfirm
+                  :title="t('edit.bettergiDomainPickerClearAllConfirm')"
+                  :disabled="!weeklySectionEnabled(section)"
+                  @confirm="clearWeeklyFieldTable(section)"
+                >
+                  <a-button
+                    size="small"
+                    class="bettergi-weekly-clear-btn"
+                    :disabled="!weeklySectionEnabled(section)"
+                  >
+                    {{ t('edit.bettergiDomainPickerClearAll') }}
+                  </a-button>
+                </a-popconfirm>
               </div>
               <!-- 好感队输入框（masterKey=LeyLineDefaultTeam 冻结：仅默认战斗队伍填写后才可编辑；
                    整段额外受每周地脉花开关控制：开关关闭时同样冻结） -->
@@ -485,16 +498,7 @@
           </a-tab-pane>
         </a-tabs>
 
-        <div v-if="!embedded" class="bettergi-groups-settings-actions">
-          <a-button
-            type="primary"
-            :loading="saving"
-            :disabled="!dirty"
-            @click="emit('save')"
-          >
-            {{ t('edit.bettergiGroupSettingsSave') }}
-          </a-button>
-        </div>
+
       </template>
       <!-- 无设置项的内置组（领取邮件等）：提示空态 -->
       <div v-else-if="!embedded" class="bettergi-groups-settings-none">
@@ -527,16 +531,7 @@
         @update="(field, value) => emit('update', field, value)"
         @pick-strategy="(field) => emit('pick-strategy', field)"
       />
-      <div v-if="zoomed" class="bettergi-groups-settings-actions">
-        <a-button
-          type="primary"
-          :loading="saving"
-          :disabled="!dirty"
-          @click="emit('save')"
-        >
-          {{ t('edit.bettergiGroupSettingsSave') }}
-        </a-button>
-      </div>
+
     </a-modal>
 
     <!-- 秘境三级级联弹窗：地区 → 地点-秘境类型 → 奖励物品。
@@ -1062,14 +1057,30 @@ const onClearDomainPicker = (): void => {
   emit('update', tableCellField(row, 'reward'), '0')
   closeDomainPicker()
 }
-// 整表清空：把该周表所有行的秘境/奖励逐字段清空（队伍名保留不误伤），
-// 仅当整表可编辑（启用开关打开）时提供入口
+// 整表清空：把该周表所有行的秘境/奖励/队伍名逐字段清空。
+// 队伍名一并清空——否则测试期填入的队名会残留并遮挡顶部「通用战斗队伍」，
+// 导致「通用队伍」设置不生效（main.js 选队优先级 todayRow || defaultRow || s.partyName）。
+// 仅当整表可编辑（启用开关打开）时提供入口。
 const clearWeeklyTable = (section: DragonSettingSection): void => {
   if (!weeklySectionEnabled(section)) return
   const rows = section.weeklyRows || []
   for (const row of rows) {
     emit('update', tableCellField(row, 'domain'), '')
     emit('update', tableCellField(row, 'reward'), '0')
+    emit('update', tableCellField(row, 'party'), '')
+  }
+}
+// 通用周表（每周地脉花）整表清空：清掉默认/周一~周日各行的队伍/策略/地区/类型列，
+// 保留执行开关（run）。同理避免测试期队伍/策略残留遮挡顶部通用战斗队伍/策略。
+// 仅当整表可编辑（启用开关打开）时提供入口。
+const clearWeeklyFieldTable = (section: DragonSettingSection): void => {
+  if (!weeklySectionEnabled(section)) return
+  const rows = section.weeklyFieldRows || []
+  for (const row of rows) {
+    for (const field of row.fields || []) {
+      if (field.type === 'bool') continue // 执行开关保留
+      emit('update', field, '')
+    }
   }
 }
 

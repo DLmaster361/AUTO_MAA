@@ -85,6 +85,14 @@ function shouldRunToday(step) {
   return flags[new Date().getDay()];
 }
 
+// 树脂耗尽是用户开启「树脂耗尽模式」后的预期停止条件：BGI 抛
+// System.Exception「树脂耗尽，任务结束」（AutoLeyLineOutcropTask.cs:120），
+// 属正常收尾而非失败。识别它以免中断整个执行层、连坐后续步骤。
+function isResinExhausted(msg) {
+  const s = String(msg || "");
+  return s.indexOf("树脂耗尽") >= 0 || s.indexOf("树脂不足") >= 0;
+}
+
 async function dispatchCombat(step) {
   const s = step.settings || {};
   switch (baseStepName(step.name)) {
@@ -237,30 +245,35 @@ async function dispatchCombat(step) {
       break;
     }
     case "自动首领讨伐": {
-      // TODO(#3/#7): AutoBoss 超时经通道 B（SoloTask 配置覆盖键 AutoBossTimeout，键名已实机命中 exe）
-      const timeout = s.timeout != null ? s.timeout : 240;
-      const cfg = Object.assign(
-        {
-          AutoBossTimeout: timeout,
-          bossName: s.bossName || "",
-          teamName: s.teamName || "",
-          specifyRunCount: !!s.specifyRunCount,
-          runCount: s.runCount != null ? s.runCount : 1,
-          useTransientResin: !!s.useTransientResin,
-          useFragileResin: !!s.useFragileResin,
-          rviveRetryCount: s.rviveRetryCount != null ? s.rviveRetryCount : 3,
-          returnToStatueAfterEachRound: !!s.returnToStatueAfterEachRound,
-          rewardRecognitionEnabled: !!s.rewardRecognitionEnabled,
-        },
-        // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
-        // 其余组策略走 s.combatStrategyPath。两者取其一注入 SoloTask 的 strategyName。
-        (s.strategyName || s.combatStrategyPath)
-          ? { strategyName: s.strategyName || s.combatStrategyPath }
-          : {}
-      );
+      // ⚠️ 不能用 new SoloTask("AutoBoss", cfg)：官方文档（dev/js/dispatcher.html）
+      // 明确 AutoBoss 是「基础任务（无配置参数）」，SoloTask 第二参会被整体忽略——
+      // 配置从未进入 AutoBossParam，Validate() 见 BossName 为空恒抛
+      // 「请选择需要讨伐的首领」（2026-09-10 实机日志定位，bossName 落盘正常仍报错）。
+      // 正确通道：new AutoBossParam()（无参=SetDefault 读本体配置）+ 逐字段覆盖
+      // + dispatcher.runAutoBossTask(param)。属性赋值统一走 setProp，兼容未暴露属性。
+      const p = new AutoBossParam();
+      // bossName 必填（Validate 第一道校验）；Param 无参构造已读本体配置作兜底
+      if (s.bossName) setProp(p, "bossName", s.bossName);
+      if (s.teamName) setProp(p, "teamName", s.teamName);
+      if (s.specifyRunCount != null) setProp(p, "specifyRunCount", !!s.specifyRunCount);
+      if (s.runCount != null) setProp(p, "runCount", s.runCount);
+      if (s.useTransientResin != null) setProp(p, "useTransientResin", !!s.useTransientResin);
+      if (s.useFragileResin != null) setProp(p, "useFragileResin", !!s.useFragileResin);
+      // Plan 存量键为 rviveRetryCount（后端 RIGHTBAR_TO_PLAN 历史拼写），新键 reviveRetryCount 兼容
+      const reviveRetry = s.rviveRetryCount != null ? s.rviveRetryCount : s.reviveRetryCount;
+      if (reviveRetry != null) setProp(p, "reviveRetryCount", reviveRetry);
+      if (s.returnToStatueAfterEachRound != null) setProp(p, "returnToStatueAfterEachRound", !!s.returnToStatueAfterEachRound);
+      if (s.rewardRecognitionEnabled != null) setProp(p, "rewardRecognitionEnabled", !!s.rewardRecognitionEnabled);
+      if (s.timeout != null) setProp(p, "timeout", s.timeout);
+      // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
+      // 其余组策略走 s.combatStrategyPath。两者取其一经 setCombatStrategyPath 按策略名重算路径。
+      const bossStrategy = s.strategyName || s.combatStrategyPath;
+      if (bossStrategy && typeof p.setCombatStrategyPath === "function") {
+        p.setCombatStrategyPath(bossStrategy);
+      }
       await genshin.returnMainUi();
       try {
-        await dispatcher.runTask(new SoloTask("AutoBoss", cfg));
+        await dispatcher.runAutoBossTask(p);
       } finally {
         await genshin.returnMainUi();
       }
@@ -295,6 +308,10 @@ async function main() {
   };
   const steps = Array.isArray(plan.steps) ? plan.steps : [];
   masLog("MAS_PLAN_BEGIN " + steps.length);
+  // 单步失败计数：识别类异常（如大地图特征点匹配失败）不应中断整个编排，
+  // 记录后跳过该步、继续后续步骤，结束时以 MAS_PLAN_DONE_WITH_FAILURES 汇总
+  // （2026-09-09 用户决策）。
+  let failed = 0;
   for (const step of steps) {
     if (!step || !step.enabled) {
       masLog("MAS_STEP_SKIP: " + (step ? step.uid : "?"));
@@ -318,11 +335,22 @@ async function main() {
       masLog("MAS_STEP_DONE: " + step.uid + " " + step.name);
     } catch (e) {
       const msg = (e && (e.message || e.toString())) || String(e);
+      // 树脂耗尽是用户开启「树脂耗尽模式」后的预期停止条件：BGI 抛
+      // System.Exception「树脂耗尽，任务结束」（AutoLeyLineOutcropTask.cs:120），
+      // 属正常收尾而非失败。按正常结束处理，避免中断整个执行层并把后续步骤连坐。
+      if (isResinExhausted(msg)) {
+        masLog("MAS_STEP_RESIN_END: " + step.uid + " " + step.name + " " + msg);
+        masLog("MAS_PLAN_RESIN_END");
+        masLog("MAS_PLAN_DONE");
+        return;
+      }
+      failed++;
       masLog("MAS_STEP_FAIL: " + step.uid + " " + step.name + " " + msg);
-      throw e; // 单配置组场景下异常即失败，与 AutoProxy 判定一致
+      // 不再 throw：单个步骤失败只跳过该步，继续后续步骤
+      continue;
     }
   }
-  masLog("MAS_PLAN_DONE");
+  masLog(failed > 0 ? "MAS_PLAN_DONE_WITH_FAILURES " + failed : "MAS_PLAN_DONE");
 }
 
 main().catch((e) => {

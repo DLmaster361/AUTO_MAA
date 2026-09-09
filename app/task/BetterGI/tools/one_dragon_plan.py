@@ -604,7 +604,13 @@ def build_combat_steps(
         if base not in BUILTIN_COMBAT_STEP_NAMES:
             continue
         if enabled and base not in enabled:
-            continue
+            # 组开关缺失但 Plan 中已配置：本次按启用接管并告警，避免「界面/队列
+            # 显示已开、运行时静默跳过」（Groups 与界面偶发不同步时的兜底）。
+            # 请在界面重新开关一次该组以同步数据。
+            logger.warning(
+                f"内置战斗组「{base}」不在 OneDragon.Groups 中，但 Plan 已配置，"
+                "本次按启用处理（请在界面重新开关一次该组以同步数据）"
+            )
         if not step.get("enabled", True):
             continue
         uid = step.get("uid")
@@ -624,6 +630,16 @@ def build_combat_steps(
         by_base.setdefault(_resolve_base_name(s["name"]), []).append(i)
     out: list[dict[str, Any]] = []
     consumed: set[int] = set()
+    # 推导队列条目对应的 Plan 步骤名（与前端 stepNameIn 规则一致）：
+    # 同名条目中 uid 最小者沿用基名，其余为「基名-uid」
+    min_uid_by_name: dict[str, int] = {}
+    for item in queue:
+        if not isinstance(item, dict) or not bool(item.get("enabled", True)):
+            continue
+        qn = str(item.get("name", ""))
+        uid = item.get("uid")
+        if qn and isinstance(uid, int):
+            min_uid_by_name[qn] = min(min_uid_by_name.get(qn, uid), uid)
     for item in queue:
         if not isinstance(item, dict):
             continue
@@ -645,15 +661,29 @@ def build_combat_steps(
                 consumed.add(exact)
                 out.append(plan_combat[exact])
                 continue
-        # ② 名称精确匹配
+        # ② 由 (name, uid) 推导的 Plan 步骤名精确匹配（同名多实例定向排序）
+        q_uid = item.get("uid")
+        step_name = qname
+        if isinstance(q_uid, int) and min_uid_by_name.get(qname) != q_uid:
+            step_name = f"{qname}-{q_uid}"
         exact = next(
             (
                 i
                 for i in range(len(plan_combat))
-                if i not in consumed and plan_combat[i].get("name") == qname
+                if i not in consumed and plan_combat[i].get("name") == step_name
             ),
             None,
         )
+        # 推导名未命中时回退基名（兼容 uid 与步骤名不对应的存量队列）
+        if exact is None and step_name != qname:
+            exact = next(
+                (
+                    i
+                    for i in range(len(plan_combat))
+                    if i not in consumed and plan_combat[i].get("name") == qname
+                ),
+                None,
+            )
         if exact is not None:
             consumed.add(exact)
             out.append(plan_combat[exact])
@@ -670,9 +700,100 @@ def build_combat_steps(
             if idx is not None:
                 consumed.add(idx)
                 out.append(plan_combat[idx])
-    # 3) 未被 queue 消费的 Plan 步骤追加到末尾，保证不丢
-    remaining = [s for i, s in enumerate(plan_combat) if i not in consumed]
-    return out + remaining
+    # 3) 未被 queue 消费的 Plan 步骤（孤儿实例，如曾创建后从队列移除/未入队）
+    #    不执行：左栏队列是用户所见即所得，追加执行会让用户跑出「界面上没有的
+    #    任务」（2026-09-09 实机排障：队列 7 个战斗组被跑出 11 步）。
+    orphans = [str(plan_combat[i].get("name", "")) for i in range(len(plan_combat)) if i not in consumed]
+    if orphans:
+        logger.warning(f"以下执行层实例不在队列中，本次跳过: {', '.join(orphans)}")
+    return out
+
+
+def prune_plan_to_queue(
+    plan_json: str | dict,
+    queue_raw: Any,
+    enabled_groups: list[str] | None = None,
+) -> str:
+    """队列是战斗实例的唯一真相源：删除 Plan 中「不再被队列引用」的战斗实例。
+
+    前端删除一条龙队列行时只改 ``OneDragon.Queue``，Plan 中的对应实例会残留成孤儿
+    （界面没有、运行时却可能被追加执行）。本函数在队列落盘时调用：以「队列当前实际
+    引用到的战斗步骤名」为准，保留被引用实例，删除战斗 4 项中其余孤儿实例；非战斗
+    实例（邮件/尘歌壶等本就不在 Plan 中）不受影响。仅剔除「已从队列移除」的行——
+    被关闭（enabled=false）但仍在队列里的行仍保留其实例。
+
+    返回处理后的 Plan JSON 字符串；无实例被删时原样返回，避免无谓改写。
+    """
+    plan_steps = parse_one_dragon_plan(plan_json)
+    if isinstance(queue_raw, str):
+        try:
+            queue = json.loads(queue_raw)
+        except json.JSONDecodeError:
+            queue = []
+    else:
+        queue = queue_raw
+    if not isinstance(queue, list):
+        queue = []
+
+    if not plan_steps:
+        return plan_json if isinstance(plan_json, str) else json.dumps(plan_json, ensure_ascii=False)
+
+    # 计算队列当前引用的战斗实例步骤名（含被关闭行；仅剔除已从队列移除的行）
+    referenced: set[str] = set()
+    min_uid: dict[str, int] = {}
+    for it in queue:
+        if isinstance(it, dict):
+            n = str(it.get("name", ""))
+            u = it.get("uid")
+            if isinstance(u, int) and n:
+                min_uid[n] = min(min_uid.get(n, u), u)
+    for it in queue:
+        if not isinstance(it, dict):
+            continue
+        qn = str(it.get("name", ""))
+        if not qn:
+            continue
+        base = _resolve_base_name(qn)
+        if base not in BUILTIN_COMBAT_STEP_NAMES:
+            continue
+        quid = str(it.get("planUid", "") or "")
+        if quid:
+            hit = next((s for s in plan_steps if str(s.get("uid", "")) == quid), None)
+            if hit:
+                referenced.add(hit.get("name"))  # type: ignore[arg-type]
+                continue
+        step_name = qn
+        u = it.get("uid")
+        if isinstance(u, int) and min_uid.get(qn, u) != u:
+            step_name = f"{qn}-{u}"
+        referenced.add(step_name)
+
+    new_steps = [
+        s
+        for s in plan_steps
+        if _resolve_base_name(s.get("name", "")) not in BUILTIN_COMBAT_STEP_NAMES
+        or s.get("name") in referenced
+    ]
+    if len(new_steps) == len(plan_steps):
+        # 无变化：原样返回（保留原字符串，避免每次队列保存都重写 Plan）
+        return plan_json if isinstance(plan_json, str) else json.dumps(plan_json, ensure_ascii=False)
+
+    # 重建 JSON，保留 version 等外层字段
+    if isinstance(plan_json, str):
+        try:
+            wrapper = json.loads(plan_json)
+        except json.JSONDecodeError:
+            wrapper = None
+    else:
+        wrapper = plan_json
+    if isinstance(wrapper, dict) and isinstance(wrapper.get("steps"), list):
+        wrapper = dict(wrapper)
+        wrapper["steps"] = new_steps
+    else:
+        wrapper = new_steps
+    removed = [s.get("name") for s in plan_steps if s not in new_steps]
+    logger.info(f"队列变更：清理 Plan 孤儿战斗实例 {len(removed)} 个 -> {removed}")
+    return json.dumps(wrapper, ensure_ascii=False, indent=2)
 
 
 def merge_rightbar_into_plan(

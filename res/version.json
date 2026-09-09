@@ -10,11 +10,10 @@
                 "调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)",
                 "调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 用户编辑页一条龙配置改为可视化队列：左栏队列可拖拽排序并按所排顺序执行，支持批量加入、右键移出、一键清空、行启停与多选批量操作，添加配置组弹窗扩为「JS脚本/地图追踪」双标签页 by [@TCddddd](https://github.com/TCddddd)",
                 "调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)",
                 "通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen)",
                 "HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 一条龙战斗四项（地脉花 / 秘境 / 幽境危战 / 首领讨伐）支持各自配置多个独立实例，按实例分别保存与执行，互不干扰 by [@TCddddd](https://github.com/TCddddd)"
+                "BetterGI专项 用户编辑页一条龙配置改为可视化队列：左栏队列可拖拽排序并按所排顺序执行，战斗四项（地脉花 / 秘境 / 幽境危战 / 首领讨伐）各支持配置多个独立实例、分别保存与执行；同时修复队列里已关闭的任务仍被执行、右栏设置保存报错、地脉花按星期刷取却每天都跑、秘境每周表奖励档位不按所配星期下发，以及一条龙没有可执行的日常任务时卡住结束不了的问题 by [@TCddddd](https://github.com/TCddddd)"
             ],
             "程序优化": [
                 "OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)",
@@ -98,8 +97,7 @@
                 "HSR专项与SRC专项 修复英文与日文界面的术语错误：「历战余响」在英文下被显示为「差分宇宙」（两者在同一页面上是不同玩法），「体力配置」沿用了明日方舟的「理智」译法，「侵蚀隧洞」英文名复数有误 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 修复项目 interface 的同一个预设里重复写了同一个任务（例如 MXU 的随机启动标记）时整份项目读不出来、建项向导卡在第一步的问题 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MFW专项 从新链路回退到旧链路后准备项目运行环境时，改为直接复用 Runtime 已经装好的 uv，不再要求用户自己再准备一份 by [@qiyinxi](https://github.com/qiyinxi)",
-                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)",
-                "BetterGI专项 修复一条龙战斗任务（秘境 / 地脉花 / 幽境危战 / 首领讨伐）右栏设置保存报错、关掉的任务仍会执行、没配过参数的任务反而不执行的问题，并修复地脉花按星期刷取每天都跑、秘境每周表奖励档位不按所配星期下发的问题 by [@TCddddd](https://github.com/TCddddd)"
+                "MFW专项 准备运行环境确实找不到 uv 时改为给出可照做的中文提示，写明 uv.exe 该放的完整路径，以及本机已有完整 Python 3.12 时可改设环境变量跳过下载 by [@qiyinxi](https://github.com/qiyinxi)"
             ]
         },
         "v5.5.0-beta.2": {

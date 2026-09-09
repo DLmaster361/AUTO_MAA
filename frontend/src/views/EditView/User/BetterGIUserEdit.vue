@@ -2534,7 +2534,24 @@ const needGlobalStygianSettings = computed<boolean>(() =>
   )
 )
 
-// 编辑字段：仅本地待保存（等点「保存设置」统一写回）；按数据来源分流到对应 store
+// 右栏设置自动保存：debounce 合并连击（如文本逐字输入），串行队列避免并发丢保存。
+// dragonGroupSaveSel 锁定「正在编辑的配置组」：自动保存 / 切换前冲刷都在该组落库，
+// 避免切换组后定时器才触发、把旧组数据误写进新组的配置。
+let dragonGroupAutoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let dragonGroupSaveChain: Promise<boolean> = Promise.resolve(true)
+let dragonGroupSaveSel: ConfigGroupIdentity | null = null
+
+const scheduleDragonGroupAutoSave = (silent = true) => {
+  dragonGroupSaveSel = selectedGroupIdentity.value ?? null
+  if (dragonGroupAutoSaveTimer) clearTimeout(dragonGroupAutoSaveTimer)
+  dragonGroupAutoSaveTimer = setTimeout(() => {
+    dragonGroupAutoSaveTimer = null
+    void saveDragonGroupSettings(silent, dragonGroupSaveSel)
+  }, 400)
+}
+
+// 编辑字段：本地即时更新并自动落库（无需点「保存设置」）；按数据来源分流到对应 store，
+// 再经 debounce 写回。字段来源必须与 DragonSettingField.source 对齐。
 const updateSettingField = (field: DragonSettingField, value: unknown) => {
   if (field.source === 'globalDomain') {
     globalDomainSettings.value = { ...globalDomainSettings.value, [field.key]: value }
@@ -2546,11 +2563,13 @@ const updateSettingField = (field: DragonSettingField, value: unknown) => {
     dragonSettings.value = { ...dragonSettings.value, [field.key]: value }
     dragonSettingsDirty.value = true
   }
+  void scheduleDragonGroupAutoSave(true)
 }
 
 // 读取该用户一条龙配置设置项 + （如需要）全局秘境/幽境段（切换选中行时刷新）
 const loadDragonGroupSettings = async () => {
   const sel = selectedGroupIdentity.value
+  dragonGroupSaveSel = sel ?? null
   if (!sel || sel.kind !== 'builtin' || !userId.value) {
     dragonSettings.value = {}
     dragonSettingsDirty.value = false
@@ -2603,55 +2622,80 @@ const loadDragonGroupSettings = async () => {
   }
 }
 
-// 保存：一条龙字段写回 per-user 副本；globalDomain/globalStygian 字段写回 BetterGI 全局 config.json 段
-const saveDragonGroupSettings = async () => {
-  const sel = selectedGroupIdentity.value
-  if (!sel || sel.kind !== 'builtin' || !userId.value) return
-  if (dragonSettingsSaving.value) return
-  dragonSettingsSaving.value = true
-  try {
+// 保存：一条龙字段写回 per-user 副本；globalDomain/globalStygian 字段写回 BetterGI 全局 config.json 段。
+// 经串行队列执行（避免并发丢保存，优于原 `if (saving) return` 直接丢弃）；silent=true 时不弹成功提示
+// （自动保存场景）。返回 Promise<boolean> 便于调用方（切换组 / 整体保存前）await 冲刷未决编辑。
+const saveDragonGroupSettings = (
+  silent = false,
+  selOverride?: ConfigGroupIdentity | null
+): Promise<boolean> => {
+  const sel = selOverride ?? selectedGroupIdentity.value
+  const run = dragonGroupSaveChain.then(async () => {
+    if (!sel || sel.kind !== 'builtin' || !userId.value) return false
+    const tasks: Promise<unknown>[] = []
     if (dragonSettingsDirty.value) {
-      await saveOneDragonSettings(
-        scriptId,
-        userId.value,
-        dragonConfigName.value,
-        dragonSettings.value,
-        stepNameOf(sel)
+      tasks.push(
+        saveOneDragonSettings(
+          scriptId,
+          userId.value,
+          dragonConfigName.value,
+          dragonSettings.value,
+          stepNameOf(sel)
+        ).then(() => {
+          dragonSettingsDirty.value = false
+        })
       )
-      dragonSettingsDirty.value = false
     }
     if (globalDomainSettingsDirty.value) {
-      await saveGlobalDomainSettings(
-        scriptId,
-        formData.Info.IfUseMasConfig ? userId.value : undefined,
-        globalDomainSettings.value,
-        stepNameOf(sel)
+      tasks.push(
+        saveGlobalDomainSettings(
+          scriptId,
+          formData.Info.IfUseMasConfig ? userId.value : undefined,
+          globalDomainSettings.value,
+          stepNameOf(sel)
+        ).then(() => {
+          globalDomainSettingsDirty.value = false
+        })
       )
-      globalDomainSettingsDirty.value = false
     }
     if (globalStygianSettingsDirty.value) {
-      await saveGlobalStygianSettings(
-        scriptId,
-        formData.Info.IfUseMasConfig ? userId.value : undefined,
-        globalStygianSettings.value,
-        stepNameOf(sel)
+      tasks.push(
+        saveGlobalStygianSettings(
+          scriptId,
+          formData.Info.IfUseMasConfig ? userId.value : undefined,
+          globalStygianSettings.value,
+          stepNameOf(sel)
+        ).then(() => {
+          globalStygianSettingsDirty.value = false
+        })
       )
-      globalStygianSettingsDirty.value = false
     }
-    message.success(t('edit.bettergiGroupSettingsSaved'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsSaveFailed'))
-  } finally {
-    dragonSettingsSaving.value = false
-  }
+    if (tasks.length === 0) return true
+    try {
+      await Promise.all(tasks)
+      if (!silent) message.success(t('edit.bettergiGroupSettingsSaved'))
+      return true
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e))
+      message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsSaveFailed'))
+      return false
+    }
+  })
+  dragonGroupSaveChain = run.catch(() => false)
+  return run
 }
 
 // 切换选中内置组时加载该组的设置项（分组标签页状态由子组件按 sections 变化自动重置）
 watch(
   () => selectedGroupIdentity.value?.uid,
-  () => {
-    void loadDragonGroupSettings()
+  async () => {
+    // 切换组前先冲刷未决的自动保存，避免 debounce 未触发时编辑被跳过而丢失
+    if (dragonGroupAutoSaveTimer) {
+      clearTimeout(dragonGroupAutoSaveTimer)
+      dragonGroupAutoSaveTimer = null
+      await saveDragonGroupSettings(true, dragonGroupSaveSel)
+    }
+    await loadDragonGroupSettings()
   }
 )
 
@@ -3618,8 +3662,14 @@ const handleBettergiConfig = () => {
   void startSession(userId.value)
 }
 
-const handleSaveBettergiConfig = () => {
-  void saveSession()
+const handleSaveBettergiConfig = async () => {
+  // 整体保存前先冲刷未决的右栏自动保存，确保不丢编辑
+  if (dragonGroupAutoSaveTimer) {
+    clearTimeout(dragonGroupAutoSaveTimer)
+    dragonGroupAutoSaveTimer = null
+    await saveDragonGroupSettings(true, dragonGroupSaveSel)
+  }
+  await saveSession()
 }
 
 const handleCancel = async () => {

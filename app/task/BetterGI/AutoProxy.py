@@ -42,6 +42,7 @@ from .tools import (
     push_notification,
 )
 from .tools.one_dragon_plan import (
+    BUILTIN_COMBAT_STEP_NAMES,
     build_combat_steps,
     parse_one_dragon_plan,
     resolve_base_name,
@@ -300,6 +301,29 @@ class AutoProxyTask(TaskExecuteBase):
         self.plan_combat_steps = build_combat_steps(
             _plan_steps, self.one_dragon_queue, self.one_dragon_groups
         )
+        # 路径 B 回退：顶层「通用战斗队伍」(OneDragon.PartyName) 默认填入各战斗步骤的
+        # 队伍字段，与路径 A（write_user_one_dragon 把 PartyName 写入秘境/首领，并经
+        # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
+        # 队伍字段为空时注入，已显式设置的队伍不覆盖。
+        _default_party = str(self.cur_user_config.get("OneDragon", "PartyName") or "").strip()
+        if _default_party:
+            _TEAM_FIELD_BY_BASE = {
+                "自动秘境": "partyName",
+                "自动地脉花": "team",
+                "自动幽境危战": "fightTeamName",
+                "自动首领讨伐": "teamName",
+            }
+            for _step in self.plan_combat_steps:
+                _base = resolve_base_name(str(_step.get("name", "")))
+                _field = _TEAM_FIELD_BY_BASE.get(_base)
+                if not _field:
+                    continue
+                _settings = _step.get("settings")
+                if not isinstance(_settings, dict):
+                    _settings = {}
+                    _step["settings"] = _settings
+                if not _settings.get(_field):
+                    _settings[_field] = _default_party
         self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
@@ -338,13 +362,17 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.use_mas_config:
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
-        # 路径 B：只把「本次确实被执行层接管」的战斗组从副本过滤；未接管的组（Plan 无配置
-        # 或队列中已停用）继续留在一条龙，避免任务静默消失或关不掉。
+        # 路径 B：战斗 4 项由执行层直连，原生一条龙只跑日常 + 自定义组。
+        # 把「队列里出现的所有战斗组」一律从原生副本剔除，使前端队列开关成为唯一真理源：
+        # 开 → 执行层跑；关（Plan.step.enabled=false）→ 原生也不跑，避免关了还漏跑/重复跑。
+        # 日常 4 项不在战斗集合内，仍按 OneDragon.Groups 在原生一条龙启停（单开关已对齐）。
         _exclude = exclude_task_names or (
             sorted(
                 {
-                    resolve_base_name(str(s.get("name", "")))
-                    for s in self.plan_combat_steps
+                    b
+                    for q in (self.one_dragon_queue or [])
+                    for b in [resolve_base_name(str(q.get("name", "")))]
+                    if b and b in BUILTIN_COMBAT_STEP_NAMES
                 }
             )
             if self.plan_mode
@@ -440,6 +468,24 @@ class AutoProxyTask(TaskExecuteBase):
         finally:
             self._reseed_global_config = None
 
+    def _native_one_dragon_has_tasks(self) -> bool:
+        """原生一条龙（阶段2）是否还有任何启用任务。
+
+        路径 B 下战斗组已被执行层接管并从原生副本剔除，若日常/自定义组也都关，
+        启用任务数即为 0。此时再启动 ``startOneDragon`` 会让 BetterGI 空跑且不退出，
+        导致任务挂死。读实际写好的原生配置，按 ``TaskEnabledList`` 判定是否有活可干。
+        """
+        try:
+            cfg = one_dragon.load_one_dragon(
+                self.script_root_path, self.launch_config_name
+            )
+        except Exception:
+            return False
+        enabled = cfg.get("TaskEnabledList") if isinstance(cfg, dict) else None
+        if not isinstance(enabled, dict):
+            return False
+        return any(bool(v) for v in enabled.values())
+
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -463,11 +509,30 @@ class AutoProxyTask(TaskExecuteBase):
         # 路径 B：先直连执行层跑战斗 4 项。失败不再中止任务：日常 4 项（领奖类）
         # 与战斗无依赖，仍由随后的一条龙承接，避免战斗异常连坐吞掉日常收益
         # （2026-09-08 用户决策：记录警告但继续）。
-        if self.plan_mode and not await self._run_plan_combat():
-            self.script_info.log = "执行层（战斗4项）失败，继续执行一条龙日常"
-            logger.warning(
-                f"用户 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
+        plan_combat_ok = True
+        if self.plan_mode:
+            plan_combat_ok = await self._run_plan_combat()
+            if not plan_combat_ok:
+                self.script_info.log = "执行层（战斗4项）失败，继续执行一条龙日常"
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 执行层失败，记录警告并继续一条龙日常"
+                )
+
+        # 原生一条龙（阶段2）无启用任务：不再启动 BetterGI，避免空一条龙进程不退出导致任务挂死。
+        # 路径 B 下战斗组已被剔除，若日常/自定义组也都关，启用任务数即为 0。
+        if not self._native_one_dragon_has_tasks():
+            if self.plan_mode and plan_combat_ok:
+                # 战斗已由执行层完成，日常一条龙无活可干：整体视为成功，直接收尾
+                self.run_book = True
+                self.script_info.log = (
+                    "执行层战斗已完成；原生一条龙无启用任务，跳过阶段2"
+                )
+            else:
+                self.script_info.log = "一条龙无启用任务，跳过"
+            logger.info(
+                f"用户 {self.cur_user_item.name} 原生一条龙无启用任务，跳过 BetterGI 启动"
             )
+            return
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         for i in range(run_limit):
@@ -591,18 +656,23 @@ class AutoProxyTask(TaskExecuteBase):
             "执行配置组任务时失败",
             "任务启动失败",
             "[FTL]",
-            # 执行层 JS 脚本自身失败标记（MAS_PLAN_FAIL 抛异常后 BGI 仍会打印
+            # 执行层 JS 脚本整体失败标记（MAS_PLAN_FAIL 抛异常后 BGI 仍会打印
             # 「配置组 ... 执行结束」，仅靠 done_marker 会把失败误判为成功）
             "MAS_PLAN_FAIL",
-            "MAS_STEP_FAIL",
+            # 注：MAS_STEP_FAIL 不再作为致命标记——执行层已改为单步失败跳过并继续，
+            # 仅统计数量，最终按整体是否完成判定成败（2026-09-09 用户决策）。
         )
+
+        step_failed = 0
 
         last_activity = time.monotonic()
 
         async def on_log(log_content: list[str], latest_time: datetime) -> None:
-            nonlocal last_activity
+            nonlocal last_activity, step_failed
             last_activity = time.monotonic()
             log = "".join(log_content)
+            # 单步失败只统计（执行层会跳过继续），不据此判负
+            step_failed = log.count("MAS_STEP_FAIL")
             if done_marker in log:
                 result["success"] = True
                 done_event.set()
@@ -657,7 +727,16 @@ class AutoProxyTask(TaskExecuteBase):
                 one_dragon_bridge.remove_one_dragon_group(self.script_root_path)
 
         if result["success"]:
-            await self._push_dispatch_log("执行层（战斗4项）完成")
+            if step_failed:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 执行层完成，"
+                    f"但 {step_failed} 个步骤失败（已跳过并继续后续步骤）"
+                )
+                await self._push_dispatch_log(
+                    f"执行层（战斗4项）完成，{step_failed} 个步骤失败已跳过"
+                )
+            else:
+                await self._push_dispatch_log("执行层（战斗4项）完成")
         else:
             await self._push_dispatch_log("执行层（战斗4项）失败")
         return result["success"]

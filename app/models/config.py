@@ -3964,9 +3964,11 @@ class ZzzOdConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 单次运行超时时间（分钟）；一条龙含游戏内全流程，默认放宽
+        ## 单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是
+        ## 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层
+        ## 日志）也靠它兜底超时后切换启动器
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 180, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 40, RangeValidator(1, 9999)
         )
 
         self.UserData = MultipleConfig([ZzzOdUserConfig])

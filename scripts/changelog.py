@@ -37,6 +37,8 @@
 
     python scripts/changelog.py sync      # 从 CHANGELOG.md 同步到上述各处
     python scripts/changelog.py check     # 校验各处已同步（CI 与本地打包脚本用）
+    python scripts/changelog.py check-pr BASE_REF HEAD_REF
+                                          # 校验 PR 恰好新增一条当前版本记录
     python scripts/changelog.py current   # 打印当前版本号
 
 `sync` 也会把 `CHANGELOG.md` 自身规范化：重写文件头的说明、把分类按固定顺序排列、
@@ -48,7 +50,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -80,6 +84,11 @@ CATEGORY_ORDER = [
     "安全",  # Security
     "开发流程",  # 本项目扩展：只影响贡献者、不影响用户的改动
 ]
+LEGACY_CATEGORY_NAMES = {
+    "新增功能": "新增",
+    "程序优化": "变更",
+    "修复BUG": "修复",
+}
 
 VERSION_PATTERN = re.compile(r"^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$")
 PRE_RELEASE_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$")
@@ -129,6 +138,7 @@ class ChangelogError(Exception):
 
 Sections = Dict[str, Dict[str, List[str]]]
 Dates = Dict[str, str]
+Entry = Tuple[str, str, str]
 
 
 def read_text(path: Path) -> str:
@@ -174,19 +184,26 @@ def parse_changelog(text: str) -> Tuple[str, Sections, Dates]:
                     f"实际是 {stripped!r}"
                 )
             version = matched.group("version")
-            date = matched.group("date")
+            release_date = matched.group("date")
             if not VERSION_PATTERN.match(version):
                 raise ChangelogError(
                     f"第 {number} 行：版本号必须形如 `v5.5.0-beta.3`，实际是 {version!r}"
                 )
             if version in sections:
                 raise ChangelogError(f"第 {number} 行：版本 {version} 重复出现")
-            if date == UNRELEASED and sections:
+            if release_date == UNRELEASED and sections:
                 raise ChangelogError(
                     f"第 {number} 行：只有文件顶部的第一个版本可以标 {UNRELEASED}"
                 )
+            if release_date != UNRELEASED:
+                try:
+                    date.fromisoformat(release_date)
+                except ValueError as error:
+                    raise ChangelogError(
+                        f"第 {number} 行：发布日期不是有效日期：{release_date}"
+                    ) from error
             sections[version] = {}
-            dates[version] = date
+            dates[version] = release_date
             current_version = version
             current_category = None
             continue
@@ -244,7 +261,127 @@ def parse_changelog(text: str) -> Tuple[str, Sections, Dates]:
     if not sections:
         raise ChangelogError("CHANGELOG.md 里没有任何 `## [vX.Y.Z] - 日期` 版本段")
 
-    return next(iter(sections)), sections, dates
+    first_version = next(iter(sections))
+    if dates[first_version] != UNRELEASED:
+        raise ChangelogError(
+            f"文件顶部第一个版本 {first_version} 必须标记为 {UNRELEASED}"
+        )
+
+    return first_version, sections, dates
+
+
+def collect_entries(sections: Sections) -> set[Entry]:
+    """把各版本的条目展开成可比较的 (版本, 分类, 条目) 三元组。"""
+
+    return {
+        (version, category, item)
+        for version, categories in sections.items()
+        for category, items in categories.items()
+        for item in items
+    }
+
+
+def validate_pr_sections(
+    base_version: str,
+    base_sections: Sections,
+    head_version: str,
+    head_sections: Sections,
+) -> Entry:
+    """校验两份解析结果之间只有一条合法的当前版本新增记录。"""
+
+    if head_version != base_version:
+        raise ChangelogError(
+            f"PR 不能切换当前未发布版本：base 为 {base_version}，head 为 {head_version}"
+        )
+
+    base_entries = collect_entries(base_sections)
+    head_entries = collect_entries(head_sections)
+    removed = base_entries - head_entries
+    if removed:
+        raise ChangelogError("PR 不能删除或修改已有的更新日志条目")
+
+    additions = head_entries - base_entries
+    historical_additions = [entry for entry in additions if entry[0] != head_version]
+    if historical_additions:
+        raise ChangelogError("PR 只能在当前未发布版本新增更新日志条目")
+
+    current_additions = sorted(entry for entry in additions if entry[0] == head_version)
+    if len(current_additions) != 1:
+        raise ChangelogError(
+            "每个 PR 必须在当前未发布版本恰好新增 1 条更新日志记录，"
+            f"实际新增 {len(current_additions)} 条"
+        )
+    return current_additions[0]
+
+
+def validate_pr_changelog(base_text: str, head_text: str) -> Entry:
+    """校验 PR 只在当前未发布版本新增一条记录，并返回该记录。"""
+
+    base_version, base_sections, base_dates = parse_changelog(base_text)
+    head_version, head_sections, head_dates = parse_changelog(head_text)
+    if head_dates != base_dates:
+        raise ChangelogError("PR 不能修改版本段或发布日期")
+    return validate_pr_sections(
+        base_version,
+        base_sections,
+        head_version,
+        head_sections,
+    )
+
+
+def read_ref_file(ref: str, relative_path: str) -> str:
+    """读取 Git ref 上的仓库文件。"""
+
+    try:
+        return subprocess.check_output(
+            ["git", "show", f"{ref}:{relative_path}"],
+            cwd=REPO_ROOT,
+            text=True,
+            encoding="utf-8",
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() if error.stderr else "未知 Git 错误"
+        raise ChangelogError(
+            f"无法读取 {ref} 上的 {relative_path}：{detail}"
+        ) from error
+
+
+def read_changelog_ref(ref: str) -> str:
+    """读取 Git ref 上的 CHANGELOG.md。"""
+
+    return read_ref_file(ref, "CHANGELOG.md")
+
+
+def read_version_json_ref(ref: str) -> Tuple[str, Sections]:
+    """迁移 PR 的 base 尚无 CHANGELOG.md 时，从旧生成物读取条目。"""
+
+    try:
+        payload = json.loads(read_ref_file(ref, "res/version.json"))
+        version = payload["version"]
+        raw_sections = payload["version_info"]
+        if not isinstance(version, str) or not isinstance(raw_sections, dict):
+            raise TypeError
+        sections: Sections = {}
+        for release, raw_categories in raw_sections.items():
+            if not isinstance(release, str) or not isinstance(raw_categories, dict):
+                raise TypeError
+            categories: Dict[str, List[str]] = {}
+            for category, items in raw_categories.items():
+                if (
+                    not isinstance(category, str)
+                    or not isinstance(items, list)
+                    or not all(isinstance(item, str) for item in items)
+                ):
+                    raise TypeError
+                normalized = LEGACY_CATEGORY_NAMES.get(category, category)
+                categories.setdefault(normalized, []).extend(items)
+            sections[release] = categories
+        return version, sections
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ChangelogError(
+            f"{ref} 上的 res/version.json 结构无效，无法建立迁移基线"
+        ) from error
 
 
 def order_categories(categories: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -420,13 +557,35 @@ def command_current() -> int:
     return 0
 
 
+def command_check_pr(base_ref: str, head_ref: str) -> int:
+    head_text = read_changelog_ref(head_ref)
+    try:
+        base_text = read_changelog_ref(base_ref)
+    except ChangelogError:
+        # 首次把 CHANGELOG.md 迁入目标分支时，base 只有旧的 version.json；它包含
+        # 同一批版本、分类和条目，足够证明迁移本身之外只新增了一条 PR 记录。
+        base_version, base_sections = read_version_json_ref(base_ref)
+        head_version, head_sections, _ = parse_changelog(head_text)
+        version, category, item = validate_pr_sections(
+            base_version,
+            base_sections,
+            head_version,
+            head_sections,
+        )
+    else:
+        version, category, item = validate_pr_changelog(base_text, head_text)
+    print(f"PR 更新日志记录有效: {version} / {category} / {item}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "command",
-        choices=["sync", "check", "current"],
-        help="sync 生成、check 校验、current 打印当前版本号",
+        choices=["sync", "check", "check-pr", "current"],
+        help="sync 生成、check 校验、check-pr 校验 PR 新增记录、current 打印当前版本号",
     )
+    parser.add_argument("refs", nargs="*", help="check-pr 使用的 BASE_REF HEAD_REF")
     arguments = parser.parse_args()
 
     handlers = {
@@ -435,6 +594,12 @@ def main() -> int:
         "current": command_current,
     }
     try:
+        if arguments.command == "check-pr":
+            if len(arguments.refs) != 2:
+                parser.error("check-pr 需要 BASE_REF 和 HEAD_REF 两个参数")
+            return command_check_pr(*arguments.refs)
+        if arguments.refs:
+            parser.error(f"{arguments.command} 不接受额外参数")
         return handlers[arguments.command]()
     except ChangelogError as error:
         print(f"更新日志格式有误：{error}", file=sys.stderr)

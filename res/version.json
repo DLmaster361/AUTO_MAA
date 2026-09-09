@@ -38,6 +38,7 @@
                 "更新提示改为按版本分区块展示，「重要变更」与「本次亮点」置顶，并可在设置页随时查看当前版本的更新日志 by [@qiyinxi](https://github.com/qiyinxi)"
             ],
             "变更": [
+                "全局设置 虚拟显示器的说明里可直接点开 Parsec 虚拟显示驱动的下载页，不必再自行搜索",
                 "启动界面 启动与初始化时的等待画面重做，只显示当前在做什么和一条进度条，首次安装或更新时才展示步骤进度，出错时给出一句话原因和一个主要操作、日志收进「详细信息」，并取消失败后的 60 秒自动重试 by [@qiyinxi](https://github.com/qiyinxi)",
                 "OK-WW专项 清理无效的游戏启动选项与空配置项，避免脚本配置中出现无效设置 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "后端更新自动在后台下载并于下次启动生效，启动失败时可修复依赖后重试 by [@ClozyA](https://github.com/ClozyA)",
@@ -65,7 +66,8 @@
                 "日志清理 自动清理OCR图片 by [@HarcoChen](https://github.com/HarcoChen)",
                 "代码清理 单源化各脚本专项重复的任务报告推送核心与 QQ/微信通知公共助手，并清理前后端死代码与直通包装组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "MAA专项 代理接管 MAA 配置时强制开启开始唤醒的账号切换开关，确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "MFW专项 进入项目配置页不再每次都要等一遍运行环境确认，开启自动更新时环境准备也提前到任务开始之前完成 by [@qiyinxi](https://github.com/qiyinxi)"
+                "MFW专项 进入项目配置页不再每次都要等一遍运行环境确认，开启自动更新时环境准备也提前到任务开始之前完成 by [@qiyinxi](https://github.com/qiyinxi)",
+                "日志清理 MFW 项目里 MaaFramework 轮转出的原生日志备份改为按历史记录的保留天数一并清理，不再无限堆积占用磁盘"
             ],
             "移除": [
                 "移除米游币获取任务，保留米游社各游戏签到。 by [@Lance0174](https://github.com/Lance0174)"
@@ -131,13 +133,15 @@
                 "MFW专项 修复脚本侧强制停止任务（如 MaaEnd 分辨率不达标时的强停）被记成「任务完成」的问题：现在被强停的任务按失败记录，本轮剩余任务不再投递，不会再出现整轮一件事没做却报成全部成功 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 修复 MAA 卡死后不会被判定为超时、任务一直挂着的问题：MAA 每隔一段时间输出的日志停滞提示被当成任务仍在推进，把超时计时反复重置，剿灭等超时阈值长于提示间隔的模式永远等不到超时；现已识别新旧两版 MAA 的该提示，MAA 的五种界面语言均生效 by [@qiyinxi](https://github.com/qiyinxi)",
                 "MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1)",
-                "BetterGI专项、ZZZ-OD专项 修复任务出错时提示送不到前端、用户看到的报错与实际出错原因无关的问题 by [@qiyinxi](https://github.com/qiyinxi)"
+                "BetterGI专项、ZZZ-OD专项 修复任务出错时提示送不到前端、用户看到的报错与实际出错原因无关的问题 by [@qiyinxi](https://github.com/qiyinxi)",
+                "HSR专项 修复系统区域设置不是中文时，三月七助手每个模块跑完都被判为失败、整轮任务被重复运行的问题"
             ],
             "开发流程": [
                 "新增 GitHub Issue 模板，Bug 反馈按脚本专项、MaaFW 专项与通用问题分区，并附需求建议等模板与常见问题、文档站、官方群链接 by [@qiyinxi](https://github.com/qiyinxi)",
                 "BetterGI专项 清理未达提交规范的测试文件及其格式、静态检查问题，并移除误提交的 npm 镜像源 by [@1w1w11w1](https://github.com/1w1w11w1)",
                 "BetterGI专项 重新生成与后端接口定义脱节的前端接口代码 by [@qiyinxi](https://github.com/qiyinxi)",
-                "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)"
+                "开发流程 禁止 AI 助手协助 force push by [@Craun718](https://github.com/Craun718)",
+                "首页卫星的图标改从全局脚本图标表取，新增脚本专项时不会再漏掉主页卫星"
             ]
         },
         "v5.5.0-beta.2": {

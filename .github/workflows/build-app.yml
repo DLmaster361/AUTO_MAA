@@ -379,10 +379,13 @@ jobs:
           # 克隆受管工作区按 [cnb, github] 顺序找这个分支，国内用户在 cnb 上找不到、又
           # 连不上 github，初始化直接卡死（GIT_CLONE_FAILED）。
           # workflow_dispatch 是该限制的明确例外，可以用 GITHUB_TOKEN 调起。
-          # 在触发本次构建的分支上 dispatch：sync-cnb 的 checkout 用 fetch-depth: 0，
-          # 本来就会取到全部分支与 tag 再整体镜像过去，跑在哪个分支上都能带上刚推的
-          # 发行版分支。
-          gh workflow run sync-cnb.yml --ref "$GITHUB_REF_NAME"
+          #
+          # 必须 dispatch 到发行版分支本身。sync-cnb 的 checkout 是 ref: github.ref，
+          # 而 git-sync 只把检出的那个 ref 连同全部 tag 推过去，不是整库镜像：
+          # v5.5.0-beta.3 发版当天 12:34（codex/sync-github-from-dev）与 12:48（main）
+          # 各跑过一次 sync 且都成功，CNB 上照样没有 release/v5.5.0-beta.3，直到有人
+          # 把提交推到该分支本身才同步过去。dispatch 到构建分支等于又推了一次 dev。
+          gh workflow run sync-cnb.yml --ref "release/${{ needs.build.outputs.version_tag }}"
 
       - name: 发布发行版
         uses: softprops/action-gh-release@v3.0.2

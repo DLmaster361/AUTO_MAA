@@ -111,6 +111,9 @@
 - 日志采集 修复任务运行期间脚本日志按天滚动（跨零点）后，零点前的运行日志历史与节点详情丢失的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
 - 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因 by [@Lance0174](https://github.com/Lance0174)
 - Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- Runtime 接入 设置里的网络代理现在会传给运行时，受管环境的仓库克隆与 uv／Python 下载不再无视代理直连；代理地址填成本地路径这类非法值会被忽略并记入日志，而不是把所有下载一起打死
+- Runtime 接入 初始化失败时把运行时返回的失败详情一并写进日志，同一个错误码的多种成因不再分辨不出
+- 发版流程 发行版分支创建后改为对该分支本身触发国内下载源同步，此前触发的是构建所在分支，同步仍会漏掉当版发行版分支
 - 修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复深色模式下初始化界面连同标题栏整体变暗的问题 by [@ClozyA](https://github.com/ClozyA)
 - OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)

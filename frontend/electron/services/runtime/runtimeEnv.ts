@@ -30,26 +30,92 @@ export const RUNTIME_TELEMETRY_ENV = 'AUTO_MAS_TELEMETRY'
 /** 透传给 Runtime（再到后端）的运行环境标记变量名，与旧链路 `createBackendEnvironment` 同名。 */
 export const RUNTIME_APP_ENV = 'AUTO_MAS_ENV'
 
+/** 出站代理环境变量名；Go 的 `ProxyFromEnvironment` 与 uv 都认这两个。 */
+export const RUNTIME_HTTP_PROXY_ENV = 'HTTP_PROXY'
+export const RUNTIME_HTTPS_PROXY_ENV = 'HTTPS_PROXY'
+
+/** 代理白名单环境变量名。 */
+export const RUNTIME_NO_PROXY_ENV = 'NO_PROXY'
+
+/**
+ * 本机地址一律不过代理。
+ *
+ * Runtime 自己的就绪探测已经写死 `Proxy: nil`，但这两个变量会被 Runtime 原样传给
+ * `uv run` 再传给后端，后端的 httpx/requests 默认 `trust_env=True`，本机回环若被
+ * 代理接管会直接打断前后端互调。
+ */
+const LOCAL_NO_PROXY = '127.0.0.1,localhost,::1'
+
+/** 允许透传的代理协议；其余一律拒绝。 */
+const ALLOWED_PROXY_PROTOCOLS = new Set(['http:', 'https:', 'socks5:', 'socks5h:'])
+
+/** 后端持久化配置里本模块用到的字段。 */
+interface BackendConfigShape {
+  Function?: { IfEnableTelemetry?: unknown }
+  Update?: { ProxyAddress?: unknown }
+}
+
+/**
+ * 读取后端持久化配置（`<dataRoot>/config/Config.json`）。
+ *
+ * 文件不存在、JSON 损坏都返回空对象，由各字段自己决定缺省行为。
+ */
+function readBackendConfig(dataRoot: string): BackendConfigShape {
+  try {
+    const configPath = path.join(dataRoot, 'config', 'Config.json')
+    if (!fs.existsSync(configPath)) return {}
+
+    return JSON.parse(fs.readFileSync(configPath, 'utf8')) as BackendConfigShape
+  } catch (error) {
+    logger.warn(
+      `读取后端配置失败，按缺省处理: ${error instanceof Error ? error.message : String(error)}`
+    )
+    return {}
+  }
+}
+
 /**
  * 读取后端持久化配置里的遥测开关。
  *
- * 文件不存在、字段缺失或 JSON 损坏都按开启处理——只有明确写了 `false` 才是用户关闭过。
+ * 字段缺失或配置读不出来都按开启处理——只有明确写了 `false` 才是用户关闭过。
  */
-function isTelemetryEnabled(dataRoot: string): boolean {
-  try {
-    const configPath = path.join(dataRoot, 'config', 'Config.json')
-    if (!fs.existsSync(configPath)) return true
+function isTelemetryEnabled(config: BackendConfigShape): boolean {
+  return config.Function?.IfEnableTelemetry !== false
+}
 
-    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
-      Function?: { IfEnableTelemetry?: unknown }
-    }
-    return parsed.Function?.IfEnableTelemetry !== false
-  } catch (error) {
-    logger.warn(
-      `读取遥测开关失败，按开启处理: ${error instanceof Error ? error.message : String(error)}`
-    )
-    return true
+/**
+ * 读取并校验用户配置的出站代理地址（设置页「网络代理」，`Update.ProxyAddress`）。
+ *
+ * **必须严格校验**：这个字段在界面上没有任何约束，真机上见过用户把模拟器安装路径
+ * （`D:\虚拟C盘\MuMuPlayer-12.0\nx_main`）填进去。把这种值原样导出成 `HTTPS_PROXY`
+ * 会让 Runtime 一条网络路都走不通，比不设代理更糟，所以解析不出合法 URL、协议不在
+ * 白名单里、或者没有主机名的，一律记 warn 后当作没配。
+ *
+ * 返回归一化后的 URL 字符串；没配或不合法时返回 null。
+ */
+function readProxyAddress(config: BackendConfigShape): string | null {
+  const raw = config.Update?.ProxyAddress
+  if (typeof raw !== 'string') return null
+
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    logger.warn(`代理地址不是合法 URL，已忽略: ${trimmed}`)
+    return null
   }
+  if (!ALLOWED_PROXY_PROTOCOLS.has(parsed.protocol)) {
+    logger.warn(`代理地址协议 ${parsed.protocol} 不受支持，已忽略: ${trimmed}`)
+    return null
+  }
+  if (parsed.hostname.length === 0) {
+    logger.warn(`代理地址缺少主机名，已忽略: ${trimmed}`)
+    return null
+  }
+  return parsed.toString()
 }
 
 /**
@@ -60,17 +126,37 @@ function isTelemetryEnabled(dataRoot: string): boolean {
  *   （含未指定）不碰该变量。
  *
  * 关闭遥测时含 `AUTO_MAS_TELEMETRY: 'disabled'`；开启时不含该键。什么都不需要设时返回空对象。
+ *
+ * 用户配了合法代理时另含 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`：Runtime 的 go-git
+ * 与镜像下载器用的都是 `http.DefaultTransport.Clone()`，本来就认这两个变量，只是此前
+ * 没有人设过——国内用户配了代理也照样裸连 github.com，受管工作区首次克隆在 cnb 之后
+ * 落到 github 兜底时必挂。
+ *
+ * **已知副作用**：Runtime 会把自己的环境原样交给 `uv run` 再交给后端
+ * （`internal/uv/runner.go` 的 `buildEnvironment` 整份复制 `os.Environ()`，只过滤
+ * `UV_*` 与几个 `AUTO_MAS_*`），所以这三个变量会一路漏到 uv 的依赖下载和后端的
+ * httpx/requests。后端此前只在更新检查里显式用代理，之后所有出站都会跟着走。
+ * 对「特意配了代理」的用户这多半正是所求，但这是一次行为扩大，`NO_PROXY` 因此是必需项。
+ * 彻底的做法是 Runtime 侧加 `--proxy` 只作用于自己的出站，那需要 Runtime 单独发版。
  */
 export function buildRuntimeEnv(
   dataRoot: string,
   launchMode?: RuntimeLaunchMode
 ): NodeJS.ProcessEnv {
+  const config = readBackendConfig(dataRoot)
   const env: NodeJS.ProcessEnv = {}
-  if (!isTelemetryEnabled(dataRoot)) {
+  if (!isTelemetryEnabled(config)) {
     env[RUNTIME_TELEMETRY_ENV] = 'disabled'
   }
   if (launchMode === 'development') {
     env[RUNTIME_APP_ENV] = 'development'
+  }
+  const proxy = readProxyAddress(config)
+  if (proxy) {
+    env[RUNTIME_HTTP_PROXY_ENV] = proxy
+    env[RUNTIME_HTTPS_PROXY_ENV] = proxy
+    env[RUNTIME_NO_PROXY_ENV] = LOCAL_NO_PROXY
+    logger.info(`已向 Runtime 透传出站代理: ${proxy}`)
   }
   return env
 }

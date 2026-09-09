@@ -21,6 +21,7 @@
 
 
 import asyncio
+import os
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -38,6 +39,12 @@ from .log_detect import (
 )
 
 logger = get_logger("HSR M7A 运行器")
+
+# M7A 的四处「按任意键继续」统一由 utils/console.py 的 should_skip_pause() 放行，
+# 它认 MARCH7TH_GUI_STARTED，M7A 自己的图形界面拉起 CLI 时用的就是这个标记。
+# 托管运行没人按键：不带它时任务正文跑完仍会停在 input()，而系统 ANSI 代码页
+# 不是中文时更会直接崩在写不出中文的 stdout 上，把已经做完的模块判成失败。
+M7A_HEADLESS_ENV: dict[str, str] = {"MARCH7TH_GUI_STARTED": "true"}
 
 
 @dataclass
@@ -299,6 +306,7 @@ class M7ARunner:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, **M7A_HEADLESS_ENV},
             )
             proc = self._process_manager.main_process
             if not isinstance(proc, asyncio.subprocess.Process):

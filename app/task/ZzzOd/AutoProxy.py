@@ -993,8 +993,12 @@ class AutoProxyTask(TaskExecuteBase):
                     break
 
                 # 自动模式：启动器未能启动（无应用层日志且运行记录无变化）时，
-                # 自动切换到另一启动器并占用下一轮重试
+                # 自动切换到另一启动器并占用下一轮重试。切换后必须先中止上一
+                # 个仍在运行的启动器进程（如卡在「按回车键退出」的错误提示），
+                # 否则下一轮 open_process 会因进程管理器仍被占用而抛
+                # 「无法同时管理多个进程」，切换永远不会真正发生
                 if await self._maybe_switch_launcher(log):
+                    await self.kill_managed_process()
                     continue
 
                 logger.warning(

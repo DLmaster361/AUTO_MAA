@@ -107,6 +107,7 @@
 
 - Emulator 2.0 修复模拟器已经在运行时不打开游戏、以及雷电 0 号与 MuMu 同时运行时操作会打到另一台模拟器上的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 日志采集 修复任务运行期间脚本日志按天滚动（跨零点）后，零点前的运行日志历史与节点详情丢失的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
+- 修复绝区零一条龙由 MAS 运行时启动器报「运行环境同步失败」无法启动，且「自动」启动器模式失败后不切换另一启动器的问题
 - 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因 by [@Lance0174](https://github.com/Lance0174)
 - Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)

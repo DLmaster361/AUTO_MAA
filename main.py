@@ -41,6 +41,15 @@ from app.utils import get_logger, is_supervised, resource_path, sanitize_log_mes
 
 logger = get_logger("主程序")
 
+# 清理启动链路（Runtime → uv run → 后端）注入的 Python/uv 环境变量。MAS 自身
+# 不消费它们，但进程环境会原样传给所有被 MAS 拉起的子进程（专项脚本启动器、
+# 提权 ShellExecute 等）：外部脚本自己的 uv 会把项目环境解析到 MAS 的 runtime
+# venv 上、甚至尝试删除该目录（曾导致 ZzzOd 启动器报「运行环境同步失败」）
+for _leaked_env in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
+    _leaked_value = os.environ.pop(_leaked_env, None)
+    if _leaked_value is not None:
+        logger.info(f"已清理启动链路注入的环境变量: {_leaked_env}={_leaked_value}")
+
 # 正式版固定端口；开发环境错开一位，避免与用户已装正式版抢占同一端口
 DEFAULT_HTTP_PORT = 36163
 DEV_HTTP_PORT = 36164

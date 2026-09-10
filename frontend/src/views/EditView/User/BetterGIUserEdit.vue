@@ -1222,6 +1222,8 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     IfUseCustomGroups: false,
     CustomGroups: '[]',
     Queue: '[]',
+    Plan: '',
+    UseExecutionLayer: true,
   },
   Notify: {
     Enabled: false,
@@ -1642,7 +1644,7 @@ const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void>
   if (!scriptId || !userId.value) return
   try {
     const resp =
-      await BetterGiService.setBettergiOneDragonPlanStepEnabledApiApiScriptsBettergiOneDragonPlanStepEnabledPost(
+      await BetterGiService.setOneDragonPlanStepEnabledApiScriptsBettergiOneDragonPlanStepEnabledPost(
         scriptId,
         userId.value,
         name,

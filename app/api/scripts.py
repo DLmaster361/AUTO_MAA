@@ -550,11 +550,32 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
     status_code=200,
 )
 async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
+    data = user.data.model_dump(exclude_unset=True)
+
+    # 队列是唯一真相源：落盘 OneDragon.Queue 时，清理 Plan 中不再被引用的战斗实例
+    # （前端删除队列行只改 Queue，Plan 对应实例会残留成孤儿）。仅当 patch 含 Queue 时触发，
+    # 避免其它字段保存误伤；被关闭（enabled=false）但仍在队列的行其实例保留。
+    od = data.get("OneDragon") if isinstance(data, dict) else None
+    if isinstance(od, dict) and "Queue" in od:
+        try:
+            from app.task.BetterGI.tools import one_dragon_plan
+
+            script_cfg = Config.ScriptConfig[uuid.UUID(user.scriptId)]
+            uc = script_cfg.UserData[uuid.UUID(user.userId)]
+            plan = uc.get("OneDragon", "Plan") or ""
+            groups = uc.get("OneDragon", "Groups") or []
+            new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
+            if new_plan != plan:
+                od["Plan"] = new_plan
+        except Exception as e:  # pragma: no cover - 兜底：同步失败不应阻断保存
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "队列变更同步清理 Plan 孤儿实例失败（已忽略）: %s", e
+            )
 
     try:
-        await Config.update_user(
-            user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
-        )
+        await Config.update_user(user.scriptId, user.userId, data)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -1357,13 +1378,13 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
     status_code=200,
 )
 async def get_bettergi_custom_groups_api(
-    scriptId: str, configName: str = "", useMasConfig: bool = False
+    scriptId: str, userId: str = "", configName: str = "", useMasConfig: bool = False
 ) -> BetterGICustomGroupsOut:
     """返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
 
-    ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
-    per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
-    独立配置添加的自定义组。
+    ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+    槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+    否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
     """
 
     try:
@@ -1371,12 +1392,17 @@ async def get_bettergi_custom_groups_api(
         root = Path(script_config.get("Info", "RootPath")).expanduser()
         from app.task.BetterGI.tools import one_dragon
 
-        read_name = (
-            one_dragon.launch_slot_name()
-            if useMasConfig
-            else one_dragon.resolve_config_name(configName)
-        )
-        items = one_dragon.list_custom_groups(root, read_name)
+        if useMasConfig:
+            if not userId:
+                raise ValueError("用户独立配置下必须提供 userId")
+            _bettergi_user_id(script_config, userId)
+            items = one_dragon.list_user_custom_groups(
+                root, scriptId, userId, one_dragon.launch_slot_name()
+            )
+        else:
+            items = one_dragon.list_custom_groups(
+                root, one_dragon.resolve_config_name(configName)
+            )
         data = [BetterGICustomGroupOut(**item) for item in items]
         return BetterGICustomGroupsOut(
             code=200,

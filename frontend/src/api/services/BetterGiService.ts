@@ -47,10 +47,11 @@ export class BetterGiService {
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      *
-     * ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
-     * per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
-     * 独立配置添加的自定义组。
+     * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+     * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
+     * @param userId
      * @param configName
      * @param useMasConfig
      * @returns BetterGICustomGroupsOut Successful Response
@@ -58,6 +59,7 @@ export class BetterGiService {
      */
     public static getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
         scriptId: string,
+        userId: string = '',
         configName: string = '',
         useMasConfig: boolean = false,
     ): CancelablePromise<BetterGICustomGroupsOut> {
@@ -66,6 +68,7 @@ export class BetterGiService {
             url: '/api/scripts/bettergi/one-dragon/custom-groups',
             query: {
                 'scriptId': scriptId,
+                'userId': userId,
                 'configName': configName,
                 'useMasConfig': useMasConfig,
             },

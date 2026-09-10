@@ -22,8 +22,11 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     MaaFWTask,
     MaaFWTaskOptionsByTask,
     MaaFWTaskOptionValue,
+    build_pretask_task_name,
     find_pretask_by_task_name,
     is_pretask_task_name,
+    iter_pretasks,
+    resolve_task_instance_name,
 )
 from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
     MaaFWTaskPresetSnapshot,
@@ -95,7 +98,7 @@ def build_maafw_run_plan(
     resource_name: str | None = None,
     selected_preset: str | None = None,
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None = None,
-    task_names: list[str] | None = None,
+    task_ids: list[str] | None = None,
     task_options: dict[str, Any] | None = None,
     managed_env_root: str | Path | None = None,
 ) -> MaaFWRunPlan:
@@ -103,24 +106,20 @@ def build_maafw_run_plan(
     resolved_base_dir = Path(base_dir).resolve()
     controller = _select_controller(interface, controller_name)
     resource = _select_resource(interface, resource_name, controller)
-    selected_task_names, selected_task_options = _select_tasks(
+    selected_task_ids, selected_task_options = _select_tasks(
         interface,
         controller_name=controller.name,
         resource_name=resource.name,
         selected_preset=selected_preset,
         task_snapshot=task_snapshot,
-        task_names=task_names,
+        task_ids=task_ids,
         task_options=task_options,
     )
-    selected_pretask_names = [
-        task_name
-        for task_name in selected_task_names
-        if is_pretask_task_name(task_name)
+    selected_pretask_ids = [
+        task_id for task_id in selected_task_ids if is_pretask_task_name(task_id)
     ]
-    selected_common_task_names = [
-        task_name
-        for task_name in selected_task_names
-        if not is_pretask_task_name(task_name)
+    selected_common_task_ids = [
+        task_id for task_id in selected_task_ids if not is_pretask_task_name(task_id)
     ]
     task_map = {task.name: task for task in interface.task}
     controller_names = {controller.name}
@@ -133,7 +132,9 @@ def build_maafw_run_plan(
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
     skipped_tasks: list[MaaFWSkippedTaskPlan] = []
-    for task_name in selected_common_task_names:
+    # 队列元素是任务实例 id：同一个任务可以出现多次，每份各带自己的一套选项。
+    for task_id in selected_common_task_ids:
+        task_name = resolve_task_instance_name(task_id, task_map)
         task = task_map.get(task_name)
         if task is None:
             skipped_tasks.append(
@@ -157,7 +158,7 @@ def build_maafw_run_plan(
             )
             continue
 
-        options = selected_task_options.get(task.name, {})
+        options = selected_task_options.get(task_id, {})
         pipeline_override = pipeline_builder.build_task_pipeline_override(
             task.name,
             options,
@@ -196,7 +197,7 @@ def build_maafw_run_plan(
             interface,
             controller,
             resource,
-            selected_pretask_names,
+            selected_pretask_ids,
             selected_task_options,
         ),
         piEnv=_build_pi_env(resolved_base_dir, interface, controller, resource),
@@ -299,37 +300,37 @@ def _select_tasks(
     resource_name: str,
     selected_preset: str | None,
     task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
-    task_names: list[str] | None,
+    task_ids: list[str] | None,
     task_options: dict[str, Any] | None,
 ) -> tuple[list[str], MaaFWTaskOptionsByTask]:
-    if task_names is not None:
-        selected_names, selected_options = normalize_task_execution_payload(
-            task_names,
+    if task_ids is not None:
+        selected_ids, selected_options = normalize_task_execution_payload(
+            task_ids,
             task_options,
             interface_model,
             controller_name=controller_name,
             resource_name=resource_name,
         )
-        return selected_names, selected_options
+        return selected_ids, selected_options
 
     snapshot = _resolve_snapshot(
         interface_model,
         selected_preset=selected_preset,
         task_snapshot=task_snapshot,
     )
-    selected_names = [
-        task_name
-        for task_name in snapshot.taskOrder
-        if snapshot.taskChecked.get(task_name, False)
+    selected_ids = [
+        task_id
+        for task_id in snapshot.taskOrder
+        if snapshot.taskChecked.get(task_id, False)
     ]
-    selected_names, selected_options = normalize_task_execution_payload(
-        selected_names,
+    selected_ids, selected_options = normalize_task_execution_payload(
+        selected_ids,
         snapshot.taskOptions,
         interface_model,
         controller_name=controller_name,
         resource_name=resource_name,
     )
-    return selected_names, selected_options
+    return selected_ids, selected_options
 
 
 def _resolve_snapshot(
@@ -389,12 +390,16 @@ def _build_pretask_plans(
     interface_model: MaaFWInterface,
     controller: MaaFWController,
     resource: MaaFWResource,
-    selected_names: list[str],
+    selected_ids: list[str],
     task_options: MaaFWTaskOptionsByTask,
 ) -> list[MaaFWPretaskRunPlan]:
     plans: list[MaaFWPretaskRunPlan] = []
     i18n_mapping = _load_i18n_mapping(base_dir, interface_model)
-    for task_name in selected_names:
+    pretask_names = {
+        build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
+    }
+    for task_id in selected_ids:
+        task_name = resolve_task_instance_name(task_id, pretask_names)
         pretask = find_pretask_by_task_name(interface_model, task_name)
         if pretask is None:
             continue
@@ -406,7 +411,7 @@ def _build_pretask_plans(
         serialized_options = _collect_pretask_option_values(
             pretask,
             interface_model,
-            task_options.get(task_name, {}),
+            task_options.get(task_id, {}),
             controller_name=controller.name,
             resource_name=resource.name,
         )

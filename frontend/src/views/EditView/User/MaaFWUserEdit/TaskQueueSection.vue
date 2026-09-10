@@ -118,8 +118,8 @@
           />
           <draggable
             v-else
-            v-model="queuedTaskNamesModel"
-            :item-key="getTaskKey"
+            v-model="queuedTaskItemsModel"
+            item-key="id"
             :animation="200"
             handle=".task-drag-handle"
             ghost-class="task-row-ghost"
@@ -129,31 +129,35 @@
             :move="canDragTask"
             @end="emit('taskDragEnd')"
           >
-            <template #item="{ element: taskName, index }">
+            <template #item="{ element: queuedTask, index }">
               <button
-                v-if="getQueuedTask(taskName)"
                 type="button"
                 class="task-row"
-                :class="{ 'task-row-selected': selectedTask?.name === taskName }"
-                @click="emit('selectTask', taskName)"
+                :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
+                @click="emit('selectTask', queuedTask.id)"
               >
                 <HolderOutlined class="task-drag-handle" aria-hidden="true" />
                 <img
-                  v-if="resolveMaaFWAssetUrl(getQueuedTask(taskName)?.icon)"
-                  :src="resolveMaaFWAssetUrl(getQueuedTask(taskName)?.icon)"
+                  v-if="resolveMaaFWAssetUrl(queuedTask.task.icon)"
+                  :src="resolveMaaFWAssetUrl(queuedTask.task.icon)"
                   alt=""
                   width="28"
                   height="28"
                   class="task-icon"
                 />
                 <div class="task-main">
-                  <span class="task-title">{{ getQueuedTaskDisplayName(taskName) }}</span>
+                  <span class="task-title">
+                    {{ getDisplayName(queuedTask.task) }}
+                    <span v-if="queuedTask.copyTotal > 1" class="task-copy-index">
+                      #{{ queuedTask.copyIndex }}
+                    </span>
+                  </span>
                   <div class="task-meta">
-                    <a-tag v-if="getQueuedTask(taskName)?.entry" color="blue">
-                      {{ getQueuedTask(taskName)?.entry }}
+                    <a-tag v-if="queuedTask.task.entry" color="blue">
+                      {{ queuedTask.task.entry }}
                     </a-tag>
                     <a-tag
-                      v-for="group in getQueuedTask(taskName)?.group || []"
+                      v-for="group in queuedTask.task.group || []"
                       :key="group"
                       color="default"
                     >
@@ -165,11 +169,9 @@
                   <a-button
                     type="text"
                     size="small"
-                    :disabled="
-                      interfaceDependentDisabled || !canMoveTaskByOffset(taskName, index, -1)
-                    "
+                    :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, -1)"
                     :aria-label="t('edit.moveTaskUp')"
-                    @click="emit('moveTask', taskName, -1)"
+                    @click="emit('moveTask', queuedTask.id, -1)"
                   >
                     <template #icon>
                       <ArrowUpOutlined />
@@ -178,11 +180,9 @@
                   <a-button
                     type="text"
                     size="small"
-                    :disabled="
-                      interfaceDependentDisabled || !canMoveTaskByOffset(taskName, index, 1)
-                    "
+                    :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, 1)"
                     :aria-label="t('edit.moveTaskDown')"
-                    @click="emit('moveTask', taskName, 1)"
+                    @click="emit('moveTask', queuedTask.id, 1)"
                   >
                     <template #icon>
                       <ArrowDownOutlined />
@@ -209,7 +209,12 @@
               class="selected-task-icon"
             />
             <div>
-              <div class="selected-task-title">{{ getDisplayName(selectedTask) }}</div>
+              <div class="selected-task-title">
+                {{ getDisplayName(selectedTask) }}
+                <span v-if="(selectedQueuedTask?.copyTotal || 1) > 1" class="task-copy-index">
+                  #{{ selectedQueuedTask?.copyIndex }}
+                </span>
+              </div>
               <div class="selected-task-meta">
                 {{ selectedTask.entry || selectedTask.name }}
               </div>
@@ -218,12 +223,12 @@
           <MaaFWTaskOptionEditor
             :option-names="getTaskOptionNames(selectedTask)"
             :options="previewData.options"
-            :task-options="taskSnapshot.taskOptions[selectedTask.name] || {}"
+            :task-options="taskSnapshot.taskOptions[selectedTaskId] || {}"
             :controller-name="effectiveControllerName"
             :resource-name="effectiveResourceName"
             :base-path="previewData.path"
             :disabled="interfaceDependentDisabled"
-            @update="payload => emit('taskOptionUpdate', selectedTask!.name, payload)"
+            @update="payload => emit('taskOptionUpdate', selectedTaskId, payload)"
           />
           <MaaFWDescriptionView
             v-if="selectedTask.description"
@@ -333,6 +338,7 @@ import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWPresetInfo,
+  MaaFWQueuedTaskItem,
   MaaFWTaskInfo,
   MaaFWTaskOptionValue,
   MaaFWTaskSnapshot,
@@ -367,38 +373,46 @@ const props = defineProps<{
   previewData: MaaFWInterfacePreviewData | null
   interfaceDependentDisabled: boolean
   availableTasks: MaaFWTaskInfo[]
-  orderedTasks: MaaFWTaskInfo[]
-  queuedTaskNames: string[]
+  orderedTasks: MaaFWQueuedTaskItem[]
   addTaskCascaderValue: string[]
   addTaskCascaderOptions: AddTaskCascaderOption[]
   presetTemplates: PresetTemplate[]
   showPresetModal: boolean
   taskByName: Map<string, MaaFWTaskInfo>
   selectedTask: MaaFWTaskInfo | null
+  selectedTaskId: string
   taskSnapshot: MaaFWTaskSnapshot
   effectiveControllerName: string
   effectiveResourceName: string
 }>()
 
 const emit = defineEmits<{
-  'update:queuedTaskNames': [value: string[]]
   'update:addTaskCascaderValue': [value: string[]]
   'update:showPresetModal': [value: boolean]
   reloadInterface: []
   addTaskCascaderChange: [value: unknown]
   applyPresetTemplate: [presetName: string]
   appendPresetTemplate: [presetName: string]
-  selectTask: [taskName: string]
-  moveTask: [taskName: string, direction: -1 | 1]
+  reorderTasks: [taskIds: string[]]
+  selectTask: [taskId: string]
+  moveTask: [taskId: string, direction: -1 | 1]
   taskDragEnd: []
-  taskOptionUpdate: [taskName: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
+  taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
   deleteSelectedTask: []
 }>()
 
-const queuedTaskNamesModel = computed({
-  get: () => props.queuedTaskNames,
-  set: value => emit('update:queuedTaskNames', value),
+const queuedTaskItemsModel = computed({
+  get: () => props.orderedTasks,
+  set: value =>
+    emit(
+      'reorderTasks',
+      value.map(item => item.id)
+    ),
 })
+
+const selectedQueuedTask = computed(
+  () => props.orderedTasks.find(item => item.id === props.selectedTaskId) || null
+)
 
 const addTaskCascaderValueModel = computed({
   get: () => props.addTaskCascaderValue,
@@ -416,26 +430,19 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
   return buildMaaFWAssetUrl(props.previewData?.path, rawPath)
 }
 
-const getTaskKey = (taskName: string) => taskName
+const isPretaskItem = (item?: MaaFWQueuedTaskItem | null) => item?.task.entry === 'MXU_PRETASK'
 
-const getQueuedTask = (taskName: string) => props.taskByName.get(taskName)
-
-const getQueuedTaskDisplayName = (taskName: string) => {
-  const task = getQueuedTask(taskName)
-  return task ? getDisplayName(task) : taskName
+const canMoveTaskByOffset = (index: number, direction: -1 | 1) => {
+  const current = props.orderedTasks[index]
+  const target = props.orderedTasks[index + direction]
+  return Boolean(target && isPretaskItem(current) === isPretaskItem(target))
 }
 
-const isPretask = (taskName: string) => getQueuedTask(taskName)?.entry === 'MXU_PRETASK'
-
-const canMoveTaskByOffset = (taskName: string, index: number, direction: -1 | 1) => {
-  const targetTaskName = props.orderedTasks[index + direction]?.name
-  return Boolean(targetTaskName && isPretask(taskName) === isPretask(targetTaskName))
-}
-
-const canDragTask = (event: { draggedContext: { element: string; futureIndex: number } }) => {
-  const pretaskCount = props.orderedTasks.filter(task => task.entry === 'MXU_PRETASK').length
-  const isDraggedPretask = isPretask(event.draggedContext.element)
-  return isDraggedPretask
+const canDragTask = (event: {
+  draggedContext: { element: MaaFWQueuedTaskItem; futureIndex: number }
+}) => {
+  const pretaskCount = props.orderedTasks.filter(item => isPretaskItem(item)).length
+  return isPretaskItem(event.draggedContext.element)
     ? event.draggedContext.futureIndex < pretaskCount
     : event.draggedContext.futureIndex >= pretaskCount
 }
@@ -751,6 +758,14 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 
 .task-title {
   font-weight: 600;
+}
+
+/* 同一个任务被加了多份时的副本序号 */
+.task-copy-index {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ant-color-text-tertiary);
 }
 
 .task-meta {

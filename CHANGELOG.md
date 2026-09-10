@@ -50,6 +50,7 @@
 - MAA专项 修复未返回分服关卡数据时用户配置页打不开的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 模拟器管理 修复部分 MuMu 因命令输出混有日志而无法读取信息的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」的问题，现按镜像依次重试；失败原因也会写进日志并显示在提示条上，不再只有一句准备失败
+- MFW专项 修复 beta.4 下 MFW 脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru 的问题
 
 ### 开发流程
 

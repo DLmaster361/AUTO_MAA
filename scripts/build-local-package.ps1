@@ -32,7 +32,7 @@ $frontendPackageFile = Join-Path $frontendRoot "package.json"
 $backendConfigFile = Join-Path $repoRoot "app\core\config.py"
 $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $uvLockFile = Join-Path $repoRoot "uv.lock"
-$buildWorkflowFile = Join-Path $repoRoot ".github\workflows\build-app.yml"
+$runtimeVersionFile = Join-Path $repoRoot "res\runtime-version.txt"
 
 foreach ($requiredFile in @(
         $versionFile,
@@ -40,7 +40,7 @@ foreach ($requiredFile in @(
         $backendConfigFile,
         $pyprojectFile,
         $uvLockFile,
-        $buildWorkflowFile
+        $runtimeVersionFile
     )) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "缺少打包所需文件：$requiredFile"
@@ -73,15 +73,10 @@ $versionConfig = Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-Json
 $appVersion = [string]$versionConfig.version
 $pythonVersion = $appVersion.Substring(1)
 
-$workflowText = Get-Content -LiteralPath $buildWorkflowFile -Raw
-$runtimeVersionMatch = [regex]::Match(
-    $workflowText,
-    '(?m)^\s*RUNTIME_VERSION:\s*["'']?(?<version>v[0-9A-Za-z.-]+)["'']?\s*$'
-)
-if (-not $runtimeVersionMatch.Success) {
-    throw "无法从 .github/workflows/build-app.yml 读取 RUNTIME_VERSION。"
+$runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
+if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+    throw "Runtime 版本格式无效：$runtimeVersion"
 }
-$runtimeVersion = $runtimeVersionMatch.Groups['version'].Value
 
 Write-Host "应用版本：$appVersion"
 Write-Host "Runtime 版本：$runtimeVersion"

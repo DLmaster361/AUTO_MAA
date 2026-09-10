@@ -41,6 +41,33 @@ from app.utils import get_logger, is_supervised, resource_path, sanitize_log_mes
 
 logger = get_logger("主程序")
 
+# 清理启动链路（Runtime → uv run → 后端）注入的 Python/uv 环境变量。MAS 自身
+# 不消费它们，但进程环境会原样传给所有被 MAS 拉起的子进程（专项脚本启动器、
+# 提权 ShellExecute 等）：外部脚本自己的 uv/pip 会把环境解析到 MAS 的 runtime
+# venv 上、甚至尝试删除该目录（曾导致 ZzzOd 启动器报「运行环境同步失败」并
+# 损坏 venv）。uv run 实际注入 VIRTUAL_ENV、UV_PROJECT_ENVIRONMENT、UV、
+# UV_RUN_RECURSION_DEPTH 与 PATH 前置 <venv>/Scripts 五样，逐一摘除
+_leaked_venv = os.environ.pop("VIRTUAL_ENV", None)
+for _leaked_env in ("UV", "UV_PROJECT_ENVIRONMENT", "UV_RUN_RECURSION_DEPTH"):
+    os.environ.pop(_leaked_env, None)
+if _leaked_venv is not None:
+    logger.info(f"已清理启动链路注入的环境变量: VIRTUAL_ENV={_leaked_venv}")
+    # <venv>/Scripts（内含 python.exe/pip.exe）插在 PATH 里不摘的话，任何经
+    # PATH 裸调 python/pip 的子进程都会命中 MAS 的 runtime venv；按该值精确
+    # 摘除对应段，PATH 其余内容不动
+    _venv_scripts = os.path.normcase(
+        os.path.join(_leaked_venv, "Scripts" if os.name == "nt" else "bin").rstrip("\\/")
+    )
+    _path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    _kept_entries = [
+        _entry
+        for _entry in _path_entries
+        if os.path.normcase(_entry.rstrip("\\/")) != _venv_scripts
+    ]
+    if _kept_entries != _path_entries:
+        os.environ["PATH"] = os.pathsep.join(_kept_entries)
+        logger.info(f"已从 PATH 摘除启动链路注入的段: {_venv_scripts}")
+
 # 正式版固定端口；开发环境错开一位，避免与用户已装正式版抢占同一端口
 DEFAULT_HTTP_PORT = 36163
 DEV_HTTP_PORT = 36164
@@ -337,6 +364,12 @@ def main():
                     from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
 
                     await ArknightWin32Toolkit.init()
+
+                # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
+                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。
+                from app.core.desktop_guard import DesktopGuard
+
+                await DesktopGuard.start()
                 await MainTimer.start()
 
                 # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
@@ -409,6 +442,11 @@ def main():
             await openclaw_weixin_manager.stop()
             await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
+            # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
+            # 会再来收尾这块屏，所以这一步不能省。
+            from app.core.desktop_guard import DesktopGuard
+
+            await DesktopGuard.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()

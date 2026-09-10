@@ -498,6 +498,7 @@ def _project_interface_hash(project_path: Path) -> str:
 def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
+    env.pop("UV_PROJECT_ENVIRONMENT", None)
     env.pop("PYTHONHOME", None)
     env.pop("PYTHONUSERBASE", None)
     env.pop("PIP_TARGET", None)

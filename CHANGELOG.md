@@ -112,7 +112,7 @@
 - 修复绝区零一条龙由 MAS 运行时启动器报「运行环境同步失败」无法启动，且「自动」启动器模式失败后不切换另一启动器的问题
 - 社区签到结果统一附加到任务报告，修复重复推送并按通知渠道展示奖励与失败原因 by [@Lance0174](https://github.com/Lance0174)
 - Runtime 接入 修复首次初始化时 uv 下载完成瞬间「安装 Python」被显示为完成、随后进度又倒退的问题 by [@qiyinxi](https://github.com/qiyinxi)
-- 修复设置里配了网络代理的用户，初始化下载仍然直连、在「程序文件」一步卡住的问题
+- 修复设置里配了网络代理的用户，初始化下载仍然直连、在「程序文件」一步卡住的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复启动界面「查看日志」打开的窗口一片空白、后端启动失败时没有查看日志入口、出错说明文字贴在窗口顶部，以及日志文件打不开时没有任何提示（历史记录页还会误报「日志文件已打开」）的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复深色模式下初始化界面连同标题栏整体变暗的问题 by [@ClozyA](https://github.com/ClozyA)
 - OK-NTE专项 加固切换账号流程：预防弹窗及屏保等意外情况 by [@AthenaHibou](https://github.com/AthenaHibou)

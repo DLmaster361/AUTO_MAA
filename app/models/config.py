@@ -3852,10 +3852,27 @@ class ZzzOdUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {
+                "text": f"上次：{last_status}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
 
         mode = str(self.get("Info", "Mode") or "用户")
-        tags.append({"text": f"来源：{mode}", "color": "orange"})
+        if mode == "用户":
+            ## 一条龙任务编排仅用户模式消费（直控事实源是原生配置，MAS 字段会失真）
+            try:
+                app_list = json.loads(self.get("OneDragon", "AppList") or "[]")
+            except (TypeError, ValueError):
+                app_list = []
+            enabled_count = sum(
+                1 for item in app_list if isinstance(item, dict) and item.get("enabled")
+            )
+            if enabled_count > 0:
+                tags.append({"text": f"一条龙：{enabled_count} 项", "color": "orange"})
+            else:
+                tags.append({"text": "一条龙：未编排", "color": "orange"})
 
         remained_day = self.get("Info", "RemainedDay")
         if remained_day == -1:

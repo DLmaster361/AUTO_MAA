@@ -31,7 +31,6 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
     normalize_snapshot,
     normalize_task_execution_payload,
 )
-from app.utils import resource_path
 
 from .models import (
     MaaFWPretaskRunPlan,
@@ -42,6 +41,16 @@ from .models import (
     MaaFWTaskRunPlan,
 )
 from .pipeline_override import MaaFWPipelineOverrideBuilder
+
+# 本模块会被运行池隔离 venv 里的 worker 进程导入（``automas_maafw_runner``
+# 的 ``__init__`` 连带 import 它），那个 venv 只装了 maafw 与项目依赖，没有
+# 宿主的第三方包。所以这里**不能** ``from app.utils import resource_path``：
+# ``app.utils`` 的包初始化会连锁拉起 ``app.utils.logger`` 里的 loguru，worker
+# 一启动就 ``ModuleNotFoundError``；就算补上依赖，那个模块还会在导入期往
+# ``Path.cwd()/debug`` 挂一份 app.log 的 sink，让 worker 变成第二个写同一份
+# 轮转日志的进程。数法与 ``app/utils/paths.py`` 的 SOURCE_ROOT 同源，只是从
+# 本文件自己的位置往上数六层。守卫见 tests/task/test_maafw_worker_import_isolation.py。
+_SOURCE_ROOT = Path(__file__).resolve().parents[6]
 
 PI_INTERFACE_VERSION = "v2.8.1"
 PI_CLIENT_LANGUAGE = "zh_cn"
@@ -678,7 +687,7 @@ def _build_pi_env(
 
 
 def _load_client_version() -> str:
-    version_path = resource_path("version.json")
+    version_path = _SOURCE_ROOT / "res" / "version.json"
     try:
         data = json.loads(version_path.read_text(encoding="utf-8"))
         version = data.get("version")

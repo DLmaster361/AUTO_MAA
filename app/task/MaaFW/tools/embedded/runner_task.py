@@ -1517,6 +1517,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         records = self._load_period_task_records()
         runnable_tasks = []
         skipped_tasks = []
+        # 周期限制按任务算，不按队列里的份数算：同一个任务被重复加入队列时，
+        # 本轮也只安排一次。否则「仅一次」在一轮内形同虚设，而且先跑的那份一
+        # 成功就会把整个任务名记成已完成，还没跑的副本会被当作已完成跳过。
+        period_limited_seen: set[str] = set()
         for task in plan.tasks:
             daily_done = (
                 task.name in daily_tasks
@@ -1546,6 +1550,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     )
                 )
                 continue
+            if (
+                task.name in daily_tasks
+                or task.name in weekly_tasks
+                or task.name in monthly_tasks
+            ):
+                if task.name in period_limited_seen:
+                    skipped_tasks.append(
+                        MaaFWSkippedTaskPlan(
+                            name=task.name,
+                            label=task.label,
+                            entry=task.entry,
+                            reason="本轮已安排一次",
+                        )
+                    )
+                    continue
+                period_limited_seen.add(task.name)
             runnable_tasks.append(task)
         return plan.model_copy(
             update={
@@ -2343,13 +2363,23 @@ def _format_run_overview_log(
         else plan.projectName
     )
     project_version = str(plan.piEnv.get("PI_VERSION") or "").strip() or "未知"
-    return (
+    overview = (
         "MaaFW 运行总览: "
         f"project={project_name}; version={project_version}; "
         f"controller={plan.controllerName}; resource={plan.resourceName}; "
         f"preset={selected_preset or '自定义'}; "
         f"enabled_tasks({len(plan.tasks)})={task_names}"
     )
+    if not plan.skippedTasks:
+        return overview
+
+    # 被跳过的任务此前没有任何出口，用户把任务加进队列却看不出它为什么没跑。
+    skipped_names = " -> ".join(
+        f"{_task_display_name(task)}({task.reason})" for task in plan.skippedTasks
+    )
+    if len(skipped_names) > _RUN_OVERVIEW_LOG_VALUE_LIMIT:
+        skipped_names = skipped_names[:_RUN_OVERVIEW_LOG_VALUE_LIMIT] + "..."
+    return f"{overview}; skipped_tasks({len(plan.skippedTasks)})={skipped_names}"
 
 
 def _current_period_keys(now: datetime | None = None) -> tuple[str, str, str]:

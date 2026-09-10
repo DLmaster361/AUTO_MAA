@@ -3407,6 +3407,12 @@ class MaaFWOptionInfo(BaseModel):
 
 
 class MaaFWTaskSnapshot(BaseModel):
+    """ProjectInterface 预设转换出的任务快照，三个字段的键都是任务 name。
+
+    与用户自己的任务快照同构。用户队列允许同一个任务加多份，那边的键是任务
+    实例 id（首份就是任务 name）；预设里的重复任务会被折叠，因此这里只有 name。
+    """
+
     taskOrder: List[str] = Field(default_factory=list, description="任务 name 顺序")
     taskChecked: Dict[str, bool] = Field(
         default_factory=dict, description="任务勾选状态"

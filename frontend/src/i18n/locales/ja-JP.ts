@@ -868,6 +868,10 @@ export default {
     masManagedConfigurationOff: 'MAS 管理の設定は無効になっています',
     masManagesGame: 'MAS がゲームを管理',
     mfwAdbControllerUses: 'MFW の ADB controller はこのエミュレータ設定を使います',
+    mfwGamePackageName: 'ゲームのパッケージ名',
+    mfwGamePackageNamePassed:
+      'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
+    mfwGamePackageNamePlaceholder: '空欄で自動判別、例: com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',
@@ -1641,7 +1645,8 @@ export default {
     searchAndAdd: '自動検索して追加',
     removePath: 'パスを削除',
     slotRange: 'デバイス番号 {slots}',
-    deviceHint: '各インストールのインスタンスをまとめた一覧です。スクリプトはデバイス番号で紐付けます。',
+    deviceHint:
+      '各インストールのインスタンスをまとめた一覧です。スクリプトはデバイス番号で紐付けます。',
     refresh: '更新',
     colSource: '取得元',
     colSlot: 'デバイス番号',
@@ -1716,8 +1721,7 @@ export default {
     deleteWarning:
       'デバイス {slot} は一覧から消え、{count} 個のスクリプトに影響します。この番号が他のインスタンスに再割り当てされることはないため、紐づいていたスクリプトはデバイスを選び直してください。',
     addTitle: 'エミュレーターを追加',
-    addHint:
-      'LDPlayer 14 と MuMu 6 に対応しています。他のバージョンは旧設定から追加できます。',
+    addHint: 'LDPlayer 14 と MuMu 6 に対応しています。他のバージョンは旧設定から追加できます。',
     add: '追加',
     removeTitle: 'エミュレーターのパスを削除',
     removeWarning:
@@ -2896,7 +2900,8 @@ export default {
     display: {
       section: '仮想ディスプレイ',
       intro:
-        '実際の映像出力がすべて失われると、Windows はプレースホルダーの幻影ディスプレイだけを残します。見かけ上は正常な解像度を報告しますが、実際には何も出力しておらず、ゲームの描画も画面キャプチャも信頼できません。出力が無い状態でのコールドブートはさらに厄介で、非常に低い解像度で起動し、縮んだウィンドウサイズがゲームに記憶されます。有効にすると、MAS は「実際の映像出力が一つも無い」場合にだけ仮想ディスプレイを一時的に接続し、タスク終了時に取り外します。Parsec 仮想ディスプレイドライバーは各自でインストールしてください。MAS には同梱されていません。',
+        '実際の映像出力がすべて失われると、Windows はプレースホルダーの幻影ディスプレイだけを残します。見かけ上は正常な解像度を報告しますが、実際には何も出力しておらず、ゲームの描画も画面キャプチャも信頼できません。出力が無い状態でのコールドブートはさらに厄介で、非常に低い解像度で起動し、縮んだウィンドウサイズがゲームに記憶されます。有効にすると、MAS は「実際の映像出力が一つも無い」場合にだけ仮想ディスプレイを一時的に接続し、タスク終了時に取り外します。{driverLink}。MAS には同梱されていません。',
+      introDriverLink: 'Parsec 仮想ディスプレイドライバーは各自でインストールしてください',
       enable: '仮想ディスプレイを有効化',
       enableTip:
         '実際の映像出力を検出できないときだけ接続します。モニターが正常に動作していれば追加しません。タスク終了時に取り外し、プログラムが強制終了された場合は次回起動時に残ったディスプレイを片付けます。',
@@ -2913,9 +2918,11 @@ export default {
       checkPassed: '診断に合格しました',
       checkIssue: '診断に合格しませんでした',
       monitors: '診断時のモニター',
-      download: 'Parsec 仮想ディスプレイドライバーをダウンロード',
-      driverUnavailable: '利用可能な仮想ディスプレイドライバーを検出できません（{reason}）。スイッチは操作できません',
-      enabledButUnavailable: 'スイッチは有効ですが、利用可能なドライバーを検出できません（{reason}）。この機能は動作しません',
+      download: 'Parsec 仮想ディスプレイドライバーをダウンロード（GitHub）',
+      driverUnavailable:
+        '利用可能な仮想ディスプレイドライバーを検出できません（{reason}）。スイッチは操作できません',
+      enabledButUnavailable:
+        'スイッチは有効ですが、利用可能なドライバーを検出できません（{reason}）。この機能は動作しません',
       stage: {
         installed: 'ドライバー導入',
         openable: 'ドライバー呼び出し',

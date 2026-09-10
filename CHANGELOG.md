@@ -28,7 +28,30 @@
   - 开发流程：只影响贡献者、用户看不见的改动。
 -->
 
-## [v5.5.0-beta.3] - 未发布
+## [v5.5.0-beta.4] - 未发布
+
+### 新增
+
+- MFW专项 使用模拟器时可顺带把游戏一起打开（包名默认从项目里自动识别，识别不出或识别到多个时可在脚本管理页手动填写），任务前后的自定义脚本改为每用户各跑一次、不再随重试重复执行
+
+### 变更
+
+- 全局设置 虚拟显示器的说明里可直接点开 Parsec 虚拟显示驱动的下载页，不必再自行搜索
+- 日志清理 MFW 项目里 MaaFramework 轮转出的原生日志备份改为按历史记录的保留天数一并清理，不再无限堆积占用磁盘
+
+### 修复
+
+- 修复绝区零一条龙由 MAS 运行时启动器报「运行环境同步失败」无法启动，且「自动」启动器模式失败后不切换另一启动器的问题
+- 修复设置里配了网络代理的用户，初始化下载仍然直连、在「程序文件」一步卡住的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 修复系统区域设置不是中文时，三月七助手每个模块跑完都被判为失败、整轮任务被重复运行的问题
+- 修复 MFW、M9A、HSR 专项与主页的一批问题：多项设置从未生效、MFW 项目更新不上、HSR 的周常与历战余响完成状态在游戏重置前就提前翻页、主页重返未来 1999 卡片倒计时偏移，以及新版本发布后国内下载源缺少对应分支导致初始化失败
+- 修复后端在就绪前退出时只能反复重试的问题，现在会同时给出「重建运行环境」的修复入口
+
+### 开发流程
+
+- 首页卫星的图标改从全局脚本图标表取，新增脚本专项时不会再漏掉主页卫星
+
+## [v5.5.0-beta.3] - 2026-09-09
 
 ### 破坏性变更
 
@@ -97,7 +120,6 @@
 - 代码清理 单源化各脚本专项重复的任务报告推送核心与 QQ/微信通知公共助手，并清理前后端死代码与直通包装组件，行为保持不变 by [@1w1w11w1](https://github.com/1w1w11w1)
 - MAA专项 代理接管 MAA 配置时强制开启开始唤醒的账号切换开关，确保按用户配置的账号切号；用户未填写账号时仍不会切号 by [@1w1w11w1](https://github.com/1w1w11w1)
 - MFW专项 进入项目配置页不再每次都要等一遍运行环境确认，开启自动更新时环境准备也提前到任务开始之前完成 by [@qiyinxi](https://github.com/qiyinxi)
-- 日志清理 MFW 项目里 MaaFramework 轮转出的原生日志备份改为按历史记录的保留天数一并清理，不再无限堆积占用磁盘
 
 ### 移除
 
@@ -166,8 +188,6 @@
 - MAA专项 修复 MAA 卡死后不会被判定为超时、任务一直挂着的问题：MAA 每隔一段时间输出的日志停滞提示被当成任务仍在推进，把超时计时反复重置，剿灭等超时阈值长于提示间隔的模式永远等不到超时；现已识别新旧两版 MAA 的该提示，MAA 的五种界面语言均生效 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复关闭理智作战后活动关优先任务一并从任务队列中消失的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
 - BetterGI专项、ZZZ-OD专项 修复任务出错时提示送不到前端、用户看到的报错与实际出错原因无关的问题 by [@qiyinxi](https://github.com/qiyinxi)
-- HSR专项 修复系统区域设置不是中文时，三月七助手每个模块跑完都被判为失败、整轮任务被重复运行的问题
-- 修复后端在就绪前退出时只能反复重试的问题，现在会同时给出「重建运行环境」的修复入口
 
 ### 开发流程
 
@@ -292,7 +312,8 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by [@qiyinxi](https://github.com/qiyinxi)
 
-[v5.5.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.2...dev
+[v5.5.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.3...dev
+[v5.5.0-beta.3]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.2...v5.5.0-beta.3
 [v5.5.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.1...v5.5.0-beta.2
 [v5.5.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0-beta.1
 [v5.4.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/tag/v5.4.0

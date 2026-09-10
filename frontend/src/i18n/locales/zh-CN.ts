@@ -883,6 +883,10 @@ export default {
     masManagedConfigurationOff: 'MAS 管控配置已停用',
     masManagesGame: 'MAS 管理游戏',
     mfwAdbControllerUses: 'MFW ADB controller 运行时使用该模拟器配置',
+    mfwGamePackageName: '游戏包名',
+    mfwGamePackageNamePassed:
+      '启动模拟器时顺带把游戏拉起来。留空则从项目的 pipeline 中自动识别；识别不出或识别到多个时不启动游戏，可在此手动填写',
+    mfwGamePackageNamePlaceholder: '留空则自动识别，如 com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd 脚本配置',
     maaendPath: 'MaaEnd 路径',
     maaendAdapterStillUnder: 'MaaEnd专项还在积极测试中，如有问题请加入',
@@ -1515,8 +1519,7 @@ export default {
     zzzodRootPathRequired: '请选择 ZZZ-OD 安装目录',
     zzzodRootPathSaved: 'ZZZ-OD 安装目录已保存',
     zzzodInvalidDirectory: '所选目录无效',
-    zzzodLauncherNotFound:
-      '所选目录下未找到 {p0} 或 {p1}，请选择完整的绝区零一条龙安装根目录。',
+    zzzodLauncherNotFound: '所选目录下未找到 {p0} 或 {p1}，请选择完整的绝区零一条龙安装根目录。',
     zzzodNotZzzodScript: '脚本类型不是 ZZZ-OD',
     zzzodCloseGameOnFinish: '任务结束后关闭游戏',
     zzzodAccountSwitch: '账号切换方式',
@@ -1529,9 +1532,9 @@ export default {
     zzzodAccountSwitchMultiHint:
       '全部用户合并一轮多账号运行，一条龙内部依次切换账号，总时长最短；但单槽失败或切换失败会拖整轮重试，用户之间不隔离',
     zzzodAccountSwitchMas: 'MAS切换（暂未开放）',
-    zzzodAccountSwitchMasHint:
-      'MAS 操控游戏完成账号切换后交一条龙运行，暂未开放',
-    zzzodCloseGameOnFinishHint: '任务结束后由 MAS 关闭游戏；手动停止调度时也会一并关闭游戏（多账号连续运行时建议开启）',
+    zzzodAccountSwitchMasHint: 'MAS 操控游戏完成账号切换后交一条龙运行，暂未开放',
+    zzzodCloseGameOnFinishHint:
+      '任务结束后由 MAS 关闭游戏；手动停止调度时也会一并关闭游戏（多账号连续运行时建议开启）',
     zzzodLaunchBeforeTaskHint: '运行前由 MAS 启动游戏；检测到游戏已在运行时跳过，不会重复启动',
     zzzodGameArgumentsHint: '游戏启动参数（非一条龙启动器参数）',
     zzzodRetryLimitHint: '超过该次数仍失败则终止；重跑会自动跳过已完成的任务',
@@ -1561,8 +1564,7 @@ export default {
     zzzodLauncherIntegrated: '集成',
     zzzodLauncherAutoHint:
       '优先用上次成功的启动器；启动失败自动换另一个重试，并记住下一次成功的那个',
-    zzzodLauncherOriginalHint:
-      '固定用原始启动器（OneDragon-Launcher.exe，旧安装器版）',
+    zzzodLauncherOriginalHint: '固定用原始启动器（OneDragon-Launcher.exe，旧安装器版）',
     zzzodLauncherIntegratedHint:
       '固定用集成启动器（OneDragon-RuntimeLauncher.exe，自带运行时版本）',
     zzzodLauncherLoadFailed: '获取启动器安装情况失败',
@@ -1571,7 +1573,8 @@ export default {
     zzzodImportPlaceholder: '点击选择母版配置',
     zzzodImportConfigHint: '基于已有一条龙实例快速生成一份配置文件',
     zzzodImportConfirmTitle: '覆盖当前用户配置',
-    zzzodImportConfirmDesc: '将用所选实例的账号信息与已启用任务编排覆盖当前的独立用户配置；导入前会自动备份当前配置，可随时在「配置恢复」中恢复，确认导入？',
+    zzzodImportConfirmDesc:
+      '将用所选实例的账号信息与已启用任务编排覆盖当前的独立用户配置；导入前会自动备份当前配置，可随时在「配置恢复」中恢复，确认导入？',
     zzzodImportSuccess: '已基于所选实例生成配置',
     zzzodImportFailed: '导入配置失败',
     // ══ 通用配置恢复（configRestoreSection 组件词条，{script} 参数化脚本名）══
@@ -1593,13 +1596,15 @@ export default {
     configRestoreListFailed: '加载备份列表失败',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
-    configRestoreDetailConfirm: '将用该时间点的配置覆盖当前位置，再打开脚本查看页面；查看结束前请勿切换任务开关（会被误写回旧编排），确认？',
+    configRestoreDetailConfirm:
+      '将用该时间点的配置覆盖当前位置，再打开脚本查看页面；查看结束前请勿切换任务开关（会被误写回旧编排），确认？',
     configRestoreConfirmOk: '恢复并查看',
     configRestoreAction: '一键恢复',
     configRestoreSuccess: '配置已恢复',
     configRestoreFailed: '恢复配置失败',
     configRestoreConfirmTitle: '覆盖当前配置',
-    configRestoreConfirmDesc: '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    configRestoreConfirmDesc:
+      '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
@@ -1615,7 +1620,8 @@ export default {
       '打开 zzz-od 原生界面配置配队等复杂设置；以本页配置为基线打开该用户绑定的专属实例（MAS-用户名），GUI 内的任务编排与账号改动会自动回读到本页，关闭后恢复原活跃实例',
     zzzodConfiguringTitle: '正在进行 ZZZ-OD 设置',
     zzzodConfiguringDesc: '已切到该用户绑定的专属实例，请完成配队等设置。',
-    zzzodConfiguringDesc2: 'GUI 内的任务与账号改动会自动回读到本页；完成后点击「保存设置」结束本次会话。',
+    zzzodConfiguringDesc2:
+      'GUI 内的任务与账号改动会自动回读到本页；完成后点击「保存设置」结束本次会话。',
     zzzodScriptFallbackName: 'ZZZ-OD脚本',
     zzzodScriptNotFound: 'ZZZ-OD 脚本不存在或加载失败',
     zzzodStopFailed: '停止 ZZZ-OD 设置失败',
@@ -1631,8 +1637,7 @@ export default {
     zzzodSettingsSaved: 'ZZZ-OD 设置已保存',
     zzzodSettingsSaveFailed: '保存 ZZZ-OD 设置失败',
     zzzodUserNameHint: '用于区分用户的名称，相同名称的用户将被视为同一用户进行统计',
-    zzzodConfigSourceUserAlert:
-      '账号与任务编排以本页配置为准，运行时由 AUTO-MAS 注入一条龙运行',
+    zzzodConfigSourceUserAlert: '账号与任务编排以本页配置为准，运行时由 AUTO-MAS 注入一条龙运行',
     zzzodConfigSourceDirectAlert:
       '直控直接编辑所选一条龙实例的原生配置，运行时按该实例配置执行，MAS 不注入不干涉',
     zzzodModeUser: '用户',
@@ -1644,8 +1649,7 @@ export default {
       '选择要直接编辑的一条龙账号（实例）；编辑只影响该实例本身，要跑哪个账号在实例管理里把它「设为活跃」，多账号用「启动实例」+「切换账号」组合',
     zzzodDirectPickInstance: '选择要编辑的实例',
     zzzodDirectPickInstanceFirst: '请先在上方选择一个实例',
-    zzzodDirectModeLimit:
-      '每个脚本仅允许一个直控用户，多账号直接在该用户的实例管理中配置',
+    zzzodDirectModeLimit: '每个脚本仅允许一个直控用户，多账号直接在该用户的实例管理中配置',
     zzzodDirectInstanceRun: '运行实例',
     zzzodDirectInstanceRunHint:
       '仅运行当前 = 只跑当前选中账号；全部启用实例 = 依次运行所有打开「启动实例」开关的账号',
@@ -1661,8 +1665,7 @@ export default {
     zzzodInstancesManage: '实例管理',
     zzzodInstancesManageHint:
       '管理一条龙原生实例：每个实例可独立开关「启动实例」，运行实例选「全部启用实例」时只跑打开开关的账号；支持新增、重命名与删除，改动实时写回 one_dragon.yml。删除会同步删除该实例配置目录，请谨慎操作。',
-    zzzodInstanceActiveInOd:
-      '启动实例：运行实例选「全部启用实例」时，该实例会参与运行',
+    zzzodInstanceActiveInOd: '启动实例：运行实例选「全部启用实例」时，该实例会参与运行',
     zzzodInstanceRunAllSwitch: '启动实例',
     zzzodInstanceForceLoginSwitch: '运行前切换账号',
     zzzodInstanceSetActiveTag: '设为活跃',
@@ -3022,7 +3025,8 @@ export default {
     display: {
       section: '虚拟显示器',
       intro:
-        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 只在「桌面上没有任何真实显示输出」时临时挂一块虚拟显示器，任务结束即拆除。需先自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动。',
+        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 只在「桌面上没有任何真实显示输出」时临时挂一块虚拟显示器，任务结束即拆除。{driverLink}，MAS 不附带驱动。',
+      introDriverLink: '需先自行安装 Parsec 虚拟显示驱动',
       enable: '启用虚拟显示器',
       enableTip:
         '仅在检测不到任何真实显示输出时才挂载，显示器正常工作时不会多挂一块。任务结束会自动拆除；程序若被强制结束，下次启动时会清理掉遗留的那块。',
@@ -3039,7 +3043,7 @@ export default {
       checkPassed: '检测通过',
       checkIssue: '检测未通过',
       monitors: '检测时的显示器',
-      download: '下载 Parsec 虚拟显示驱动',
+      download: '下载 Parsec 虚拟显示驱动（GitHub）',
       driverUnavailable: '未检测到可用的虚拟显示驱动（{reason}），开关不可用',
       enabledButUnavailable: '开关已打开，但当前检测不到可用的驱动（{reason}），该功能不会生效',
       stage: {

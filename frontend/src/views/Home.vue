@@ -106,7 +106,7 @@
               <HomeSraActivityOverview
                 v-else-if="gameKey === 'starrail'"
                 :title="t('home.module.starrail')"
-                accent="#62c4e7"
+                :accent="getActivityAccent('starrail')"
                 :empty-text="t('home.empty.starrail')"
                 :loading="starRailSource.loading.value"
                 :overview="starRailSource.overview.value"
@@ -116,7 +116,7 @@
               <HomeSraActivityOverview
                 v-else-if="gameKey === 'genshin'"
                 :title="t('home.module.genshin')"
-                accent="#8fe3b0"
+                :accent="getActivityAccent('genshin')"
                 :empty-text="t('home.empty.genshin')"
                 :loading="genshinSource.loading.value"
                 :overview="genshinSource.overview.value"
@@ -126,7 +126,7 @@
               <HomeSraActivityOverview
                 v-else-if="gameKey === 'zenless'"
                 :title="t('home.module.zenless')"
-                accent="#ffd24a"
+                :accent="getActivityAccent('zenless')"
                 :empty-text="t('home.empty.zenless')"
                 :loading="zenlessSource.loading.value"
                 :overview="zenlessSource.overview.value"
@@ -136,7 +136,7 @@
               <HomeSraActivityOverview
                 v-else-if="gameKey === 'wutheringwaves'"
                 :title="t('home.module.wutheringwaves')"
-                accent="#7aa2ff"
+                :accent="getActivityAccent('wutheringwaves')"
                 :empty-text="t('home.empty.wutheringwaves')"
                 :loading="wutheringWavesSource.loading.value"
                 :overview="wutheringWavesSource.overview.value"
@@ -146,7 +146,7 @@
               <HomeSraActivityOverview
                 v-else-if="gameKey === 'nte'"
                 :title="t('home.module.nte')"
-                accent="#c9a7ff"
+                :accent="getActivityAccent('nte')"
                 :empty-text="t('home.empty.nte')"
                 :loading="nevernessToEvernessSource.loading.value"
                 :overview="nevernessToEvernessSource.overview.value"

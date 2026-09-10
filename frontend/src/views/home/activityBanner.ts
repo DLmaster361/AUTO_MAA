@@ -30,13 +30,29 @@ export interface ActivityBannerSource {
   stale: boolean
 }
 
+const toTimestamp = (value: string) => {
+  const timestamp = new Date(value).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
+/** 与卡片里的 activeActivities 同口径：只认进行中的，最早结束的排前面 */
+const pickFallbackActivity = (overview: SraActivityOverview) => {
+  const now = Date.now()
+  const ongoing = overview.activities
+    .filter(item => toTimestamp(item.startTime) <= now && toTimestamp(item.endTime) > now)
+    .sort((left, right) => toTimestamp(left.endTime) - toTimestamp(right.endTime))
+  return ongoing[0] ?? overview.activities[0]
+}
+
 export const sraActivityBanner = (overview: SraActivityOverview): ActivityBannerSource => {
-  const activity = overview.activities[0]
+  // 名字与倒计时必须出自同一条记录，否则缺版本名时会拼出「A 活动 + B 的倒计时」
+  const activity = pickFallbackActivity(overview)
+  const useVersion = Boolean(overview.versionName && overview.endTime)
   return {
     // 版本封面优先；部分游戏没有版本封面，退回第一张有图的活动
     cover: overview.cover || overview.activities.find(item => item.cover)?.cover || '',
-    subtitle: overview.versionName || activity?.name || '',
-    endTime: overview.endTime || activity?.endTime || '',
+    subtitle: useVersion ? overview.versionName : (activity?.name ?? ''),
+    endTime: useVersion ? overview.endTime : (activity?.endTime ?? ''),
     available: overview.Available,
     stale: overview.Stale,
   }
@@ -45,14 +61,13 @@ export const sraActivityBanner = (overview: SraActivityOverview): ActivityBanner
 export const endfieldActivityBanner = (
   overview: EndfieldActivityOverview
 ): ActivityBannerSource => {
-  // 标题与倒计时取自同一个卡池，避免拼出一条对不上的信息
-  const pool = overview.Pools.find(item => item.ImageUrl) ?? overview.Pools[0]
-  const activity = overview.Activities[0]
-  const fallback = pool ? undefined : activity
+  // 标题与倒计时取自同一条记录，避免拼出一条对不上的信息
+  const record =
+    overview.Pools.find(item => item.ImageUrl) ?? overview.Pools[0] ?? overview.Activities[0]
   return {
-    cover: pool?.ImageUrl || fallback?.ImageUrl || '',
-    subtitle: pool?.Name || fallback?.Name || overview.Version || '',
-    endTime: pool?.EndTime || fallback?.EndTime || '',
+    cover: record?.ImageUrl || '',
+    subtitle: record?.Name || overview.Version || '',
+    endTime: record?.EndTime || '',
     available: overview.Available,
     stale: overview.Stale,
   }

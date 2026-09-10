@@ -55,12 +55,18 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   const configuredOrder = normalizeModuleKeys(config.moduleOrder)
   const missingModules = defaultHomeModuleOrder.filter(key => !configuredOrder.includes(key))
   const mergedOrder = [...configuredOrder, ...missingModules]
+  const isMigration = !configuredOrder.includes(HOME_ACTIVITY_CAROUSEL_KEY)
+  const hiddenModules = normalizeModuleKeys(config.hiddenModules)
+
+  // 老配置里八张游戏卡全关了，等价于整块都不要；补键时顺手把总闸也关掉，
+  // 否则升级后会凭空多出一张「轮播里的游戏都关掉了」的提示卡
+  if (isMigration && HOME_ACTIVITY_MODULE_KEYS.every(key => hiddenModules.includes(key))) {
+    hiddenModules.push(HOME_ACTIVITY_CAROUSEL_KEY)
+  }
 
   return {
-    moduleOrder: configuredOrder.includes(HOME_ACTIVITY_CAROUSEL_KEY)
-      ? mergedOrder
-      : placeCarousel(mergedOrder),
-    hiddenModules: normalizeModuleKeys(config.hiddenModules),
+    moduleOrder: isMigration ? placeCarousel(mergedOrder) : mergedOrder,
+    hiddenModules,
     hideScrollHint: config.hideScrollHint === true,
     // 未写过这项的老配置按开启处理，与新装用户保持一致
     carouselAutoplay: config.carouselAutoplay !== false,

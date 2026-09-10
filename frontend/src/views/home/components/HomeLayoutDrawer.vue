@@ -60,7 +60,7 @@
               <template #item="{ element: game }">
                 <div class="home-layout-item is-sub">
                   <span
-                    class="home-layout-drag-handle home-layout-sub-drag-handle"
+                    class="home-layout-sub-drag-handle"
                     role="button"
                     tabindex="0"
                     :aria-label="t('home.layout.drag')"
@@ -214,7 +214,10 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   font-size: 12px;
 }
 
-.home-layout-drag-handle {
+/* 两级列表的手柄类名必须互斥：外层 draggable 的 handle 选择器只认外层那个，
+   否则内层手柄也会命中外层，能不能拖对全看 Sortable 的全局守卫 */
+.home-layout-drag-handle,
+.home-layout-sub-drag-handle {
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -227,14 +230,18 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
 }
 
 .home-layout-drag-handle:hover,
-.home-layout-drag-handle:focus-visible {
+.home-layout-drag-handle:focus-visible,
+.home-layout-sub-drag-handle:hover,
+.home-layout-sub-drag-handle:focus-visible {
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   outline: none;
 }
 
 .home-layout-drag-handle:active,
-.home-layout-chosen .home-layout-drag-handle {
+.home-layout-sub-drag-handle:active,
+.home-layout-chosen .home-layout-drag-handle,
+.home-layout-chosen .home-layout-sub-drag-handle {
   cursor: grabbing;
 }
 

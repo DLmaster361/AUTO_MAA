@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   HOME_ACTIVITY_CAROUSEL_KEY,
+  HOME_ACTIVITY_MODULE_KEYS,
   defaultHomeModuleOrder,
   normalizeHomeLayoutConfig,
 } from './homeLayoutConfig'
@@ -34,6 +35,33 @@ describe('normalizeHomeLayoutConfig', () => {
     })
 
     expect(normalizeHomeLayoutConfig(saved)).toEqual(saved)
+  })
+
+  it('老配置里八张游戏卡全关时，补键顺手关掉总闸，不留一张空提示卡', () => {
+    const layout = normalizeHomeLayoutConfig({
+      moduleOrder: ['command', 'quick'],
+      hiddenModules: [...HOME_ACTIVITY_MODULE_KEYS],
+    })
+
+    expect(layout.hiddenModules).toContain(HOME_ACTIVITY_CAROUSEL_KEY)
+  })
+
+  it('只关掉部分游戏时不动总闸', () => {
+    const layout = normalizeHomeLayoutConfig({
+      moduleOrder: ['command', 'quick'],
+      hiddenModules: HOME_ACTIVITY_MODULE_KEYS.slice(1),
+    })
+
+    expect(layout.hiddenModules).not.toContain(HOME_ACTIVITY_CAROUSEL_KEY)
+  })
+
+  it('已经带轮播的配置不会因为全关游戏就自动关掉总闸', () => {
+    const layout = normalizeHomeLayoutConfig({
+      moduleOrder: defaultHomeModuleOrder,
+      hiddenModules: [...HOME_ACTIVITY_MODULE_KEYS],
+    })
+
+    expect(layout.hiddenModules).not.toContain(HOME_ACTIVITY_CAROUSEL_KEY)
   })
 
   it('缺省视为开启自动轮播，显式关闭时保留', () => {

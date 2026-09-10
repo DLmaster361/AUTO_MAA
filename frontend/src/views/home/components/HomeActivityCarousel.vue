@@ -25,9 +25,9 @@
                 :src="item.cover"
                 :alt="item.title"
                 class="banner-cover"
-                :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(item.key) }]"
+                :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(item.cover) }]"
                 referrerpolicy="no-referrer"
-                @load="onCoverLoad(item.key, $event)"
+                @load="onCoverLoad(item.cover, $event)"
                 @error="onCoverError(item.key)"
               />
               <div class="banner-overlay" />
@@ -127,7 +127,7 @@ const paused = ref(false)
 // 用户手动选过游戏后就不再自动翻页：下方详情卡正在被人阅读
 const userTookControl = ref(false)
 const failedCovers = ref(new Set<HomeModuleKey>())
-const coverModes = ref(new Map<HomeModuleKey, CoverMode>())
+const coverModes = ref(new Map<string, CoverMode>())
 
 const activeIndex = computed(() => {
   const index = props.items.findIndex(item => item.key === selectedKey.value)
@@ -158,23 +158,27 @@ const onCoverError = (key: HomeModuleKey) => {
  * 各游戏给的封面尺寸差得远：多数是 16:9 版本横幅，可以满幅铺；
  * 终末地给的却是 200×200 的卡池头像，拉满会糊成一张大脸。
  * 方形或本身就小的图改成右侧贴片，底纹交给主题色。
+ *
+ * 竖版长图（重返 1999 给的是 1920×3902 壁纸）**故意留在满幅**：贴片模式下
+ * 它只有 98px 宽，是一条更难看的窄条；满幅取的横带反而正好是一张横幅。
  */
-const onCoverLoad = (key: HomeModuleKey, event: Event) => {
+const onCoverLoad = (cover: string, event: Event) => {
   const image = event.target as HTMLImageElement
   const width = image.naturalWidth
   const height = image.naturalHeight
-  if (!width || !height) {
-    return
-  }
-  const ratio = width / height
-  const mode: CoverMode = width < 800 || (ratio >= 0.7 && ratio <= 1.5) ? 'inset' : 'cover'
-  coverModes.value = new Map(coverModes.value).set(key, mode)
+  // 无固有尺寸（例如没写 viewBox 的 SVG）就按满幅铺，别让它卡在透明状态
+  const ratio = width && height ? width / height : 0
+  const mode: CoverMode =
+    ratio && (width < 800 || (ratio >= 0.7 && ratio <= 1.5)) ? 'inset' : 'cover'
+  coverModes.value = new Map(coverModes.value).set(cover, mode)
 }
 
-const coverMode = (item: ActivityBannerItem): CoverMode => coverModes.value.get(item.key) ?? 'cover'
+// 按封面地址记而不是按游戏记：版本更新换图后要重新量，不能沿用上一张的铺法
+const coverMode = (item: ActivityBannerItem): CoverMode =>
+  coverModes.value.get(item.cover) ?? 'cover'
 
 const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
-  if (hasCover(item) && coverMode(item) === 'cover' && coverModes.value.has(item.key)) {
+  if (hasCover(item) && coverMode(item) === 'cover' && coverModes.value.has(item.cover)) {
     return {}
   }
   // 没有满幅封面时用主题色底纹兜底，文字仍是浅色，观感与有封面的一致

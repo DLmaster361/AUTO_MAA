@@ -40,14 +40,18 @@
     <HomeLayoutDrawer
       v-model:open="layoutDrawerOpen"
       :modules="homeModules"
+      :activity-modules="homeActivityModules"
       :scroll-hint-hidden="scrollHintHidden"
+      :carousel-autoplay="carouselAutoplay"
       @reorder="reorderHomeModules"
+      @reorder-activities="reorderActivityModules"
       @visibility-change="setHomeModuleShown"
       @scroll-hint-change="setScrollHintHidden"
+      @autoplay-change="setCarouselAutoplay"
     />
 
     <div v-if="layoutReady" class="home-content">
-      <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
+      <template v-for="moduleKey in homeTopLevelOrder" :key="moduleKey">
         <section v-if="isHomeModuleVisible(moduleKey)" class="home-module">
           <HomeCommandCard
             v-if="moduleKey === 'command'"
@@ -75,78 +79,87 @@
             :proxy-data="proxyData"
           />
 
-          <HomeEndfieldOverview
-            v-else-if="moduleKey === 'endfield'"
-            :loading="endfieldSource.loading.value"
-            :overview="endfieldSource.overview.value"
-            @refresh="endfieldSource.refresh"
-          />
+          <!-- 各游戏活动卡收进一个 banner 轮播：顶部横幅兼作切换器，下方只渲染当前游戏 -->
+          <HomeActivityCarousel
+            v-else-if="moduleKey === 'activities'"
+            :items="activityBanners"
+            :autoplay="carouselAutoplay"
+          >
+            <template #detail="{ moduleKey: gameKey }">
+              <HomeEndfieldOverview
+                v-if="gameKey === 'endfield'"
+                :loading="endfieldSource.loading.value"
+                :overview="endfieldSource.overview.value"
+                @refresh="endfieldSource.refresh"
+              />
 
-          <HomeArknightsOverview
-            v-else-if="moduleKey === 'arknights'"
-            :loading="loading"
-            :error="error"
-            :activity-data="activityData"
-            :resource-data="resourceData"
-            @refresh="fetchOverviewData"
-            @clear-error="clearOverviewError"
-          />
+              <HomeArknightsOverview
+                v-else-if="gameKey === 'arknights'"
+                :loading="loading"
+                :error="error"
+                :activity-data="activityData"
+                :resource-data="resourceData"
+                @refresh="fetchOverviewData"
+                @clear-error="clearOverviewError"
+              />
 
-          <HomeSraActivityOverview
-            v-else-if="moduleKey === 'starrail'"
-            :title="t('home.module.starrail')"
-            accent="#62c4e7"
-            :empty-text="t('home.empty.starrail')"
-            :loading="starRailSource.loading.value"
-            :overview="starRailSource.overview.value"
-            @refresh="starRailSource.refresh"
-          />
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'starrail'"
+                :title="t('home.module.starrail')"
+                accent="#62c4e7"
+                :empty-text="t('home.empty.starrail')"
+                :loading="starRailSource.loading.value"
+                :overview="starRailSource.overview.value"
+                @refresh="starRailSource.refresh"
+              />
 
-          <HomeSraActivityOverview
-            v-else-if="moduleKey === 'genshin'"
-            :title="t('home.module.genshin')"
-            accent="#8fe3b0"
-            :empty-text="t('home.empty.genshin')"
-            :loading="genshinSource.loading.value"
-            :overview="genshinSource.overview.value"
-            @refresh="genshinSource.refresh"
-          />
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'genshin'"
+                :title="t('home.module.genshin')"
+                accent="#8fe3b0"
+                :empty-text="t('home.empty.genshin')"
+                :loading="genshinSource.loading.value"
+                :overview="genshinSource.overview.value"
+                @refresh="genshinSource.refresh"
+              />
 
-          <HomeSraActivityOverview
-            v-else-if="moduleKey === 'zenless'"
-            :title="t('home.module.zenless')"
-            accent="#ffd24a"
-            :empty-text="t('home.empty.zenless')"
-            :loading="zenlessSource.loading.value"
-            :overview="zenlessSource.overview.value"
-            @refresh="zenlessSource.refresh"
-          />
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'zenless'"
+                :title="t('home.module.zenless')"
+                accent="#ffd24a"
+                :empty-text="t('home.empty.zenless')"
+                :loading="zenlessSource.loading.value"
+                :overview="zenlessSource.overview.value"
+                @refresh="zenlessSource.refresh"
+              />
 
-          <HomeSraActivityOverview
-            v-else-if="moduleKey === 'wutheringwaves'"
-            :title="t('home.module.wutheringwaves')"
-            accent="#7aa2ff"
-            :empty-text="t('home.empty.wutheringwaves')"
-            :loading="wutheringWavesSource.loading.value"
-            :overview="wutheringWavesSource.overview.value"
-            @refresh="wutheringWavesSource.refresh"
-          />
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'wutheringwaves'"
+                :title="t('home.module.wutheringwaves')"
+                accent="#7aa2ff"
+                :empty-text="t('home.empty.wutheringwaves')"
+                :loading="wutheringWavesSource.loading.value"
+                :overview="wutheringWavesSource.overview.value"
+                @refresh="wutheringWavesSource.refresh"
+              />
 
-          <HomeSraActivityOverview
-            v-else-if="moduleKey === 'nte'"
-            :title="t('home.module.nte')"
-            accent="#c9a7ff"
-            :empty-text="t('home.empty.nte')"
-            :loading="nevernessToEvernessSource.loading.value"
-            :overview="nevernessToEvernessSource.overview.value"
-            @refresh="nevernessToEvernessSource.refresh"
-          />
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'nte'"
+                :title="t('home.module.nte')"
+                accent="#c9a7ff"
+                :empty-text="t('home.empty.nte')"
+                :loading="nevernessToEvernessSource.loading.value"
+                :overview="nevernessToEvernessSource.overview.value"
+                @refresh="nevernessToEvernessSource.refresh"
+              />
 
-          <HomeReverse1999Overview
-            v-else-if="moduleKey === 'reverse1999'"
-            :loading="reverse1999Source.loading.value"
-            :overview="reverse1999Source.overview.value"
-          />
+              <HomeReverse1999Overview
+                v-else-if="gameKey === 'reverse1999'"
+                :loading="reverse1999Source.loading.value"
+                :overview="reverse1999Source.overview.value"
+              />
+            </template>
+          </HomeActivityCarousel>
         </section>
       </template>
     </div>
@@ -163,6 +176,7 @@ import { BellOutlined, EditOutlined } from '@ant-design/icons-vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
@@ -173,6 +187,12 @@ import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.v
 import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
 import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
+import {
+  arknightsActivityBanner,
+  endfieldActivityBanner,
+  getActivityAccent,
+  sraActivityBanner,
+} from '@/views/home/activityBanner'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
 import { useHomeOverview } from '@/views/home/useHomeOverview'
@@ -181,6 +201,8 @@ import { useReverse1999ActivitySource } from '@/views/home/useReverse1999Activit
 import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
+import { createEmptySraActivityOverview } from '@/types/home'
+import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
 
 defineOptions({
   name: 'HomeView',
@@ -191,13 +213,18 @@ const performanceStore = usePerformanceStore()
 const {
   layoutReady,
   layoutDrawerOpen,
-  homeModuleOrder,
+  homeTopLevelOrder,
   homeModules,
+  homeActivityModules,
+  visibleActivityKeys,
   scrollHintHidden,
+  carouselAutoplay,
   loadHomeLayout,
   reorderHomeModules,
+  reorderActivityModules,
   setHomeModuleShown,
   setScrollHintHidden,
+  setCarouselAutoplay,
   isHomeModuleVisible,
 } = useHomeLayout()
 const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfirmed, showNotice } =
@@ -236,6 +263,59 @@ const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wuthering
 const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
 const reverse1999Source = useReverse1999ActivitySource()
 const endfieldSource = useEndfieldActivitySource()
+
+const sraSourceFor = (key: HomeModuleKey) => {
+  switch (key) {
+    case 'starrail':
+      return starRailSource
+    case 'genshin':
+      return genshinSource
+    case 'zenless':
+      return zenlessSource
+    case 'wutheringwaves':
+      return wutheringWavesSource
+    case 'nte':
+      return nevernessToEvernessSource
+    case 'reverse1999':
+      return reverse1999Source
+    default:
+      return null
+  }
+}
+
+// 轮播只展示没被单独关掉的游戏；顺序跟着「编辑布局」里的排序走
+const activityBanners = computed<ActivityBannerItem[]>(() =>
+  visibleActivityKeys.value.map(key => {
+    const base = {
+      key,
+      title: t(`home.game.${key}`),
+      accent: getActivityAccent(key),
+    }
+
+    if (key === 'endfield') {
+      return {
+        ...base,
+        loading: endfieldSource.loading.value,
+        ...endfieldActivityBanner(endfieldSource.overview.value),
+      }
+    }
+
+    if (key === 'arknights') {
+      return {
+        ...base,
+        loading: loading.value,
+        ...arknightsActivityBanner(activityData.value),
+      }
+    }
+
+    const source = sraSourceFor(key)
+    return {
+      ...base,
+      loading: source?.loading.value ?? false,
+      ...sraActivityBanner(source?.overview.value ?? createEmptySraActivityOverview()),
+    }
+  })
+)
 
 const greeting = computed(() => {
   const hour = new Date().getHours()

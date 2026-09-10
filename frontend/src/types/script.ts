@@ -591,6 +591,12 @@ export interface User {
     ServerChanTag: string
     ToAddress: string
   }
+  /** 仅 ZzzOd 用户携带：游戏账号区（标签展示消费 GameRegion/Account/BilibiliAccountName） */
+  Game?: {
+    GameRegion?: 'cn' | 'cn_b' | 'us' | 'eu' | 'asia' | 'twhkmo' | null
+    Account?: string | null
+    BilibiliAccountName?: string | null
+  }
   Task: {
     IfRoguelike: boolean
     IfInfrast: boolean

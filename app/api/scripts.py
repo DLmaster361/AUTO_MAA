@@ -221,6 +221,7 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
+_maafw_env_logger = get_logger("MFW 运行环境")
 
 
 def _maafw_update_send_log(line: str) -> None:
@@ -1295,6 +1296,13 @@ async def prepare_maafw_agent_env(
                 progress=publish_progress,
             )
         except Exception as exc:
+            # 失败原因此前只活在响应体与 WS 事件里，两边都不落盘：用户报障时
+            # app.log 里一行都没有，只能对着界面截图猜。准备过程的逐行日志
+            # （pip 的 stderr 就在里面）一并记下来，别再丢。
+            _maafw_env_logger.error(f"MFW 运行环境准备失败: {exc}")
+            if logs:
+                detail = "\n".join(sanitize_log_message(str(line)) for line in logs)
+                _maafw_env_logger.error(f"MFW 运行环境准备日志:\n{detail}")
             publish_progress(
                 {
                     "stage": "failed",

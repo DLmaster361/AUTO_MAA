@@ -119,8 +119,17 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { t } = useI18n()
 
-/** 封面的铺法：满幅背景，或右侧贴片 */
-type CoverMode = 'cover' | 'inset'
+/**
+ * 封面的铺法。横幅只有 300px 高、接近 5:1，而各家给的图形状差得远，
+ * 统一裁法必然裁坏其中几张（实测：绝区零居中裁只剩腿，重返 1999 居中裁只剩空海面）。
+ */
+type CoverMode =
+  /** 16:9 主视觉：贴顶裁，游戏 logo 与角色的脸都在图的上半部 */
+  | 'cover'
+  /** 超高竖图（重返 1999 官网图 1920×3902）：只取上部条带，取值沿用原卡片里的 14% */
+  | 'tall'
+  /** 方图或小图（终末地给的是 200×200 卡池头像）：右侧贴片，底纹交给主题色 */
+  | 'inset'
 
 const selectedKey = ref<HomeModuleKey | null>(null)
 const paused = ref(false)
@@ -154,22 +163,21 @@ const onCoverError = (key: HomeModuleKey) => {
   failedCovers.value = new Set(failedCovers.value).add(key)
 }
 
-/**
- * 各游戏给的封面尺寸差得远：多数是 16:9 版本横幅，可以满幅铺；
- * 终末地给的却是 200×200 的卡池头像，拉满会糊成一张大脸。
- * 方形或本身就小的图改成右侧贴片，底纹交给主题色。
- *
- * 竖版长图（重返 1999 给的是 1920×3902 壁纸）**故意留在满幅**：贴片模式下
- * 它只有 98px 宽，是一条更难看的窄条；满幅取的横带反而正好是一张横幅。
- */
+const resolveCoverMode = (width: number, height: number): CoverMode => {
+  // 无固有尺寸（例如没写 viewBox 的 SVG）就按满幅铺，别让它卡在透明状态
+  if (!width || !height) {
+    return 'cover'
+  }
+  const ratio = width / height
+  if (width < 800 || (ratio >= 0.7 && ratio <= 1.5)) {
+    return 'inset'
+  }
+  return ratio < 0.7 ? 'tall' : 'cover'
+}
+
 const onCoverLoad = (cover: string, event: Event) => {
   const image = event.target as HTMLImageElement
-  const width = image.naturalWidth
-  const height = image.naturalHeight
-  // 无固有尺寸（例如没写 viewBox 的 SVG）就按满幅铺，别让它卡在透明状态
-  const ratio = width && height ? width / height : 0
-  const mode: CoverMode =
-    ratio && (width < 800 || (ratio >= 0.7 && ratio <= 1.5)) ? 'inset' : 'cover'
+  const mode = resolveCoverMode(image.naturalWidth, image.naturalHeight)
   coverModes.value = new Map(coverModes.value).set(cover, mode)
 }
 
@@ -178,7 +186,7 @@ const coverMode = (item: ActivityBannerItem): CoverMode =>
   coverModes.value.get(item.cover) ?? 'cover'
 
 const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
-  if (hasCover(item) && coverMode(item) === 'cover' && coverModes.value.has(item.cover)) {
+  if (hasCover(item) && coverMode(item) !== 'inset' && coverModes.value.has(item.cover)) {
     return {}
   }
   // 没有满幅封面时用主题色底纹兜底，文字仍是浅色，观感与有封面的一致
@@ -285,9 +293,10 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* 各游戏卡里的版本大图已经撤掉，这张横幅接手它的高度，裁得没那么狠 */
 .banner-body {
   position: relative;
-  height: 200px;
+  height: 300px;
   overflow: hidden;
   background: var(--ant-color-fill-secondary);
   border-radius: 12px;
@@ -304,23 +313,34 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-.banner-cover.is-cover {
+.banner-cover.is-cover,
+.banner-cover.is-tall {
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 30%;
+}
+
+/* 主视觉的游戏 logo 与角色的脸都在上半部，版本标题在下沿，所以贴顶裁 */
+.banner-cover.is-cover {
+  object-position: center top;
+}
+
+/* 超高竖图内容全挤在顶部一小条里；14% 沿用重返 1999 原卡片验证过的取值 */
+.banner-cover.is-tall {
+  object-position: center 14%;
 }
 
 .banner-cover.is-inset {
-  top: 0;
+  top: 50%;
   right: 0;
-  bottom: 0;
   width: auto;
   max-width: 46%;
-  height: 100%;
+  height: auto;
+  max-height: 100%;
   object-fit: contain;
   object-position: right center;
+  transform: translateY(-50%);
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 38%);
   mask-image: linear-gradient(90deg, transparent 0%, #000 38%);
 }
@@ -472,7 +492,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 800px) {
   .banner-body {
-    height: 168px;
+    height: 220px;
   }
 
   .banner-content {

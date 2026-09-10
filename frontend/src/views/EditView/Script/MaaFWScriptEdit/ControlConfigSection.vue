@@ -154,6 +154,24 @@
           </a-col>
         </a-row>
 
+        <a-row :gutter="24" class="control-detail-row">
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
+                  <span class="form-label">{{ t('edit.mfwGamePackageName') }}</span>
+                </a-tooltip>
+              </template>
+              <a-input
+                v-model:value="maafwConfig.Game.PackageName"
+                :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                allow-clear
+                @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
         <a-alert
           class="control-strategy-alert"
           type="info"

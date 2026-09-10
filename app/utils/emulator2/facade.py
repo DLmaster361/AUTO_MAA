@@ -42,6 +42,7 @@ from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
 
+from .applaunch import AppLaunchResult
 from .guard import drift, load_baselines
 from .ldplayer14 import LDPlayer14Manager
 from .ldplayer14 import build_manager as build_ldplayer_manager
@@ -224,6 +225,12 @@ class Emulator2Manager(DeviceBase):
         return list(changes)
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        """启动设备；``package_name`` 非空时在设备就绪后把该应用也拉起来。
+
+        应用那一步由后端的 :class:`~.applaunch.AppLaunchMixin` 走纯 adb 完成，
+        **模拟器本来就开着时同样生效**——两家原生的带包启动参数在那种情况下会被
+        整条吞掉，见 :mod:`.applaunch`。拉不起来只记警告，不影响本方法的返回。
+        """
         manager, native_index = await self._dispatch(idx)
 
         # 守卫先于稳定模式：两者管的字段不重叠，但都要在实例真正起来之前写完
@@ -241,6 +248,15 @@ class Emulator2Manager(DeviceBase):
                 logger.warning(f"设备 #{idx} 应用稳定模式失败，继续启动: {e}")
 
         return await manager.open(native_index, package_name)
+
+    async def launch_app(self, idx: str, package_name: str) -> AppLaunchResult:
+        """在**已经在线**的设备上把应用拉起来，不重开模拟器。
+
+        给「模拟器本来就开着，只是应用没起来」准备的入口，:meth:`open` 内部走的
+        也是同一条路。拉不起来返回 ``ok=False``，不抛异常。
+        """
+        manager, native_index = await self._dispatch(idx)
+        return await manager.launch_app(native_index, package_name)
 
     async def close(self, idx: str) -> DeviceStatus:
         manager, native_index = await self._dispatch(idx)

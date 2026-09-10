@@ -7,6 +7,8 @@ import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut'
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CommunityActivityOut } from '../models/CommunityActivityOut';
+import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
@@ -87,7 +89,10 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
-import type { SklandLoginIn } from '../models/SklandLoginIn';
+import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
+import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
+import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
+import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
@@ -2406,8 +2411,28 @@ export class Service {
         });
     }
     /**
-     * 获取所有游戏签到账号组
-     * 获取所有游戏签到账号组
+     * 查询游戏社区日常活跃度
+     * 查询游戏社区日常活动，不占用签到流程锁。
+     * @param requestBody
+     * @returns CommunityActivityOut Successful Response
+     * @throws ApiError
+     */
+    public static queryCommunityActivityApiToolsCommunityActivityQueryPost(
+        requestBody: CommunityActivityQueryIn,
+    ): CancelablePromise<CommunityActivityOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/community/activity/query',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取所有游戏社区账号组
+     * 获取所有游戏社区账号组
      * @returns GameSignAccountsListOut Successful Response
      * @throws ApiError
      */
@@ -2418,8 +2443,8 @@ export class Service {
         });
     }
     /**
-     * 添加游戏签到账号组
-     * 添加游戏签到账号组
+     * 添加游戏社区账号组
+     * 添加游戏社区账号组
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
      */
@@ -2430,8 +2455,8 @@ export class Service {
         });
     }
     /**
-     * 获取游戏签到账号组详情
-     * 获取游戏签到账号组详情
+     * 获取游戏社区账号组详情
+     * 获取游戏社区账号组详情
      * @param requestBody
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
@@ -2450,8 +2475,8 @@ export class Service {
         });
     }
     /**
-     * 更新游戏签到账号组配置
-     * 更新游戏签到账号组配置
+     * 更新游戏社区账号组配置
+     * 更新游戏社区账号组配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2470,8 +2495,8 @@ export class Service {
         });
     }
     /**
-     * 删除游戏签到账号组
-     * 删除游戏签到账号组
+     * 删除游戏社区账号组
+     * 删除游戏社区账号组
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2490,8 +2515,8 @@ export class Service {
         });
     }
     /**
-     * 调整游戏签到账号组顺序
-     * 调整游戏签到账号组顺序
+     * 调整游戏社区账号组顺序
+     * 调整游戏社区账号组顺序
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2522,26 +2547,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/taygedo/login',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 森空岛手机号密码登录
-     * 一次性使用手机号和密码换取并保存森空岛凭据，不保存密码。
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static loginSklandApiToolsSignAccountSklandLoginPost(
-        requestBody: SklandLoginIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/skland/login',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -2863,7 +2868,7 @@ export class Service {
     }
     /**
      * 轮询扫码状态
-     * 轮询状态，确认后返回从 Passport 响应提取的 cookies。
+     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
      * @param requestBody
      * @returns QrCheckOut Successful Response
      * @throws ApiError
@@ -2893,6 +2898,56 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/miyoushe/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns SklandQrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignSklandQrCreatePost(): CancelablePromise<SklandQrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 确认后返回短时 scanCode，由前端随后提交保存。
+     * @param requestBody
+     * @returns SklandQrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignSklandQrCheckPost(
+        requestBody: SklandQrCheckIn,
+    ): CancelablePromise<SklandQrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存森空岛 Token
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignSklandQrSavePost(
+        requestBody: SklandQrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/save',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

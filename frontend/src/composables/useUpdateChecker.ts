@@ -3,6 +3,7 @@ import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import type { ChangelogData } from '@/utils/changelog'
 
 const logger = window.electronAPI.getLogger('更新检查器')
 
@@ -11,7 +12,7 @@ const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // 全局状态 - 在所有组件间共享
 const updateVisible = ref(false)
-const updateData = ref<Record<string, string[]>>({})
+const updateData = ref<ChangelogData>({})
 const latestVersion = ref('')
 
 // 定时器相关 - 参考顶栏TitleBar.vue的实现
@@ -42,7 +43,7 @@ export const requestUpdateCheck = (forceCheck = false): UpdateCheckPromise => {
   return request
 }
 
-const showUpdateModal = (data: Record<string, string[]>, version: string) => {
+const showUpdateModal = (data: ChangelogData, version: string) => {
   updateData.value = data
   latestVersion.value = version
   updateVisible.value = true

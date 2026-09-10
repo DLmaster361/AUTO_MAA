@@ -24,6 +24,9 @@ export default {
     unknown: '未知',
   },
   comp: {
+    changelog: {
+      empty: '本版本暂无更新日志',
+    },
     editUser: '编辑用户',
     addUser2: '添加用户',
     enabled: '启用',
@@ -72,7 +75,7 @@ export default {
     moduleName: '模块名',
     emulators: '模拟器管理',
     testRoute: '测试路由',
-    checkIns: '游戏签到',
+    checkIns: '游戏社区',
     port: '端口',
     portNumber: '端口号',
     warning: '警告',
@@ -880,6 +883,10 @@ export default {
     masManagedConfigurationOff: 'MAS 管控配置已停用',
     masManagesGame: 'MAS 管理游戏',
     mfwAdbControllerUses: 'MFW ADB controller 运行时使用该模拟器配置',
+    mfwGamePackageName: '游戏包名',
+    mfwGamePackageNamePassed:
+      '启动模拟器时顺带把游戏拉起来。留空则从项目的 pipeline 中自动识别；识别不出或识别到多个时不启动游戏，可在此手动填写',
+    mfwGamePackageNamePlaceholder: '留空则自动识别，如 com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd 脚本配置',
     maaendPath: 'MaaEnd 路径',
     maaendAdapterStillUnder: 'MaaEnd专项还在积极测试中，如有问题请加入',
@@ -1512,8 +1519,7 @@ export default {
     zzzodRootPathRequired: '请选择 ZZZ-OD 安装目录',
     zzzodRootPathSaved: 'ZZZ-OD 安装目录已保存',
     zzzodInvalidDirectory: '所选目录无效',
-    zzzodLauncherNotFound:
-      '所选目录下未找到 {p0} 或 {p1}，请选择完整的绝区零一条龙安装根目录。',
+    zzzodLauncherNotFound: '所选目录下未找到 {p0} 或 {p1}，请选择完整的绝区零一条龙安装根目录。',
     zzzodNotZzzodScript: '脚本类型不是 ZZZ-OD',
     zzzodCloseGameOnFinish: '任务结束后关闭游戏',
     zzzodAccountSwitch: '账号切换方式',
@@ -1526,9 +1532,9 @@ export default {
     zzzodAccountSwitchMultiHint:
       '全部用户合并一轮多账号运行，一条龙内部依次切换账号，总时长最短；但单槽失败或切换失败会拖整轮重试，用户之间不隔离',
     zzzodAccountSwitchMas: 'MAS切换（暂未开放）',
-    zzzodAccountSwitchMasHint:
-      'MAS 操控游戏完成账号切换后交一条龙运行，暂未开放',
-    zzzodCloseGameOnFinishHint: '任务结束后由 MAS 关闭游戏；手动停止调度时也会一并关闭游戏（多账号连续运行时建议开启）',
+    zzzodAccountSwitchMasHint: 'MAS 操控游戏完成账号切换后交一条龙运行，暂未开放',
+    zzzodCloseGameOnFinishHint:
+      '任务结束后由 MAS 关闭游戏；手动停止调度时也会一并关闭游戏（多账号连续运行时建议开启）',
     zzzodLaunchBeforeTaskHint: '运行前由 MAS 启动游戏；检测到游戏已在运行时跳过，不会重复启动',
     zzzodGameArgumentsHint: '游戏启动参数（非一条龙启动器参数）',
     zzzodRetryLimitHint: '超过该次数仍失败则终止；重跑会自动跳过已完成的任务',
@@ -1558,8 +1564,7 @@ export default {
     zzzodLauncherIntegrated: '集成',
     zzzodLauncherAutoHint:
       '优先用上次成功的启动器；启动失败自动换另一个重试，并记住下一次成功的那个',
-    zzzodLauncherOriginalHint:
-      '固定用原始启动器（OneDragon-Launcher.exe，旧安装器版）',
+    zzzodLauncherOriginalHint: '固定用原始启动器（OneDragon-Launcher.exe，旧安装器版）',
     zzzodLauncherIntegratedHint:
       '固定用集成启动器（OneDragon-RuntimeLauncher.exe，自带运行时版本）',
     zzzodLauncherLoadFailed: '获取启动器安装情况失败',
@@ -1568,7 +1573,8 @@ export default {
     zzzodImportPlaceholder: '点击选择母版配置',
     zzzodImportConfigHint: '基于已有一条龙实例快速生成一份配置文件',
     zzzodImportConfirmTitle: '覆盖当前用户配置',
-    zzzodImportConfirmDesc: '将用所选实例的账号信息与已启用任务编排覆盖当前的独立用户配置；导入前会自动备份当前配置，可随时在「配置恢复」中恢复，确认导入？',
+    zzzodImportConfirmDesc:
+      '将用所选实例的账号信息与已启用任务编排覆盖当前的独立用户配置；导入前会自动备份当前配置，可随时在「配置恢复」中恢复，确认导入？',
     zzzodImportSuccess: '已基于所选实例生成配置',
     zzzodImportFailed: '导入配置失败',
     // ══ 通用配置恢复（configRestoreSection 组件词条，{script} 参数化脚本名）══
@@ -1590,13 +1596,15 @@ export default {
     configRestoreListFailed: '加载备份列表失败',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
-    configRestoreDetailConfirm: '将用该时间点的配置覆盖当前位置，再打开脚本查看页面；查看结束前请勿切换任务开关（会被误写回旧编排），确认？',
+    configRestoreDetailConfirm:
+      '将用该时间点的配置覆盖当前位置，再打开脚本查看页面；查看结束前请勿切换任务开关（会被误写回旧编排），确认？',
     configRestoreConfirmOk: '恢复并查看',
     configRestoreAction: '一键恢复',
     configRestoreSuccess: '配置已恢复',
     configRestoreFailed: '恢复配置失败',
     configRestoreConfirmTitle: '覆盖当前配置',
-    configRestoreConfirmDesc: '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
+    configRestoreConfirmDesc:
+      '将把该时间点的配置恢复到对应位置；恢复前会自动备份当前配置，可随时在「配置恢复」中找回，确认恢复？',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
     configRestorePreviewLauncher: '启动器',
@@ -1612,7 +1620,8 @@ export default {
       '打开 zzz-od 原生界面配置配队等复杂设置；以本页配置为基线打开该用户绑定的专属实例（MAS-用户名），GUI 内的任务编排与账号改动会自动回读到本页，关闭后恢复原活跃实例',
     zzzodConfiguringTitle: '正在进行 ZZZ-OD 设置',
     zzzodConfiguringDesc: '已切到该用户绑定的专属实例，请完成配队等设置。',
-    zzzodConfiguringDesc2: 'GUI 内的任务与账号改动会自动回读到本页；完成后点击「保存设置」结束本次会话。',
+    zzzodConfiguringDesc2:
+      'GUI 内的任务与账号改动会自动回读到本页；完成后点击「保存设置」结束本次会话。',
     zzzodScriptFallbackName: 'ZZZ-OD脚本',
     zzzodScriptNotFound: 'ZZZ-OD 脚本不存在或加载失败',
     zzzodStopFailed: '停止 ZZZ-OD 设置失败',
@@ -1628,8 +1637,7 @@ export default {
     zzzodSettingsSaved: 'ZZZ-OD 设置已保存',
     zzzodSettingsSaveFailed: '保存 ZZZ-OD 设置失败',
     zzzodUserNameHint: '用于区分用户的名称，相同名称的用户将被视为同一用户进行统计',
-    zzzodConfigSourceUserAlert:
-      '账号与任务编排以本页配置为准，运行时由 AUTO-MAS 注入一条龙运行',
+    zzzodConfigSourceUserAlert: '账号与任务编排以本页配置为准，运行时由 AUTO-MAS 注入一条龙运行',
     zzzodConfigSourceDirectAlert:
       '直控直接编辑所选一条龙实例的原生配置，运行时按该实例配置执行，MAS 不注入不干涉',
     zzzodModeUser: '用户',
@@ -1641,8 +1649,7 @@ export default {
       '选择要直接编辑的一条龙账号（实例）；编辑只影响该实例本身，要跑哪个账号在实例管理里把它「设为活跃」，多账号用「启动实例」+「切换账号」组合',
     zzzodDirectPickInstance: '选择要编辑的实例',
     zzzodDirectPickInstanceFirst: '请先在上方选择一个实例',
-    zzzodDirectModeLimit:
-      '每个脚本仅允许一个直控用户，多账号直接在该用户的实例管理中配置',
+    zzzodDirectModeLimit: '每个脚本仅允许一个直控用户，多账号直接在该用户的实例管理中配置',
     zzzodDirectInstanceRun: '运行实例',
     zzzodDirectInstanceRunHint:
       '仅运行当前 = 只跑当前选中账号；全部启用实例 = 依次运行所有打开「启动实例」开关的账号',
@@ -1658,8 +1665,7 @@ export default {
     zzzodInstancesManage: '实例管理',
     zzzodInstancesManageHint:
       '管理一条龙原生实例：每个实例可独立开关「启动实例」，运行实例选「全部启用实例」时只跑打开开关的账号；支持新增、重命名与删除，改动实时写回 one_dragon.yml。删除会同步删除该实例配置目录，请谨慎操作。',
-    zzzodInstanceActiveInOd:
-      '启动实例：运行实例选「全部启用实例」时，该实例会参与运行',
+    zzzodInstanceActiveInOd: '启动实例：运行实例选「全部启用实例」时，该实例会参与运行',
     zzzodInstanceRunAllSwitch: '启动实例',
     zzzodInstanceForceLoginSwitch: '运行前切换账号',
     zzzodInstanceSetActiveTag: '设为活跃',
@@ -1967,7 +1973,45 @@ export default {
     },
   },
   gamesign: {
-    title: '游戏签到',
+    title: '游戏社区',
+    nav: {
+      sign: '签到',
+      activity: '日常便笺',
+    },
+    activity: {
+      title: '日常便笺',
+      queriedAt: '查询于 {time}',
+      refresh: '刷新日常便笺',
+      queryFailed: '日常便笺查询失败',
+      empty: '暂无可展示的日常便笺',
+      drag: '拖拽排序',
+      dailyProgress: '日常情况',
+      tasks: '每日任务',
+      noteTasks: '任务与周期',
+      weeklyTasks: '每周与周期事项',
+      resources: '可用资源',
+      roleUid: 'UID {uid}',
+      noRole: '未绑定角色',
+      status: {
+        success: '已获取',
+        empty: '暂无角色',
+        limited: '受限',
+        unavailable: '不可用',
+        failed: '失败',
+        unknown: '未知',
+      },
+      platform: {
+        skland: '森空岛',
+        miyoushe: '米游社',
+      },
+      game: {
+        arknights: '明日方舟',
+        endfield: '终末地',
+        genshin: '原神',
+        starrail: '星穹铁道',
+        zenless: '绝区零',
+      },
+    },
     statusInvalid: '签到状态响应无效',
     resultInvalid: '签到结果响应无效',
     signStatus: { signed: '已签', risk: '风控', failed: '失败', unsigned: '未签' },
@@ -1975,14 +2019,16 @@ export default {
     defaultUserName: '用户',
     newUserName: '用户 {n}',
     section: {
-      settings: '签到设置',
+      settings: '社区设置',
       signAll: '全部签到',
       noticeTitle: '功能说明与隐私声明',
-      toolDesc: '游戏签到社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。',
+      toolDesc: '游戏社区工具用于管理各社区凭据，并按配置执行启动时、任务调度和手动签到。',
       privacyNotice:
-        '账密获取 Token 不保存任何账号密码；本次登录使用的账号密码仅存在于当前登录请求的内存中，登录完成或失败后立即清理，不写入配置、日志或通知。',
-      enable: '启用签到工具',
-      enableDesc: '启用后按 MAS 任务调度执行签到',
+        '扫码或账密获取 Token 时，不保存账号、手机号或密码；密码仅存在于当前请求内存中，均不写入配置、日志或通知。',
+      enable: '启用社区工具',
+      enableDesc: '启用后会随 MAS 任务调度执行签到',
+      activityEnable: '启用日常便笺',
+      activityEnableDesc: '开启后显示各游戏的日常数据；关闭后不查询日常数据',
       notify: '结果通知',
       notifyDesc: '签到完成后通过已配置的通知渠道推送结果',
       runOnStartup: '启动时签到',
@@ -1996,7 +2042,7 @@ export default {
       add: '添加用户',
       colName: '用户名',
       colEnabled: '启用',
-      colTags: '各社区签到情况',
+      colTags: '各社区状态',
       colActions: '操作',
       drag: '拖拽排序',
       tooltipTitle: '{platform} - 签到详情',
@@ -2011,7 +2057,7 @@ export default {
       save: '保存',
       userName: '用户名称',
       miyoushe: '米游社',
-      miyoushePlaceholder: '浏览器 F12 → document.cookie 获取',
+      miyoushePlaceholder: '可粘贴已有米游社 Cookie，或使用下方扫码登录',
       qrLogin: '扫码获取 Token',
       kuro: '库街区',
       kuroPlaceholder: '粘贴已从库街区客户端获取的 Token',
@@ -2023,31 +2069,31 @@ export default {
     },
     login: {
       taygedoTitle: '塔吉多账密获取 Token',
-      sklandTitle: '森空岛账密获取 Token',
       disclaimerTitle: '账密获取 Token 免责声明',
       currentAccount: '当前账号',
       taygedoAccount: '账号或手机号',
       taygedoAccountPlaceholder: '请输入塔吉多账号或手机号',
       password: '密码',
       taygedoPasswordPlaceholder: '请输入塔吉多账号密码',
-      sklandPhone: '手机号',
-      sklandPhonePlaceholder: '请输入鹰角网络通行证手机号',
-      sklandPasswordPlaceholder: '请输入鹰角网络通行证密码',
       submit: '获取并保存 Token',
     },
     qr: {
       title: '米游社扫码登录',
+      sklandTitle: '森空岛扫码登录',
       alt: '扫码登录',
       hint: '打开米游社 APP → 左上角扫码 → 扫描上方二维码',
+      sklandHint: '打开森空岛 APP → 扫一扫 → 扫描上方二维码',
+      sklandWaiting: '请使用森空岛 APP 扫描二维码',
       retry: '重新生成二维码',
       responseInvalid: '二维码状态响应无效，请刷新后重试',
       expired: '二维码已过期，请刷新后重新扫码',
-      noCookie: '扫码确认成功但未获取到有效认证 Cookie，请重新生成二维码',
+      noCookie: '扫码确认成功但未获取到有效认证 Cookie 或 Token，请稍后重试',
       saving: '正在保存登录凭据...',
       saveTokenFailed: '保存 Token 失败',
       scannedButSaveFailed: '扫码成功，但保存 Token 失败',
       success: '登录成功！Token 已自动填入',
       loginSuccess: '米游社扫码登录成功',
+      sklandLoginSuccess: '森空岛扫码登录成功',
       queryFailed: '查询状态失败',
       scanned: '已扫码，等待确认...',
       cancelled: '登录已取消',
@@ -2065,6 +2111,7 @@ export default {
       reorderFailed: '排序保存失败',
       reorderError: '排序保存失败：{error}',
       tokenSaved: 'Token 已保存',
+      miyousheDevicePairRequired: '米游社设备 ID 和设备指纹必须同时填写或同时清空',
       needTaygedoCredential: '请填写塔吉多账号和密码',
       needSklandCredential: '请填写森空岛手机号和密码',
       autoSignRunning: '自动签到正在执行，请稍后再试',
@@ -2072,6 +2119,7 @@ export default {
       signPartialNotify: '签到完成，但部分通知发送失败',
       signDone: '签到完成',
       signError: '签到失败: {error}',
+      externalLinkFailed: '打开外部链接失败，请稍后重试',
     },
   },
   history: {
@@ -2395,6 +2443,7 @@ export default {
     input: '输入',
     couldNotPickLaunch: '选择启动 exe 失败',
     qqDirectMessageOver: '通过 OneBot HTTP API 发送 QQ 私聊消息',
+    qqDirectMessageOverImage: '通过 OneBot HTTP API 发送 QQ 私聊图片',
     notifyGetRequest: '通过GET请求发送通知',
     restartApp: '重启应用',
     couldNotReorder: '重新排序失败',
@@ -2976,7 +3025,8 @@ export default {
     display: {
       section: '虚拟显示器',
       intro:
-        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 只在「桌面上没有任何真实显示输出」时临时挂一块虚拟显示器，任务结束即拆除。需先自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动。',
+        '显示器断开或关闭后，Windows 只保留一块占位的幻影屏：它照旧报出一个看着正常的分辨率，但背后没有任何输出，游戏渲染和截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后，MAS 只在「桌面上没有任何真实显示输出」时临时挂一块虚拟显示器，任务结束即拆除。{driverLink}，MAS 不附带驱动。',
+      introDriverLink: '需先自行安装 Parsec 虚拟显示驱动',
       enable: '启用虚拟显示器',
       enableTip:
         '仅在检测不到任何真实显示输出时才挂载，显示器正常工作时不会多挂一块。任务结束会自动拆除；程序若被强制结束，下次启动时会清理掉遗留的那块。',
@@ -2993,7 +3043,7 @@ export default {
       checkPassed: '检测通过',
       checkIssue: '检测未通过',
       monitors: '检测时的显示器',
-      download: '下载 Parsec 虚拟显示驱动',
+      download: '下载 Parsec 虚拟显示驱动（GitHub）',
       driverUnavailable: '未检测到可用的虚拟显示驱动（{reason}），开关不可用',
       enabledButUnavailable: '开关已打开，但当前检测不到可用的驱动（{reason}），该功能不会生效',
       stage: {
@@ -3159,6 +3209,8 @@ export default {
       copyVersion: '软件版本：{version}',
       copyBackendDate: '后端日期：{date}',
       copyBackendHash: '后端哈希：{hash}',
+      viewChangelog: '更新日志',
+      changelogTitle: '{version} 更新日志',
     },
     tray: {
       section: '托盘菜单自定义',

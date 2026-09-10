@@ -35,7 +35,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
-from app.utils.constants import UTC4, UTC8
+from app.utils.constants import UTC4
 
 from .task_mapping import (
     HSR_TASK_MODULES,
@@ -119,6 +119,22 @@ def resolve_daily_native_modes(
     return bool(values.get("build_target_enable", False)), activity_enabled
 
 
+def _server_day_clock(now_dt: datetime | None = None) -> datetime:
+    """把一个时刻换算成游戏换日口径（UTC+4）的挂钟时间。
+
+    星铁在服务器时间（UTC+8）周一 04:00 重置，等价于 UTC+4 的零点，按 UTC+4 取
+    `isocalendar()` / `%A` / `%Y-%m-%d` 就会在正确时刻翻页。日 / 周标记是「那个瞬间」
+    的属性，与调用方或用户本机在哪个时区无关，所以带时区的输入一律换算过去；naive
+    输入按已经是 UTC+4 处理。
+    """
+
+    if now_dt is None:
+        return datetime.now(tz=UTC4)
+    if now_dt.tzinfo is None:
+        return now_dt.replace(tzinfo=UTC4)
+    return now_dt.astimezone(UTC4)
+
+
 def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
     """判断用户是否启用了指定周期的任一 HSR 模块。"""
 
@@ -195,8 +211,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return
         # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
         # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
-        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
-        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        # 注意别把周常重置日、历战余响开始日那几处一起改掉，那些是游戏服务器
+        # 日期语义，用 UTC+4 表达：星铁的日 / 周边界是服务器时间周一 04:00，
+        # 正好等于 UTC+4 的零点，`isocalendar()` 与 `%A` 因此会在正确时刻翻页。
         now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         appended_lines: list[str] = []
         for line in text.splitlines():
@@ -347,10 +364,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _period_markers(
         now_dt: datetime | None = None,
     ) -> tuple[str, str]:
-        """返回当前日期和 ISO 周标记。"""
+        """返回当前日期和 ISO 周标记（游戏服务器口径）。
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        用 UTC+4 而不是 UTC+8：星铁在服务器时间周一 04:00 重置，UTC+4 的零点正是
+        这一刻。按 UTC+8 算会提前四小时翻页——周一 00:00~04:00（北京时间，对 UTC+2
+        用户就是周日晚上）跑的那一轮，会把「上一周已完成」的结果写成新一周的完成态，
+        真正重置后整周都不再尝试。
+        """
+
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         return (
             now_dt.strftime("%Y-%m-%d"),
@@ -383,8 +405,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> list[tuple[str, str, object]]:
         """构造日常代理状态写回字段，口径与用户列表标签保持一致。"""
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC4)
+        now_dt = _server_day_clock(now_dt)
 
         today = now_dt.strftime("%Y-%m-%d")
         last_proxy_date = str(user_config.get("Data", "LastProxyDate") or "")
@@ -602,8 +623,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if eow_target not in weekday_options:
             eow_target = "Monday"
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -638,8 +659,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """解析周常是否本周已完成，不写用户 Data。"""
         weekly_enabled = _has_enabled_phase_module(user_config, "weekly")
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 

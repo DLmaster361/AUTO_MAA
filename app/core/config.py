@@ -81,6 +81,7 @@ from app.models.config import (
 )
 from app.models.schema import PlanComboxConsumer
 from app.utils import get_logger, is_supervised, resource_path
+from app.utils.community import next_community_account_name
 from app.utils.constants import (
     MAA_DEPOT_EXCLUDED_ITEM_IDS,
     RESOURCE_STAGE_DATE_TEXT,
@@ -103,7 +104,7 @@ GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
 
 
 def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str, Any]:
-    """读取当天的游戏签到结果快照。"""
+    """读取当天的游戏社区结果快照。"""
 
     if not path.exists():
         return {}
@@ -111,7 +112,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        logger.warning(f"读取游戏签到结果快照失败: {e}")
+        logger.warning(f"读取游戏社区结果快照失败: {e}")
         return {}
 
     if not isinstance(payload, dict) or payload.get("date") != result_date:
@@ -119,7 +120,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 
     result = payload.get("result")
     if not isinstance(result, dict):
-        logger.warning("游戏签到结果快照格式无效，已忽略")
+        logger.warning("游戏社区结果快照格式无效，已忽略")
         return {}
     return result
 
@@ -127,7 +128,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏签到结果快照（走 ``app.utils.io.write_file``）。"""
+    """原子保存游戏社区结果快照（走 ``app.utils.io.write_file``）。"""
 
     if path is None:
         return
@@ -135,7 +136,7 @@ def _save_game_sign_result_snapshot(
     try:
         write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
-        logger.warning(f"保存游戏签到结果快照失败: {e}")
+        logger.warning(f"保存游戏社区结果快照失败: {e}")
 
 
 def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
@@ -251,7 +252,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.3"
+    VERSION = "v5.5.0-beta.4"
 
     def __init__(self) -> None:
         super().__init__()
@@ -295,6 +296,7 @@ class AppConfig(GlobalConfig):
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
         self._game_sign_result_date = ""
+        self._community_account_add_lock = asyncio.Lock()
 
         self._inject_truststore()
 
@@ -378,12 +380,12 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
-        # 游戏签到：连接账号组 MultipleConfig
+        # 游戏社区：连接账号组 MultipleConfig
         await self.ToolsConfig.GameSign_Accounts.connect(
             self.config_path / "GameSignAccounts.json"
         )
 
-        # 游戏签到：恢复当天的结果快照，跨日结果不继续展示
+        # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
             self.config_path / GAME_SIGN_RESULT_FILENAME,
@@ -2928,17 +2930,17 @@ class AppConfig(GlobalConfig):
 
         return await self.ToolsConfig.toDict()
 
-    async def update_game_sign_results(
+    async def update_community_results(
         self, formatted: dict[str, Any], *, replace: bool = False
     ) -> None:
-        """合并、持久化并广播游戏签到结果。
+        """合并、持久化并广播游戏社区结果。
 
         Args:
             formatted: 已按平台和账号分组的签到结果。
             replace: 是否按账号 UID 替换已有结果。
         """
 
-        from app.tools.game_sign import merge_sign_results
+        from app.tools.community_sign_provider import merge_community_sign_results
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         existing = (
@@ -2946,7 +2948,9 @@ class AppConfig(GlobalConfig):
             if self._game_sign_result_date == today
             else {}
         )
-        result = merge_sign_results(existing, formatted, replace=replace)
+        result = merge_community_sign_results(
+            existing, formatted, replace=replace
+        )
         self.ToolsConfig._game_sign_result_data = result
         self._game_sign_result_date = today
         _save_game_sign_result_snapshot(
@@ -2967,7 +2971,14 @@ class AppConfig(GlobalConfig):
                 ),
             )
         except Exception as e:
-            logger.warning(f"广播游戏签到结果失败: {e}")
+            logger.warning(f"广播游戏社区结果失败: {e}")
+
+    async def update_game_sign_results(
+        self, formatted: dict[str, Any], *, replace: bool = False
+    ) -> None:
+        """兼容旧调用方，转发到社区结果更新入口。"""
+
+        await self.update_community_results(formatted, replace=replace)
 
     async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新工具设置"""
@@ -2978,31 +2989,42 @@ class AppConfig(GlobalConfig):
 
         logger.success("工具设置更新成功")
 
-    # ==================== 游戏签到账号组 CRUD ====================
+    # ==================== 游戏社区账号组 CRUD ====================
 
     async def get_game_sign_accounts(
         self, *, if_decrypt: bool = True
     ) -> Dict[str, Any]:
-        """获取所有游戏签到账号组"""
+        """获取所有游戏社区账号组"""
 
-        logger.debug("获取所有游戏签到账号组")
+        logger.debug("获取所有游戏社区账号组")
 
         return await self.ToolsConfig.GameSign_Accounts.toDict(if_decrypt=if_decrypt)
 
     async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
-        """添加游戏签到账号组"""
+        """添加游戏社区账号组"""
 
-        logger.info("添加游戏签到账号组")
+        logger.info("添加游戏社区账号组")
 
-        uid, config = await self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
-        return uid, config
+        async with self._community_account_add_lock:
+            existing_names = []
+            for account in self.ToolsConfig.GameSign_Accounts.values():
+                try:
+                    existing_names.append(account.get("GameSignAccount", "Name"))
+                except (AttributeError, KeyError):
+                    continue
+            account_name = next_community_account_name(existing_names)
+            uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+                GameSignAccountGroup
+            )
+            await config.set("GameSignAccount", "Name", account_name)
+            return uid, config
 
     async def get_game_sign_account(
         self, account_id: str, *, if_decrypt: bool = True
     ) -> Dict[str, Any]:
-        """获取游戏签到账号组详情"""
+        """获取游戏社区账号组详情"""
 
-        logger.debug(f"获取游戏签到账号组: {account_id}")
+        logger.debug(f"获取游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
         return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
@@ -3010,7 +3032,7 @@ class AppConfig(GlobalConfig):
         )
 
     def _clear_game_sign_account_results(self, account_id: str) -> None:
-        """清除指定游戏签到账号的结果。"""
+        """清除指定游戏社区账号的结果。"""
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         result = self.ToolsConfig._game_sign_result_data
@@ -3042,15 +3064,15 @@ class AppConfig(GlobalConfig):
     async def update_game_sign_account(
         self, account_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
-        """更新游戏签到账号组配置"""
+        """更新游戏社区账号组配置"""
 
-        logger.info(f"更新游戏签到账号组: {account_id}")
+        logger.info(f"更新游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
         account = self.ToolsConfig.GameSign_Accounts[account_uid]
-        from app.tools.game_sign import GAME_SIGN_TOKEN_FIELDS
+        from app.tools.community_sign_provider import COMMUNITY_TOKEN_FIELDS
 
-        credential_fields = set(GAME_SIGN_TOKEN_FIELDS)
+        credential_fields = set(COMMUNITY_TOKEN_FIELDS)
         credential_changed = False
 
         for group, items in data.items():
@@ -3068,18 +3090,18 @@ class AppConfig(GlobalConfig):
             self._clear_game_sign_account_results(account_id)
 
     async def delete_game_sign_account(self, account_id: str) -> None:
-        """删除游戏签到账号组"""
+        """删除游戏社区账号组"""
 
-        logger.info(f"删除游戏签到账号组: {account_id}")
+        logger.info(f"删除游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
         await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
         self._clear_game_sign_account_results(account_id)
 
     async def reorder_game_sign_accounts(self, order: list[str]) -> None:
-        """调整游戏签到账号组顺序"""
+        """调整游戏社区账号组顺序"""
 
-        logger.info("调整游戏签到账号组顺序")
+        logger.info("调整游戏社区账号组顺序")
 
         await self.ToolsConfig.GameSign_Accounts.setOrder([uuid.UUID(_) for _ in order])
 
@@ -4267,6 +4289,47 @@ class AppConfig(GlobalConfig):
                 deleted_count += 1
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
+
+    async def clean_maafw_native_debug_logs(self) -> None:
+        """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
+
+        MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
+        ``debug/maafw.bak.<时间戳>.log`` 再开新的，但从不回收旧的——一个每天跑
+        的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
+        ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
+        保留时长沿用历史记录的保留天数设置。
+        """
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
+            return
+
+        from app.models.config import MaaFWConfig
+
+        cutoff = time.time() - self.get("Function", "HistoryRetentionTime") * 86400
+        deleted_count = 0
+        for script_config in self.ScriptConfig.values():
+            if not isinstance(script_config, MaaFWConfig):
+                continue
+            project_path = str(script_config.get("Info", "Path") or "").strip()
+            if not project_path:
+                continue
+            debug_folder = Path(project_path) / "debug"
+            if not debug_folder.is_dir():
+                continue
+            # 备份文件名由 MaaFramework 决定，与 runner_task 里
+            # _iter_rotated_native_debug_logs 认的是同一套。
+            for file in debug_folder.glob("maafw.bak.*.log"):
+                try:
+                    if file.stat().st_mtime >= cutoff:
+                        continue
+                    file.unlink()
+                except OSError as exc:
+                    logger.warning(f"MFW 原生日志备份清理失败: {file} - {exc}")
+                    continue
+                deleted_count += 1
+        if deleted_count:
+            logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
 
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""

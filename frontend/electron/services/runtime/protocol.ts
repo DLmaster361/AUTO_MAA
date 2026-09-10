@@ -608,7 +608,10 @@ const ERROR_DEFINITION_LIST: readonly RuntimeErrorDefinition[] = [
     code: 'BACKEND_EXITED_BEFORE_READY',
     exitCode: 60,
     retryable: true,
-    remediation: ['restart-backend', 'open-log'],
+    // 后端在就绪前退出，最常见的成因之一是受管 venv 已经损坏（例如 pyvenv.cfg 丢失，
+    // 解释器一启动就退出）。只给「重试」的话用户点多少次都不会重建环境——实测有用户
+    // 连点了 21 次。与 Runtime 的错误码表保持一致，补上重建环境这条出路。
+    remediation: ['restart-backend', 'rebuild-environment', 'open-log'],
     summary: '后端在就绪前退出',
   },
   {

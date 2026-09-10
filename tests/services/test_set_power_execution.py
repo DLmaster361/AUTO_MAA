@@ -24,7 +24,9 @@ class SetPowerExecutionTest(unittest.IsolatedAsyncioTestCase):
         # KillSelf 是后端自行退出，保留先请求前端退出的既有行为
         server = type("Server", (), {"should_exit": False})()
         with (
-            patch.object(System, "_request_frontend_close", new_callable=AsyncMock) as request_frontend_close,
+            patch.object(
+                System, "_request_frontend_close", new_callable=AsyncMock
+            ) as request_frontend_close,
             patch("app.core.config.Config.server", server),
         ):
             await System.set_power("KillSelf")

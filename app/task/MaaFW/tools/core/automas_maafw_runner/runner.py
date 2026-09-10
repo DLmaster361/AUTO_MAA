@@ -1877,6 +1877,7 @@ class MaaFWRunner:
 
         # 清理 AUTO-MAS 自身环境变量，防止 agent 串到 MAS .venv
         env.pop("VIRTUAL_ENV", None)
+        env.pop("UV_PROJECT_ENVIRONMENT", None)
         env.pop("PYTHONHOME", None)
         env.pop("PYTHONUSERBASE", None)
         env.pop("PIP_TARGET", None)
@@ -2219,6 +2220,7 @@ class MaaFWRunner:
         """
         env = os.environ.copy()
         env.pop("VIRTUAL_ENV", None)
+        env.pop("UV_PROJECT_ENVIRONMENT", None)
         env.pop("PYTHONHOME", None)
         env.pop("PYTHONUSERBASE", None)
         env.pop("PIP_TARGET", None)

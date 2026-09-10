@@ -882,9 +882,9 @@
                       <template #icon><PlayCircleOutlined /></template>
                       {{ t('edit.bettergiOpenBgi') }}
                     </a-button>
-                    <a-button size="small" @click="openBettergiDir('oneDragon')">
+                    <a-button size="small" @click="openBettergiDir('keyMouse')">
                       <template #icon><FolderOpenOutlined /></template>
-                      {{ t('edit.bettergiOpenOneDragonDir') }}
+                      {{ t('edit.bettergiOpenKeyMouseDir') }}
                     </a-button>
                     <a-button size="small" @click="openBettergiDir('scriptGroup')">
                       <template #icon><FolderOpenOutlined /></template>
@@ -959,6 +959,40 @@
                       {{ t('edit.bettergiGroupFrozen') }}
                     </a-tag>
                     <a-tag v-else-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
+                      {{ t('edit.bettergiInQueue') }}
+                    </a-tag>
+                  </div>
+                </div>
+              </a-tab-pane>
+
+              <!-- Tab4：录制（KeyMouseScript 键鼠脚本） -->
+              <a-tab-pane key="keymouse" :tab="t('edit.bettergiTabKeyMouse')">
+                <div
+                  v-if="!addModal.keyMouseCandidates.length"
+                  class="add-dragon-candidates-empty"
+                >
+                  <a-empty :description="t('edit.bettergiKeyMouseEmptyDir')" />
+                </div>
+                <div v-else class="add-dragon-candidates">
+                  <div
+                    v-for="(candidate, index) in addModal.keyMouseCandidates"
+                    :key="`${candidate.kind}:${candidate.key}`"
+                    class="add-dragon-candidate"
+                    :class="{
+                      'add-dragon-candidate-picked': isChipAdded(candidate),
+                      'add-dragon-candidate-disabled': isCandidateBlocked(candidate),
+                    }"
+                    @click="handleKeyMouseCandidateClick(candidate, index, $event)"
+                  >
+                    <a-tag
+                      size="small"
+                      class="add-dragon-candidate-tag"
+                      :class="kindTagClass(candidate.kind)"
+                    >
+                      {{ groupPrefix(candidate) }}
+                    </a-tag>
+                    <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
+                    <a-tag v-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
                       {{ t('edit.bettergiInQueue') }}
                     </a-tag>
                   </div>
@@ -1435,7 +1469,14 @@ const {
 // Groups / CustomGroups 承载，体力作战为本地虚拟项不落库。
 const STAMINA_COMBAT_KEY = '__mas_stamina_combat__'
 
-type ConfigGroupKind = 'builtin' | 'stamina' | 'custom' | 'js' | 'pathing' | 'scriptgroup'
+type ConfigGroupKind =
+  | 'builtin'
+  | 'stamina'
+  | 'custom'
+  | 'js'
+  | 'pathing'
+  | 'scriptgroup'
+  | 'keymouse'
 
 type ConfigGroupIdentity = {
   kind: ConfigGroupKind
@@ -1497,16 +1538,18 @@ const groupPrefix = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'stamina') return t('edit.bettergiGroupKindStamina')
   if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
   if (item.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
+  if (item.kind === 'keymouse') return t('edit.bettergiGroupKindKeyMouse')
   // JS 脚本与现有自定义组同属「自定义」来源（按需求：JS 的 tag 改为自定义）
   return t('edit.bettergiGroupKindCustom')
 }
 
 // 前缀 tag 颜色（队列行/右栏详情/候选弹窗统一走同一套）：默认=灰、专项=紫、配置组=橘、
-// 自定义&JS=蓝、路径=绿
+// 自定义&JS=蓝、路径=绿、录制=黄
 const kindTagClass = (kind: ConfigGroupKind): string => {
   if (kind === 'stamina') return 'gi-kind-tag-stamina'
   if (kind === 'pathing') return 'gi-kind-tag-pathing'
   if (kind === 'scriptgroup') return 'gi-kind-tag-scriptgroup'
+  if (kind === 'keymouse') return 'gi-kind-tag-keymouse'
   if (kind === 'custom' || kind === 'js') return 'gi-kind-tag-custom'
   return 'gi-kind-tag-default'
 }
@@ -1527,6 +1570,9 @@ const scriptGroupOptions = ref<{ label: string; value: string }[]>([])
 const isScriptGroupName = (name: string): boolean =>
   scriptGroupOptions.value.some(o => o.value === name)
 
+// BetterGI「录制」候选：{RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
+const keyMouseOptions = ref<{ label: string; value: string }[]>([])
+
 // JS 目录名 → manifest 中文显示名（候选/队列展示用；找不到时回退目录名）
 const jsDisplayName = (folder: string): string =>
   jsScriptOptions.value.find(o => o.value === folder)?.label || folder
@@ -1540,6 +1586,7 @@ const bettergiDirs = ref<{
   autoPathingDir?: string
   oneDragonDir?: string
   scriptGroupDir?: string
+  keyMouseScriptDir?: string
   exePath?: string
 }>({})
 // 当前选中的目录节点 key（相对路径）
@@ -2881,6 +2928,20 @@ const handleGroupCandidateClick = (
 ) =>
   handleListCandidateClick(addModal.groupCandidates, groupCandidateAnchor, candidate, index, event)
 
+// 录制 标签页：KeyMouseScript 候选点击
+const handleKeyMouseCandidateClick = (
+  candidate: ConfigGroupIdentity,
+  index: number,
+  event: MouseEvent
+) =>
+  handleListCandidateClick(
+    addModal.keyMouseCandidates,
+    keyMouseCandidateAnchor,
+    candidate,
+    index,
+    event
+  )
+
 // ---- 添加弹窗（标签页：配置组/JS脚本/地图追踪）----
 // 气泡列表元素：一条龙实例身份 + 弹窗内自增 uid（用于去重展示/删除，与队列行 uid 无关）
 type AddChipItem = ConfigGroupIdentity & { chipUid: number }
@@ -2889,13 +2950,15 @@ const addModal = reactive({
   open: false,
   items: [] as AddChipItem[],
   draft: '',
-  activeTab: 'scriptgroup' as 'scriptgroup' | 'js' | 'pathing',
+  activeTab: 'scriptgroup' as 'scriptgroup' | 'js' | 'pathing' | 'keymouse',
   /** true=配置组编辑器内「添加脚本」：冻结「配置组」标签页，仅可从 JS脚本/地图追踪选择加入配置组 */
   addToGroupMode: false,
   /** JS脚本 标签页候选：自定义组 + JS 脚本（不含默认/专项/配置组，那些归「配置组」标签页） */
   candidates: [] as ConfigGroupIdentity[],
   /** 配置组 标签页候选：8 内置（默认）+ 体力作战（专项）+ ScriptGroup 目录内容 */
   groupCandidates: [] as ConfigGroupIdentity[],
+  /** 录制 标签页候选：KeyMouseScript 目录下的键鼠脚本 */
+  keyMouseCandidates: [] as ConfigGroupIdentity[],
 })
 
 // 添加弹窗标题/确定按钮文案（按模式分流）
@@ -3064,6 +3127,8 @@ const isChipAdded = (candidate: ConfigGroupIdentity): boolean =>
 const jsCandidateAnchor = ref(-1)
 // 配置组 候选项 Shift 区间锚点（index in addModal.groupCandidates）
 const groupCandidateAnchor = ref(-1)
+// 录制 候选项 Shift 区间锚点（index in addModal.keyMouseCandidates）
+const keyMouseCandidateAnchor = ref(-1)
 // 地图追踪文件行 Shift 区间锚点（index in selectedPathingFiles）
 const pathingFileAnchor = ref(-1)
 
@@ -3101,12 +3166,34 @@ const loadScriptGroups = async () => {
   }
 }
 
+// 加载 BetterGI「录制」候选（BGI User/KeyMouseScript 下的键鼠脚本文件名）。
+const loadKeyMouseScripts = async () => {
+  try {
+    const resp =
+      await BetterGiService.getBettergiKeyMouseScriptsApiApiScriptsBettergiKeyMouseScriptsGet(
+        scriptId
+      )
+    keyMouseOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { label: string; value: string } =>
+        item.label != null && item.value != null
+      )
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
 // 组装候选项，按标签页拆分：
 //  - addModal.candidates（JS脚本 标签页）：JS 脚本 + 不在 ScriptGroup 目录的现有自定义组
 //  - addModal.groupCandidates（配置组 标签页）：8 内置（默认）+ 体力作战（专项）+ ScriptGroup 目录内容
 // 现有自定义组若命中 ScriptGroup 目录（如「锄地一条龙」），在配置组标签页以 ScriptGroup 形式出现，
 // 故 JS脚本 标签页剔除，避免同一配置两个入口。
 const buildCandidates = () => {
+  // 录制 标签页候选：KeyMouseScript 目录下的键鼠脚本（与其他标签页一样可加入队列）
+  addModal.keyMouseCandidates = keyMouseOptions.value.map(opt => ({
+    kind: 'keymouse' as const,
+    key: opt.value,
+  }))
   // addToGroupMode（配置组内添加脚本）只允许可执行的 JS 脚本目录与地图追踪路径；
   // 原有自定义组（custom）不写入配置组 projects，故 JS脚本 标签仅列 js 候选。
   if (addModal.addToGroupMode) {
@@ -3165,17 +3252,26 @@ const openAddScriptToGroup = async () => {
   await openAddModalCommon('js')
 }
 
-const openAddModalCommon = async (defaultTab: 'scriptgroup' | 'js' | 'pathing') => {
+const openAddModalCommon = async (
+  defaultTab: 'scriptgroup' | 'js' | 'pathing' | 'keymouse'
+) => {
   addModal.items = []
   addModal.draft = ''
   addModal.activeTab = defaultTab
   jsCandidateAnchor.value = -1
   groupCandidateAnchor.value = -1
+  keyMouseCandidateAnchor.value = -1
   pathingFileAnchor.value = -1
   clearChipSelection()
   addModal.open = true
   await loadCustomGroupsFromBettergi()
-  await Promise.all([loadJsScripts(), loadScriptGroups(), loadBettergiDirs(), loadPathingTree()])
+  await Promise.all([
+    loadJsScripts(),
+    loadScriptGroups(),
+    loadKeyMouseScripts(),
+    loadBettergiDirs(),
+    loadPathingTree(),
+  ])
   buildCandidates()
 }
 
@@ -3243,6 +3339,7 @@ const loadBettergiDirs = async () => {
         autoPathingDir: resp.autoPathingDir ?? undefined,
         oneDragonDir: resp.oneDragonDir ?? undefined,
         scriptGroupDir: resp.scriptGroupDir ?? undefined,
+        keyMouseScriptDir: resp.keyMouseScriptDir ?? undefined,
         exePath: resp.exePath ?? undefined,
       }
     }
@@ -3254,16 +3351,18 @@ const loadBettergiDirs = async () => {
 // BetterGI 官方在线脚本站（本地检出目录无法跳转其内部页面，改用网页版脚本仓库）
 const BGI_SCRIPT_SITE = 'https://s.bettergi.com/'
 
-// 打开某目录（脚本目录 / 任务目录 / 一条龙 / 配置组）；脚本仓库走在线网页
-const openBettergiDir = async (kind: 'jsScript' | 'autoPathing' | 'oneDragon' | 'scriptGroup') => {
+// 打开某目录（脚本目录 / 路径目录 / 录制 / 配置组）；脚本仓库走在线网页
+const openBettergiDir = async (
+  kind: 'jsScript' | 'autoPathing' | 'keyMouse' | 'scriptGroup'
+) => {
   if (!bettergiDirs.value.jsScriptDir) await loadBettergiDirs()
   const target =
     kind === 'jsScript'
       ? bettergiDirs.value.jsScriptDir
       : kind === 'autoPathing'
         ? bettergiDirs.value.autoPathingDir
-        : kind === 'oneDragon'
-          ? bettergiDirs.value.oneDragonDir
+        : kind === 'keyMouse'
+          ? bettergiDirs.value.keyMouseScriptDir
           : bettergiDirs.value.scriptGroupDir
   if (!target) {
     message.warning(t('edit.bettergiPathingEmptyTree'))
@@ -4464,6 +4563,12 @@ onUnmounted(() => {
   background: #fff7e6;
   border-color: #ffd591;
   color: #d46b08;
+}
+
+.gi-kind-tag-keymouse {
+  background: #fffbe6;
+  border-color: #ffe58f;
+  color: #d48806;
 }
 
 .add-dragon-candidates-empty {

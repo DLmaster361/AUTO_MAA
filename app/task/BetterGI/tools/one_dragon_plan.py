@@ -48,9 +48,9 @@ from app.utils.io import read_file
 logger = get_logger("BetterGI 一条龙计划")
 
 # 步骤来源类型，与前端队列 kind 保持一致
-StepKind = Literal["builtin", "js", "pathing", "scriptgroup", "custom"]
+StepKind = Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"]
 _STEP_KINDS: frozenset[str] = frozenset(
-    {"builtin", "js", "pathing", "scriptgroup", "custom"}
+    {"builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"}
 )
 
 # 8 个内置一条龙步骤的标准名（与 BGI 一条龙 TaskDefinitions 值一致）

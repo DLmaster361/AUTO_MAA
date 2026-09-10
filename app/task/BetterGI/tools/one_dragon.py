@@ -82,6 +82,9 @@ _REPO_REL_DIR = Path("Repos") / "bettergi-scripts-list"
 # BetterGI 配置组目录（{RootPath}/User/ScriptGroup/*.json，BGI 一条龙自定义组定义）
 _SCRIPT_GROUP_REL_DIR = Path("User") / "ScriptGroup"
 
+# BetterGI 键鼠脚本（录制）目录（{RootPath}/User/KeyMouseScript/*.json）
+_KEY_MOUSE_SCRIPT_REL_DIR = Path("User") / "KeyMouseScript"
+
 # BetterGI 全局主配置（config.json）使用 camelCase 键。一条龙配置自带战斗字段的只有
 # 秘境（PartyName）与首领讨伐（AutoBossTeamName/AutoBossStrategyName）；地脉花/幽境危战
 # 则由 BetterGI 在 OneDragonTaskItem 里直接从全局 AutoLeyLineOutcropConfig /
@@ -167,6 +170,22 @@ def list_script_groups(root: Path) -> list[str]:
     sg_dir = root / _SCRIPT_GROUP_REL_DIR
     if sg_dir.is_dir():
         for p in sorted(sg_dir.glob("*.json"), key=lambda p: p.stem):
+            name = p.stem.strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def list_key_mouse_scripts(root: Path) -> list[str]:
+    """列出 BetterGI 键鼠脚本（录制）候选：{RootPath}/User/KeyMouseScript/*.json 的文件名。
+
+    键鼠脚本是 BetterGI「录制」得到的脚本，一条龙可像配置组一样引用，文件名即脚本名。
+    每次调用实时扫描，以反映 BGI 侧手工新增/删除的录制脚本。
+    """
+    names: list[str] = []
+    km_dir = root / _KEY_MOUSE_SCRIPT_REL_DIR
+    if km_dir.is_dir():
+        for p in sorted(km_dir.glob("*.json"), key=lambda p: p.stem):
             name = p.stem.strip()
             if name and name not in names:
                 names.append(name)
@@ -450,6 +469,7 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
     - ``autoPathing``：地图追踪任务目录（{RootPath}/User/AutoPathing）
     - ``oneDragon``：一条龙配置目录（{RootPath}/User/OneDragon）
     - ``scriptGroup``：配置组目录（{RootPath}/User/ScriptGroup）
+    - ``keyMouseScript``：键鼠脚本（录制）目录（{RootPath}/User/KeyMouseScript）
     - ``exe``：BetterGI 主程序（{RootPath}/BetterGI.exe，用于打开 BGI 调度/主界面）
 
     目录不存在时仅返回派生路径，由调用方决定是否提示缺失；返回绝对路径便于前端直接打开。
@@ -460,6 +480,7 @@ def resolve_script_dirs(root: Path) -> dict[str, str]:
         "autoPathing": str((root / _AUTO_PATHING_REL_DIR).resolve()),
         "oneDragon": str((root / _ONE_DRAGON_REL_DIR).resolve()),
         "scriptGroup": str((root / _SCRIPT_GROUP_REL_DIR).resolve()),
+        "keyMouseScript": str((root / _KEY_MOUSE_SCRIPT_REL_DIR).resolve()),
         "exe": str((root / "BetterGI.exe").resolve()),
     }
 
@@ -636,7 +657,7 @@ def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
             kind = "builtin"
         else:
             kind = str(item.get("kind", "")).strip()
-            if kind not in ("js", "pathing", "scriptgroup", "custom"):
+            if kind not in ("js", "pathing", "scriptgroup", "keymouse", "custom"):
                 kind = "custom"
         entry: dict[str, Any] = {"kind": kind, "name": name}
         # 保留前端条目 planUid（其绑定的执行层 Plan 步骤 uid）：同名多实例如

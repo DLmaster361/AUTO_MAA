@@ -269,6 +269,9 @@ class BetterGIScriptDirsOut(OutBase):
     autoPathingDir: Optional[str] = Field(default=None, description="地图追踪任务目录")
     oneDragonDir: Optional[str] = Field(default=None, description="一条龙配置目录")
     scriptGroupDir: Optional[str] = Field(default=None, description="配置组目录")
+    keyMouseScriptDir: Optional[str] = Field(
+        default=None, description="键鼠脚本（录制）目录"
+    )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
 class ZzzOdInstanceOut(BaseModel):
     """zzz-od 实例（账号）信息"""
@@ -1658,8 +1661,8 @@ class OneDragonPlanStep(BaseModel):
     """一条龙执行计划中的单个步骤（执行层实例）。"""
 
     uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
-    kind: Literal["builtin", "js", "pathing", "scriptgroup", "custom"] = Field(
-        ..., description="步骤来源类型"
+    kind: Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"] = (
+        Field(..., description="步骤来源类型")
     )
     name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
     enabled: bool = Field(default=True, description="是否启用该步骤")

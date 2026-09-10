@@ -423,7 +423,7 @@ def _adapters_have_monitor_child() -> bool | None:
 
 
 def real_display_devices() -> set[str]:
-    """当前**有真实输出**的显示设备名集合（`\\.\DISPLAYn`）。
+    r"""当前**有真实输出**的显示设备名集合（`\\.\DISPLAYn`）。
 
     幻影屏不算：它同样挂在桌面上、同样有设备名，但没有 monitor 子设备。这个区别很重要
     ——无头时挂上虚拟屏，Windows 会**复用同一个设备名**（幻影屏是被替换而不是并存），

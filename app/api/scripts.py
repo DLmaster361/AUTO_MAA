@@ -665,6 +665,25 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
             if new_plan != plan:
                 od["Plan"] = new_plan
+            # 录制（KeyMouse）加入队列：提前生成 per-user 配置组副本（含单 KeyMouse 项目），
+            # 使右栏项目编辑能读到录制内容、运行时可被物化，避免「一条龙里没有内容」。
+            try:
+                from app.task.BetterGI.tools import one_dragon as _od
+
+                _root = Path(str(script_cfg.get("Info", "RootPath"))).expanduser()
+                _queue = _od.parse_one_dragon_queue(od["Queue"])
+                _od.ensure_keymouse_groups(
+                    _root,
+                    user.scriptId,
+                    user.userId,
+                    [e.get("name") for e in _queue if isinstance(e, dict)],
+                )
+            except Exception:  # pragma: no cover - 兜底：生成失败不应阻断保存
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "为队列中的录制生成配置组副本失败（已忽略）", exc_info=True
+                )
         except Exception as e:  # pragma: no cover - 兜底：同步失败不应阻断保存
             import logging
 

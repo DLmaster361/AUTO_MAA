@@ -5,7 +5,7 @@
     @click.capture="handleBlankClick"
   >
     <!-- 工具栏：添加脚本 / 删除脚本（仅配置组可编辑且非单项目虚拟组） -->
-    <div v-if="isScriptGroup && editable" class="bgi-project-toolbar">
+    <div v-if="isScriptGroup && editable && !isKeyMouse" class="bgi-project-toolbar">
       <a-space size="small">
         <a-button size="small" type="primary" ghost :disabled="!editable" @click="emit('add-script')">
           <template #icon><PlusOutlined /></template>
@@ -239,16 +239,24 @@ const props = withDefaults(
   }
 )
 
-const emit = defineEmits<{ (e: 'add-script'): void }>()
+const emit = defineEmits<{
+  (e: 'add-script'): void
+}>()
 
 const logger = window.electronAPI.getLogger('BetterGI配置组项目编辑')
 
 const loading = ref(false)
 const saving = ref(false)
 
-const isScriptGroup = computed<boolean>(() => props.kind === 'scriptgroup')
-// 可选择（Shift/Ctrl 多选）：仅可编辑配置组
-const selectable = computed<boolean>(() => isScriptGroup.value && props.editable)
+const isKeyMouse = computed<boolean>(() => props.kind === 'keymouse')
+// 可读取项目列表：配置组 或 录制（录制以「含单 KeyMouse 项目的配置组」形式读取）
+const isScriptGroup = computed<boolean>(
+  () => props.kind === 'scriptgroup' || isKeyMouse.value
+)
+// 可选择（Shift/Ctrl 多选）/可增删：仅可编辑配置组；录制为只读展示（避免误清空导致无内容）
+const selectable = computed<boolean>(
+  () => isScriptGroup.value && props.editable && !isKeyMouse.value
+)
 // 可拖拽排序：配置组 json 且至少两个项目
 const isSortable = computed<boolean>(
   () => selectable.value && projects.value.length > 1
@@ -328,7 +336,7 @@ const handleBlankClick = (event: MouseEvent) => {
 // Ctrl/Cmd=逐个切换多选；Shift=从锚点行到当前行区间多选。
 // 双击（打开设置弹窗）由 dblclick 独立处理，不参与多选。
 const handleRowClick = (row: ProjectRow, index: number, event: MouseEvent) => {
-  if (!props.editable || !isScriptGroup.value) return
+  if (!props.editable || !isScriptGroup.value || isKeyMouse.value) return
   const uid = row._uid
   if (typeof uid !== 'number') return
   if (event.shiftKey) {
@@ -477,7 +485,8 @@ const projRowKey = (proj: ProjectRow, index: number): string => {
 
 // 双击项目：并行读取 settings.json UI 定义 + README，打开弹窗（两标签）
 const openProjectSettings = async (proj: ProjectRow, index: number) => {
-  if (!props.editable) return
+  // 录制（KeyMouse）也以「脚本弹窗」展示，与 JS/路径一致；不要求实际有设置内容
+  if (!props.editable && !isKeyMouse.value) return
   const folder = (proj.folderName || props.folderName || '').trim()
   settingsTab.value = 'config'
   settingsModal.projectIndex = index

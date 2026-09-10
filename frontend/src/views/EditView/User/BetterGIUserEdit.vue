@@ -1539,12 +1539,12 @@ const groupPrefix = (item: ConfigGroupIdentity): string => {
   if (item.kind === 'pathing') return t('edit.bettergiGroupKindPathing')
   if (item.kind === 'scriptgroup') return t('edit.bettergiGroupKindScriptGroup')
   if (item.kind === 'keymouse') return t('edit.bettergiGroupKindKeyMouse')
-  // JS 脚本与现有自定义组同属「自定义」来源（按需求：JS 的 tag 改为自定义）
+  // JS 脚本与现有自定义组同属「脚本」来源（按需求：JS 的 tag 改为脚本）
   return t('edit.bettergiGroupKindCustom')
 }
 
 // 前缀 tag 颜色（队列行/右栏详情/候选弹窗统一走同一套）：默认=灰、专项=紫、配置组=橘、
-// 自定义&JS=蓝、路径=绿、录制=黄
+// 脚本&JS=蓝、路径=绿、配置组=橙、录制=绯红
 const kindTagClass = (kind: ConfigGroupKind): string => {
   if (kind === 'stamina') return 'gi-kind-tag-stamina'
   if (kind === 'pathing') return 'gi-kind-tag-pathing'
@@ -1572,6 +1572,10 @@ const isScriptGroupName = (name: string): boolean =>
 
 // BetterGI「录制」候选：{RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
 const keyMouseOptions = ref<{ label: string; value: string }[]>([])
+
+// CustomGroups 中某名字是否命中 BetterGI KeyMouseScript 录制目录（来源为录制时队列行标为录制前缀）
+const isKeyMouseName = (name: string): boolean =>
+  keyMouseOptions.value.some(o => o.value === name)
 
 // JS 目录名 → manifest 中文显示名（候选/队列展示用；找不到时回退目录名）
 const jsDisplayName = (folder: string): string =>
@@ -1787,7 +1791,12 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
     let kind: ConfigGroupKind
     if (builtinNames.has(name)) {
       kind = 'builtin' // 后端也会把内置组名强制归一为 builtin，这里双保险
-    } else if (rec.kind === 'js' || rec.kind === 'pathing' || rec.kind === 'scriptgroup') {
+    } else if (
+      rec.kind === 'js' ||
+      rec.kind === 'pathing' ||
+      rec.kind === 'scriptgroup' ||
+      rec.kind === 'keymouse'
+    ) {
       kind = rec.kind
     } else {
       kind = resolveStoredRowKind(name)
@@ -1876,10 +1885,11 @@ const initDragonList = () => {
   appendCustomRows()
 }
 
-// 由存储的自定义组名推断队列行来源类型：命中 JS 脚本目录→js；命中 AutoPathing 文件→pathing；
-// 命中 ScriptGroup 配置组目录→scriptgroup；其余→custom
+// 由存储的自定义组名推断队列行来源类型：命中 JS 脚本目录→js；命中录制目录→keymouse；
+// 命中 AutoPathing 文件→pathing；命中 ScriptGroup 配置组目录→scriptgroup；其余→custom
 const resolveStoredRowKind = (name: string): ConfigGroupKind => {
   if (isJsScriptName(name)) return 'js'
+  if (isKeyMouseName(name)) return 'keymouse'
   if (isPathingName(name)) return 'pathing'
   if (isScriptGroupName(name)) return 'scriptgroup'
   return 'custom'
@@ -2517,7 +2527,12 @@ const currentGroupSettingSections = computed<DragonSettingSection[]>(() => {
 const isProjectEditorGroup = computed<boolean>(() => {
   const sel = selectedGroupIdentity.value
   if (!sel) return false
-  return sel.kind === 'scriptgroup' || sel.kind === 'js' || sel.kind === 'pathing'
+  return (
+    sel.kind === 'scriptgroup' ||
+    sel.kind === 'js' ||
+    sel.kind === 'pathing' ||
+    sel.kind === 'keymouse'
+  )
 })
 // 双击读设置的目标脚本目录：js 时即脚本目录名（key）；scriptgroup/pathing 无目录参数（由 json 内 folderName 决定）
 const projectEditorFolder = computed<string>(() => {
@@ -3205,7 +3220,8 @@ const buildCandidates = () => {
   const jsTaken = new Set<string>()
   for (const row of customGroupsTable.value) {
     const name = row.name
-    if (!isScriptGroupName(name) && !jsTaken.has(name)) {
+    // 命中 ScriptGroup 配置组目录 / KeyMouseScript 录制目录的名字各有专属标签页，避免同一配置两个入口
+    if (!isScriptGroupName(name) && !isKeyMouseName(name) && !jsTaken.has(name)) {
       jsItems.push({ kind: 'custom', key: name })
       jsTaken.add(name)
     }
@@ -3298,6 +3314,21 @@ const toScriptGroupProjectRow = (item: AddChipItem): Record<string, unknown> | n
       allowJsNotification: true,
       allowJsHTTPHash: '',
       jsScriptSettingsObject: {},
+    }
+  }
+  if (item.kind === 'keymouse') {
+    const rec = String(item.key || '').trim()
+    if (!rec) return null
+    return {
+      name: rec,
+      folderName: rec,
+      index: 0,
+      type: 'KeyMouse',
+      status: 'Enabled',
+      schedule: 'Daily',
+      runNum: 1,
+      allowJsNotification: true,
+      allowJsHTTPHash: '',
     }
   }
   if (item.kind === 'pathing') {
@@ -3841,11 +3872,12 @@ const loadUser = async () => {
 
 onMounted(async () => {
   if (await loadScriptInfo()) {
-    // 先加载 JsScript 候选 / ScriptGroup 配置组目录 / AutoPathing 树 / 常用目录，
-    // initDragonList 才能把自定义组中命中脚本目录、配置组目录或路径文件的行标为对应来源
+    // 先加载 JsScript 候选 / ScriptGroup 配置组目录 / KeyMouseScript 录制目录 / AutoPathing 树 / 常用目录，
+    // initDragonList 才能把自定义组中命中脚本目录、配置组目录、录制目录或路径文件的行标为对应来源
     await Promise.all([
       loadJsScripts(),
       loadScriptGroups(),
+      loadKeyMouseScripts(),
       loadBettergiDirs(),
       loadPathingTree(),
     ])
@@ -4534,7 +4566,7 @@ onUnmounted(() => {
 }
 
 /* 前缀 tag 统一配色（antd 预设风格：浅色底 + 同色系深色文字）：
-   默认=灰、专项=紫、自定义&JS=蓝、路径=绿 */
+   默认=灰、专项=紫、脚本&JS=蓝、路径=绿、配置组=橙、录制=绯红 */
 .gi-kind-tag-default {
   background: #f0f0f0;
   border-color: #d9d9d9;
@@ -4566,9 +4598,9 @@ onUnmounted(() => {
 }
 
 .gi-kind-tag-keymouse {
-  background: #fffbe6;
-  border-color: #ffe58f;
-  color: #d48806;
+  background: #fff1f0;
+  border-color: #ffa39e;
+  color: #dc143c;
 }
 
 .add-dragon-candidates-empty {

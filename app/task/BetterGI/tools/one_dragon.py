@@ -354,12 +354,25 @@ def read_user_script_group(
 
     供右栏「配置组项目编辑」渲染与编辑：副本缺失/未生成时回退 BGI 实配，
     保证展示的是用户当前可编辑的内容（首次编辑时即以实配为底稿）。
+
+    录制（KeyMouse）特例：若 ``name`` 命中 BGI ``KeyMouseScript`` 目录下的录制且副本、
+    BGI 实配均不存在，则即时生成「仅含该录制单 KeyMouse 项目」的配置组副本并落盘后返回。
+    这样右栏能直接看到录制项目，且运行时 ``materialize_user_script_groups`` 亦据此物化，
+    不依赖队列落库路径是否触发过 ``ensure_keymouse_groups``。
     """
     name = resolve_script_group_name(name)
     copy = read_file(per_user_script_group_path(script_id, user_id, name))
     if isinstance(copy, dict) and copy:
         return copy
-    return read_script_group(root, name)
+    existing = read_script_group(root, name)
+    if isinstance(existing, dict) and existing:
+        return existing
+    rec = _keymouse_file_for(root, name)
+    if rec:
+        group = _make_keymouse_script_group(name, rec)
+        write_file(per_user_script_group_path(script_id, user_id, name), group)
+        return group
+    return existing
 
 
 def write_user_script_group(
@@ -781,6 +794,203 @@ def _mas_user_short_id(user_id: str) -> str:
     return short or "user"
 
 
+# BetterGI 键鼠脚本（录制）在一条龙配置组 projects 中的 type 标识（来自用户实导出的配置组）。
+# 用户导出的「录制测试.json」即 ``{"type": "KeyMouse", "name"/"folderName": 录制文件名}`` 的 project。
+_KEY_MOUSE_PROJECT_TYPE = "KeyMouse"
+
+
+def _default_script_group_config() -> dict[str, Any]:
+    """生成一个合法且字段齐全的 BetterGI 配置组 ``config`` 段（缺省兜底）。
+
+    BetterGI 的 ScriptGroup json 的 ``config`` 段字段极多，BGI 加载时会用默认值补齐缺失项，
+    但为稳妥（避免某版本对缺失段报错），这里以用户实导出的录制配置组为模板，给出一套
+    完整可用的默认值。每次调用返回新 dict，避免共享可变引用。
+    """
+    return {
+        "pathingConfig": {
+            "recoverTiming": 0,
+            "enabled": True,
+            "autoPickEnabled": True,
+            "partyName": "",
+            "isVisitStatueBeforeSwitchParty": False,
+            "mainAvatarIndex": "",
+            "guardianAvatarIndex": "",
+            "guardianElementalSkillSecondInterval": "",
+            "guardianElementalSkillLongPress": False,
+            "onlyInTeleportRecover": False,
+            "jsScriptUseEnabled": True,
+            "soloTaskUseFightEnabled": True,
+            "skipDuring": "",
+            "useGadgetIntervalMs": 0,
+            "autoSkipEnabled": True,
+            "autoRunEnabled": True,
+            "autoEatEnabled": False,
+            "autoEatConfig": {
+                "enabled": False,
+                "showNotification": True,
+                "checkInterval": 150,
+                "eatInterval": 1000,
+                "testFoodName": None,
+                "defaultAtkBoostingDishName": "炸萝卜丸子",
+                "defaultAdventurersDishName": None,
+                "defaultDefBoostingDishName": None,
+            },
+            "hideOnRepeat": False,
+            "taskCycleConfig": {
+                "enable": False,
+                "boundaryTime": 0,
+                "isBoundaryTimeBasedOnServerTime": False,
+                "cycle": 1,
+                "index": 1,
+            },
+            "taskCompletionSkipRuleConfig": {
+                "enable": False,
+                "skipPolicy": "GroupPhysicalPathSkipPolicy",
+                "boundaryTime": 4,
+                "isBoundaryTimeBasedOnServerTime": False,
+                "lastRunGapSeconds": -1,
+                "referencePoint": "EndTime",
+            },
+            "preExecutionPriorityConfig": {
+                "enabled": False,
+                "groupNames": "",
+                "maxRetryCount": 1,
+            },
+            "autoFightEnabled": True,
+            "autoFightConfig": {
+                "strategyName": "根据队伍自动选择",
+                "teamNames": "",
+                "fightFinishDetectEnabled": True,
+                "actionSchedulerByCd": "",
+                "onlyPickEliteDropsMode": "Closed",
+                "finishDetectConfig": {
+                    "battleEndProgressBarColor": "",
+                    "battleEndProgressBarColorTolerance": "",
+                    "fastCheckEnabled": False,
+                    "rotateFindEnemyEnabled": False,
+                    "fastCheckParams": "",
+                    "checkAfterSwitchAvatar": False,
+                    "checkEndDelay": "0.4",
+                    "beforeDetectDelay": "0.4",
+                    "rotaryFactor": 12,
+                    "isFirstCheck": False,
+                    "checkBeforeBurst": False,
+                    "skipFightEndCheckWhenEnemyVisible": False,
+                    "blockCheckBeforeBattleSeconds": 0,
+                    "paimonEndCheckEnabled": False,
+                    "paimonEndCheckDelay": 0.2,
+                },
+                "pickDropsAfterFightEnabled": True,
+                "pickDropsAfterFightSeconds": 15,
+                "battleThresholdForLoot": None,
+                "kazuhaPickupEnabled": True,
+                "qinDoublePickUp": False,
+                "guardianAvatar": "",
+                "guardianCombatSkip": False,
+                "skipModel": False,
+                "guardianAvatarHold": False,
+                "burstEnabled": False,
+                "kazuhaPartyName": "",
+                "swimmingEnabled": True,
+                "expBasedPickupEnabled": False,
+                "timeout": 120,
+                "enableCombatTargeting": False,
+                "lockLostWaitTime": 0.5,
+                "targetingDetectionInterval": 50,
+                "damageNumberRecognitionMode": 2,
+                "drawRecognitionResults": True,
+            },
+            "distance": 45,
+            "approachStopDistance": 25,
+            "hurryOnAvatar": "",
+            "hurryOnFrameInterval": 100,
+            "travelMode": "精准靠近",
+            "switchToWalkEnabled": False,
+            "mwkJumpFlyEnabled": True,
+            "mwkJumpFlyDistance": 75,
+            "mwkJumpFlyIntervalSeconds": 1,
+            "mwkDisableSprintEnabled": False,
+            "mwkJumpFlySprintCount": 0,
+        },
+        "shellConfig": {
+            "disable": False,
+            "timeout": 60,
+            "noWindow": True,
+            "output": True,
+        },
+        "enableShellConfig": False,
+    }
+
+
+def _keymouse_file_for(root: Path, name: str) -> str | None:
+    """若 ``name`` 命中 BetterGI KeyMouseScript 目录下的录制文件，返回其完整文件名（含 .json）。
+
+    一条龙 TaskDefinitions 引用录制时用其文件名（含 .json）；这里容错：``name`` 已带
+    ``.json`` 时直接命中，未带时补 ``.json`` 再试。命中则返回用于 project 的 ``name``/
+    ``folderName``（即该文件名），否则返回 ``None``。
+    """
+    km_dir = root / _KEY_MOUSE_SCRIPT_REL_DIR
+    candidate = km_dir / name
+    if candidate.is_file():
+        return name
+    with_json = f"{name}.json" if not name.endswith(".json") else name
+    if (km_dir / with_json).is_file():
+        return with_json
+    return None
+
+
+def _make_keymouse_script_group(name: str, rec_file: str) -> dict[str, Any]:
+    """构造一个仅含单个 KeyMouse 录制项目的配置组 json（供 MAS 物化到 BGI 一条龙）。
+
+    ``name`` 为配置组名（= 一条龙引用的录制文件名，可能含 .json）；``rec_file`` 为录制
+    文件名（project 的 name/folderName，必含 .json）。结构与用户导出的「录制测试.json」一致。
+    """
+    return {
+        "index": 0,
+        "name": name,
+        "config": _default_script_group_config(),
+        "projects": [
+            {
+                "name": rec_file,
+                "folderName": rec_file,
+                "index": 1,
+                "type": _KEY_MOUSE_PROJECT_TYPE,
+                "status": "Enabled",
+                "schedule": "Daily",
+                "runNum": 1,
+                "allowJsNotification": True,
+                "allowJsHTTPHash": "",
+            }
+        ],
+    }
+
+
+def ensure_keymouse_groups(
+    root: Path, script_id: str, user_id: str, names: list[str]
+) -> None:
+    """为队列中引用的录制（KeyMouse）名生成 per-user 配置组副本（含单 KeyMouse 项目）。
+
+    供队列保存与运行时物化前调用；幂等（per-user 副本已存在则跳过）。副本存在后：
+    - 右栏「配置组项目编辑」能读到该录制项目（提前呈现内容，无需等到运行时）；
+    - ``materialize_user_script_groups`` 能据此物化到 BGI 一条龙并改写引用，使录制真正执行。
+
+    录制在 BetterGI 一条龙里只能作为配置组的 ``type=KeyMouse`` project 执行（不能像 JS 脚本
+    那样被一条龙直接引用）；用户导出的「录制测试.json」即包含 ``type=KeyMouse`` 的 project。
+    """
+    for name in names:
+        if not isinstance(name, str) or not name:
+            continue
+        if name in _BUILTIN_ONE_DRAGON_GROUPS:
+            continue
+        copy_path = per_user_script_group_path(script_id, user_id, name)
+        if copy_path.is_file():
+            continue
+        rec = _keymouse_file_for(root, name)
+        if not rec:
+            continue
+        write_file(copy_path, _make_keymouse_script_group(name, rec))
+
+
 def materialize_user_script_groups(
     root: Path,
     script_id: str,
@@ -794,6 +1004,11 @@ def materialize_user_script_groups(
     ``TaskDefinitions`` 中该组引用同步改写为前缀名。BGI 原有同名文件零接触
     （前缀不同绝不覆盖）。无副本的组（引用 BGI 已有配置组 / JS 脚本 / 路径等）
     原样保留名字，交由 BGI 自身解析。
+
+    录制（KeyMouse）特例：一条龙 ``TaskDefinitions`` 引用录制文件名但无 MAS 副本时，
+    自动生成「仅含该录制单 KeyMouse 项目」的配置组副本并物化——录制在 BGI 一条龙里只能作为
+    配置组的 project 执行，不能像 JS 脚本那样被一条龙直接引用；用户导出的「录制测试.json」
+    即 ``type=KeyMouse`` 的 project 结构。
 
     Returns:
         本次物化写入的文件路径列表（供运行结束删除）。
@@ -812,7 +1027,13 @@ def materialize_user_script_groups(
         seen.add(name)
         copy = read_file(per_user_script_group_path(script_id, user_id, name))
         if not (isinstance(copy, dict) and copy):
-            continue  # 无 MAS 副本：引用 BGI 已有组/JS/路径，原样保留
+            # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
+            rec = _keymouse_file_for(root, name)
+            if rec:
+                copy = _make_keymouse_script_group(name, rec)
+                write_file(per_user_script_group_path(script_id, user_id, name), copy)
+            else:
+                continue  # 无副本且非录制：引用 BGI 已有组/JS/路径，原样保留
         prefixed = f"MAS-{_mas_user_short_id(user_id)}-{name}"
         copy["name"] = prefixed
         out_path = root / _SCRIPT_GROUP_REL_DIR / f"{prefixed}.json"
@@ -969,6 +1190,15 @@ def write_user_one_dragon(
                 _wd["default"][_team_key] = party_name
             if auto_boss_strategy_name:
                 _wd["default"]["strategy"] = auto_boss_strategy_name
+
+    # 录制（KeyMouse）引用：确保 per-user 配置组副本存在（含单 KeyMouse 项目），
+    # 使 materialize 能物化、运行时真的执行录制（录制在 BGI 一条龙里只能作为配置组 project）。
+    ensure_keymouse_groups(
+        root,
+        script_id,
+        user_id,
+        [n for n in (slot_config.get("TaskDefinitions") or {}).values() if isinstance(n, str)],
+    )
 
     materialized = materialize_user_script_groups(root, script_id, user_id, slot_config)
 

@@ -28,13 +28,6 @@ permissions:
   contents: write
   actions: write
 
-env:
-  # AUTO-MAS-Project/AUTO-MAS-Runtime 的发布版本，随桌面安装包一起分发。钉死具体版本、不追
-  # latest：Runtime 有自己的发布节奏，本仓库的改动不应该在没有联调的情况下自动带出一个新
-  # Runtime。Runtime 不自更新，只随这里构建的安装包整体升级；本仓库如有依赖 Runtime 新行为
-  # 的改动（T13 系列），必须等 Runtime 一侧先发布对应版本，再手动把这个版本号提上去。
-  RUNTIME_VERSION: v0.1.4
-
 jobs:
 
   build:
@@ -62,19 +55,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # 版本与哈希的唯一来源是 res/runtime.json：它随发布分支进到用户的 repo/ 里，本体更新
+          # 后 Electron 按同一份钉扎把用户机器上的 Runtime 也换成这一版（见
+          # frontend/electron/services/runtimeBinaryService.ts）。所以这里不能另写一个版本号，
+          # 否则安装包捆绑的与用户升级后要求的会是两版，每次启动都白下载一遍。
+          # Runtime 有自己的发布节奏，本仓库依赖其新行为的改动必须等它先发布对应版本，
+          # 再手动把 res/runtime.json 提上去，不追 latest。
+          $pinPath = Join-Path "${{ github.workspace }}" 'res\runtime.json'
+          $pin = Get-Content -Raw -Path $pinPath -Encoding UTF8 | ConvertFrom-Json
+
+          $runtimeVersion = "$($pin.version)".Trim()
+          $pinnedHash = "$($pin.sha256)".Trim().ToUpperInvariant()
+          if ($runtimeVersion -cnotmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+            throw "res/runtime.json 的 version 非法：$runtimeVersion"
+          }
+          if ($pinnedHash -cnotmatch '^[0-9A-F]{64}$') {
+            throw "res/runtime.json 的 sha256 必须是 64 位十六进制：$($pin.sha256)"
+          }
+
           $runtimeDir = Join-Path "${{ github.workspace }}" 'runtime'
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
-          $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
+          $exeName = "auto-mas-runtime-$runtimeVersion.exe"
 
-          gh release download $env:RUNTIME_VERSION `
+          gh release download $runtimeVersion `
             -R AUTO-MAS-Project/AUTO-MAS-Runtime `
             -D $runtimeDir `
             -p $exeName `
             -p 'SHA256SUMS.txt' `
             --clobber
           if ($LASTEXITCODE -ne 0) {
-            throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+            throw "下载 Runtime $runtimeVersion 失败"
           }
 
           Push-Location $runtimeDir
@@ -87,18 +98,24 @@ jobs:
             $expectedHash = ($sumsLine.Line -split '\s+')[0].ToUpperInvariant()
             $actualHash = (Get-FileHash -Path $exeName -Algorithm SHA256).Hash.ToUpperInvariant()
 
+            Write-Host "钉扎哈希: $pinnedHash"
             Write-Host "期望哈希: $expectedHash"
             Write-Host "实际哈希: $actualHash"
 
             if ($actualHash -ne $expectedHash) {
               throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配，可能下载损坏或被篡改"
             }
+            # 再与钉扎值对一次：上一条只证明下到的文件和该 Release 自己的清单一致，钉扎值抄错
+            # 版本时照样通过，而用户侧只认 res/runtime.json 里的这一个哈希。
+            if ($actualHash -ne $pinnedHash) {
+              throw "res/runtime.json 的 sha256 与 $exeName 的实际哈希不一致，请按该 Release 的 SHA256SUMS.txt 更新钉扎"
+            }
 
             # 校验通过后改成稳定文件名，Electron 侧固定按 auto-mas-runtime.exe 定位
             # （见 frontend/electron/services/runtime/launchConfig.ts）。
             Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
             Remove-Item 'SHA256SUMS.txt'
-            Write-Host "Runtime $env:RUNTIME_VERSION 校验通过：$runtimeDir\auto-mas-runtime.exe"
+            Write-Host "Runtime $runtimeVersion 校验通过：$runtimeDir\auto-mas-runtime.exe"
           } finally {
             Pop-Location
           }

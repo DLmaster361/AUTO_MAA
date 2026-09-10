@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .contracts import (
+    NATIVE_RUNTIME_OVERLAY_MARKER,
     ArtifactType,
     is_within,
     project_fingerprint,
@@ -138,7 +139,11 @@ def apply_package_transaction(
     """Apply a package using a durable stage/backup transaction.
 
     The function only removes files previously recorded in the updater-owned
-    project manifest. Unknown user files remain untouched during full updates.
+    project manifest. Unknown user files remain untouched during full updates —
+    except on the very first update of a project the updater never installed,
+    where there is no such manifest and stale files from the previous layout
+    would otherwise break the new version; see
+    :func:`_orphan_paths_without_baseline`.
     """
 
     root = project_path.expanduser().resolve(strict=False)
@@ -212,6 +217,16 @@ def apply_package_transaction(
             _validate_plan_base(root, plan, old_manifest, current)
             if plan.package_type == "full":
                 stale = set(old_manifest.get("files", {})) - set(plan.files)
+                if not old_manifest.get("files"):
+                    orphans = _orphan_paths_without_baseline(root, plan)
+                    if orphans:
+                        preview = ", ".join(sorted(orphans)[:10])
+                        suffix = " ..." if len(orphans) > 10 else ""
+                        send_update_log(
+                            f"MaaFW 项目无基线清单，本次全量更新清理 {len(orphans)} "
+                            f"个旧版残留文件: {preview}{suffix}"
+                        )
+                    stale |= orphans
             else:
                 stale = set(plan.deleted)
             touched = sorted(set(plan.files) | stale)
@@ -576,6 +591,58 @@ def _validate_plan_base(
         source = plan.files.get(relative)
         if source is None or _sha256_file(source) != expected:
             raise UpdateApplyError(f"delta file hash mismatch: {relative}")
+
+
+def _orphan_paths_without_baseline(project_path: Path, plan: PackagePlan) -> set[str]:
+    """没有基线清单时，从磁盘上算出全量包应当清掉的旧版残留。
+
+    正常路径靠更新器自己的清单算 stale：装过一次之后「上一版铺了哪些文件」是已知
+    的，只删这些，用户自己放进项目的文件一概不碰。
+
+    但项目**第一次**被更新时没有这份清单——用户是直接指到一棵已经解压好的目录，
+    那棵树不是更新器铺的（日志里那句「本地无可信更新基线」说的就是这件事）。此时
+    stale 恒为空，全量包退化成纯覆盖：新版删掉或挪走的文件会原地留下。实测
+    MaaYYs v3.10.2 → v3.15.5 把 ``resource_pack/base/pipeline/kun28.json`` 挪进了
+    ``战斗/`` 子目录，旧的那份留在原地，两份都定义顶层节点 ``困28``，MaaFramework
+    直接拒收整个资源包（``key already exists``），项目从此每次运行都失败。
+
+    所以这里只在没有基线时兜底，判据尽量收窄：
+
+    - **只扫包自己铺的顶层目录**。用户数据与运行期产物都放在包不含的顶层目录里
+      （实测 MaaYYs / Maa_bbb / M9A 三个发行包都不含 config、cache、logs、debug、
+      temp），扫描范围天然把它们排除在外。顶层**文件**不扫——覆盖或不覆盖而已，
+      不会变成残留。
+    - 跳过我们自己铺进项目的东西（``.auto_mas`` 开头，如受管项目的原生运行时覆盖
+      层标记）与字节码（由解释器重写，见 :func:`_is_bytecode_artifact`）。
+
+    残留风险说清楚：没有基线时无法区分「旧版本装的」和「用户自己塞进去的」，因此
+    包管辖目录内用户手放的文件也会被清掉。这与全量包本身的语义一致（它就是要把
+    项目换成新版本），删除动作也仍走既有事务——进 touched、先备份、post-validate
+    失败整体回滚。装过这一次之后清单就有了，后续更新走回精确口径。
+    """
+
+    orphans: set[str] = set()
+    package_directories = {
+        relative.split("/", 1)[0] for relative in plan.files if "/" in relative
+    }
+    for name in sorted(package_directories):
+        directory = _project_target(project_path, name)
+        if directory.is_symlink() or not directory.is_dir():
+            continue
+        if (directory / NATIVE_RUNTIME_OVERLAY_MARKER).is_file():
+            # 这层是我们自己铺的原生运行时覆盖层（脱壳项目才有），里面的文件不来自
+            # 发行包，按「包里没有」判会被整层清掉。有标记就整个目录跳过。
+            continue
+        for path in directory.rglob("*"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = safe_relative_path(path.relative_to(project_path).as_posix())
+            if relative in plan.files or _is_bytecode_artifact(relative):
+                continue
+            if any(part.startswith(".auto_mas") for part in relative.split("/")):
+                continue
+            orphans.add(relative)
+    return orphans
 
 
 def _is_bytecode_artifact(relative: str) -> bool:

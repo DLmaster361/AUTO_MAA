@@ -30,5 +30,17 @@ export type BetterGIUserConfig_OneDragon = {
      * 自定义配置组 JSON 列表字符串，元素含 name/enabled
      */
     CustomGroups?: (string | null);
+    /**
+     * 一条龙可视化队列 JSON 数组字符串（按执行顺序），元素为 {kind, name}；kind ∈ builtin/js/pathing/scriptgroup/custom，允许同名重复实例
+     */
+    Queue?: (string | null);
+    /**
+     * 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}；与 Queue 并列，灰度开关 UseExecutionLayer 打开后由执行层直接消费，否则按 Queue 运行
+     */
+    Plan?: (string | null);
+    /**
+     * 是否启用「直连执行层」开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、战斗 4 项直连 BetterGI 原生任务；默认开，但只有用户配置过该组且队列中启用时才接管，其余战斗组仍走原生一条龙
+     */
+    UseExecutionLayer?: (boolean | null);
 };
 

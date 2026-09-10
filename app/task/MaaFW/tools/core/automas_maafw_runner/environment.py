@@ -12,7 +12,7 @@ import sys
 import sysconfig
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -845,6 +845,48 @@ def resolve_project_maafw_requirement(project_path: Path) -> str | None:
     if requirement is None:
         return None
     return _normalize_maafw_requirement(requirement, allow_unconstrained=True)
+
+
+def pin_agent_maafw_requirement(
+    project_path: Path,
+    packages: Sequence[str],
+) -> list[str]:
+    """把 agent 依赖清单里的 maafw 钉成与 runner 加载的原生库同一个版本。
+
+    MaaFW 的 AgentServer（跑在 agent 那一侧）与 AgentClient（跑在 runner 这一侧）
+    之间有协议版本号 ``kProtocolVersion``，跨版本会直接拒绝握手，而在我们这边只
+    表现为连不上。runner 加载的是项目自带的那份原生库（见
+    ``project_maafw_runtime_path``），所以 agent venv 里的 binding 必须跟它一致。
+
+    照抄 ``requirements.txt`` 做不到这件事：实测 46 个发行包里有 4 个写的是无版本
+    约束的 ``maafw`` / ``MaaFw``，pip 会拉到当时的最新版。maafw 5.13.0 于
+    2026-09-07 发布并把协议号从 7 抬到 8，于是这些项目的 agent venv 一旦在那之后
+    重建，就会出现 AgentClient v5.12.3 对 AgentServer v5.13.0，每次运行都连不上。
+
+    解析口径与运行池 venv 完全一致（``resolve_project_maafw_requirement``：自带
+    原生库的实测版本优先于声明），两侧因此不会再岔开。
+
+    **只替换已有的声明，不凭空追加**：没在 requirements.txt 里声明 maafw 的项目，
+    agent 多半不是 Python 的或不用 binding，给它装一个用不上的包没有意义。
+    """
+
+    requirement = resolve_project_maafw_requirement(Path(project_path))
+    if requirement is None:
+        return list(packages)
+
+    pinned: list[str] = []
+    replaced = False
+    for package in packages:
+        declaration = str(package).split(";", 1)[0].strip()
+        if requirement_distribution_name(declaration) != "maafw":
+            pinned.append(package)
+            continue
+        if replaced:
+            # 同名声明只保留一条，重复的丢掉；pip 拿到两条互斥的约束会直接失败。
+            continue
+        pinned.append(requirement)
+        replaced = True
+    return pinned
 
 
 def _normalize_python_constraint(value: str | None) -> str | None:

@@ -293,6 +293,12 @@ def main():
                     from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
 
                     await ArknightWin32Toolkit.init()
+
+                # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
+                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。
+                from app.core.desktop_guard import DesktopGuard
+
+                await DesktopGuard.start()
                 await MainTimer.start()
 
                 # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
@@ -365,6 +371,11 @@ def main():
             await openclaw_weixin_manager.stop()
             await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
+            # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
+            # 会再来收尾这块屏，所以这一步不能省。
+            from app.core.desktop_guard import DesktopGuard
+
+            await DesktopGuard.stop()
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()

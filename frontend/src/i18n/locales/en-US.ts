@@ -3149,11 +3149,11 @@ export default {
     display: {
       section: 'Virtual display',
       intro:
-        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS attaches a virtual display only when there is no real display output at all, and removes it when the run finishes. {driverLink}; MAS does not ship it.',
+        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS keeps watching the desktop: it attaches a virtual display whenever there is no real display output at all, and removes it as soon as a real monitor comes back. If a run is in progress it waits for that run to finish first, so the screen is never pulled out from under a running script. {driverLink}; MAS does not ship it.',
       introDriverLink: 'You must install the Parsec virtual display driver yourself',
       enable: 'Enable virtual display',
       enableTip:
-        'Only attaches one when no real display output is detected; nothing is added while a monitor works normally. It is removed when the run finishes, and if the program is force-killed, the leftover display is cleaned up on the next start.',
+        'Monitored continuously while MAS runs: attached when no real display output is detected, removed once a real monitor comes back (waiting for the current run to finish if one is in progress). Nothing is added while a monitor works normally. If the program is force-killed, the leftover display is cleaned up on the next start.',
       mode: 'Refresh rate',
       modeTip:
         'The resolution is fixed at 1920x1080 — it is the only one Windows shows at 100%, so the game window never goes through DPI scaling. Higher resolutions get scaled up automatically, which brings the problem back. A virtual display only runs scripts, so a high refresh rate buys nothing.',

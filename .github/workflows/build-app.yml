@@ -28,13 +28,6 @@ permissions:
   contents: write
   actions: write
 
-env:
-  # AUTO-MAS-Project/AUTO-MAS-Runtime 的发布版本，随桌面安装包一起分发。钉死具体版本、不追
-  # latest：Runtime 有自己的发布节奏，本仓库的改动不应该在没有联调的情况下自动带出一个新
-  # Runtime。Runtime 不自更新，只随这里构建的安装包整体升级；本仓库如有依赖 Runtime 新行为
-  # 的改动（T13 系列），必须等 Runtime 一侧先发布对应版本，再手动把这个版本号提上去。
-  RUNTIME_VERSION: v0.1.4
-
 jobs:
 
   build:
@@ -52,6 +45,18 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+
+      - name: 读取 Runtime 版本
+        run: |
+          # 从本次构建所选分支读取独立版本文件，不再依赖默认分支中的工作流常量。
+          $runtimeVersionFile = Join-Path '${{ github.workspace }}' 'res\runtime-version.txt'
+          $runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
+          if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+            throw "Runtime 版本格式无效：$runtimeVersion"
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RUNTIME_VERSION=$runtimeVersion" -Encoding utf8
+          Write-Host "本次构建使用 Runtime $runtimeVersion"
+        shell: pwsh
 
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v7.0.0
@@ -366,6 +371,23 @@ jobs:
 
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
+
+      - name: 同步发行版分支到 CNB
+        # 同步失败不该阻断发版：本改动进入默认分支之前，dispatch 会因为默认分支上的
+        # sync-cnb.yml 还没有 workflow_dispatch 而被拒，那时这一步必然报错。
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 上一步用 GITHUB_TOKEN 推分支和 tag，而 GITHUB_TOKEN 造成的 push / create
+          # 不会触发 sync-cnb.yml，CNB 上于是没有当版 release/vX.Y.Z 分支。Runtime 首次
+          # 克隆受管工作区按 [cnb, github] 顺序找这个分支，国内用户在 cnb 上找不到、又
+          # 连不上 github，初始化直接卡死（GIT_CLONE_FAILED）。
+          # workflow_dispatch 是该限制的明确例外，可以用 GITHUB_TOKEN 调起。
+          # 在触发本次构建的分支上 dispatch：sync-cnb 的 checkout 用 fetch-depth: 0，
+          # 本来就会取到全部分支与 tag 再整体镜像过去，跑在哪个分支上都能带上刚推的
+          # 发行版分支。
+          gh workflow run sync-cnb.yml --ref "$GITHUB_REF_NAME"
 
       - name: 发布发行版
         uses: softprops/action-gh-release@v3.0.2

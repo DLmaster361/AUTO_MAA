@@ -1587,6 +1587,10 @@ def _run_with_source_rotation(
 def _clean_process_environment() -> dict[str, str]:
     env = os.environ.copy()
     for name in (
+        # 启动链路（Runtime → uv run → 后端）注入的 venv 指向，交给 uv/pip
+        # 前必须剔除，否则外部 uv 会把项目环境解析到 MAS 的 runtime venv 上
+        "VIRTUAL_ENV",
+        "UV_PROJECT_ENVIRONMENT",
         "PYTHONHOME",
         "PYTHONUSERBASE",
         "PYTHONPATH",

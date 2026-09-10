@@ -55,7 +55,6 @@
           <TaskPipelineSection
             v-model:form-data="formData"
             :loading="loading"
-            :is-plan-mode="isPlanMode"
             :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
             :activity-stage-loading="activityStageLoading"
@@ -849,7 +848,15 @@ const loadActivityStageOptions = async () => {
       return
     }
 
-    const overview = response.data as HomeOverviewResponse
+    const overview = response.data as Partial<HomeOverviewResponse> | undefined
+    if (!overview?.StageByServer) {
+      // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
+      // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
+      logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
+      activityStageError.value = '加载活动关卡失败：返回数据缺少关卡信息'
+      return
+    }
+
     stageOverviewByServer.value = overview.StageByServer
     applyServerStageOptions()
   } catch (error) {

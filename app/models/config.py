@@ -50,7 +50,6 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
     UTC4,
-    UTC8,
 )
 
 from . import schema as schema_model
@@ -1973,7 +1972,10 @@ class HSRUserConfig(ConfigBase):
         # 剩余天数标签
         tags.append(_tag_remained_days(self))
 
-        now = datetime.now(tz=UTC8)
+        # 与 HSRAutoProxyTask._period_markers 同口径：星铁在服务器时间周一 04:00
+        # 重置，UTC+4 的零点正是这一刻。两边必须一致，否则用户列表上的「本周已完成」
+        # 标签会和实际跑不跑这个任务对不上。
+        now = datetime.now(tz=UTC4)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -2479,6 +2481,10 @@ class MaaFWConfig(ConfigBase):
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
+        ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
+        ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
+        self.Game_PackageName = ConfigItem("Game", "PackageName", "")
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
@@ -3191,16 +3197,18 @@ class OkNteUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
-# BetterGI 一条龙内置配置组（按 BetterGI 默认顺序，与 tools/one_dragon.py 保持同步）
+# BetterGI 一条龙内置配置组（MAS 默认顺序，与 tools/one_dragon.py 保持同步）。
+# 「体力作战」为 MAS 前端预留的虚拟项（尚未开展制作，前端默认隐藏，不在此表），
+# 恢复展示后在 initDragonList 插入「合成树脂」之后；此处仅列 BetterGI 官方内置 8 组。
 _BGI_BUILTIN_ONE_DRAGON_GROUPS = [
     "领取邮件",
     "合成树脂",
-    "自动地脉花",
-    "自动秘境",
-    "自动首领讨伐",
     "自动幽境危战",
-    "领取每日奖励",
+    "自动地脉花",
+    "自动首领讨伐",
+    "自动秘境",
     "领取尘歌壶奖励",
+    "领取每日奖励",
 ]
 
 # 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。
@@ -3278,6 +3286,20 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_CustomGroups = ConfigItem(
             "OneDragon", "CustomGroups", "[]", JSONValidator(list)
         )
+        ## 一条龙队列（可视化编排）：JSON 数组字符串，按执行顺序存储，元素为
+        ## {"kind": str, "name": str}（kind ∈ builtin/js/pathing/scriptgroup/custom，
+        ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
+        ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
+        ## （按副本 TaskOrder 相对顺序，不重排）。
+        self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
+        ## 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。
+        ## 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段
+        ## 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。
+        self.OneDragon_Plan = ConfigItem("OneDragon", "Plan", "", StringValidator())
+        ## 是否启用「直连执行层」：战斗 4 项由 MAS 自编排 Plan 驱动（按需求恒开，预留开关）。
+        self.OneDragon_UseExecutionLayer = ConfigItem(
+            "OneDragon", "UseExecutionLayer", True, BoolValidator()
+        )
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）
@@ -3307,6 +3329,7 @@ class BetterGIUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
+
         ## Notify ----------------------------------------------------------
         ## 是否启用用户通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -3353,7 +3376,11 @@ class BetterGIUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append({"text": f"上次：{last_status}", "color": "green"})
 
-        config_name = self.get("Task", "OneDragonConfigName") or "未设置"
+        # 用户独立配置：一条龙固定走「MAS独立配置」槽位（名称冻结），仅直控模式显示所选实配名
+        if self.get("Info", "IfUseMasConfig"):
+            config_name = "MAS独立配置"
+        else:
+            config_name = self.get("Task", "OneDragonConfigName") or "未设置"
         tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
 
         # 剩余天数标签
@@ -3698,8 +3725,281 @@ class BetterGIConfig(ConfigBase):
         super().__init__()
 
 
+class ZzzOdUserConfig(ConfigBase):
+    """绝区零一条龙用户配置（zzz-od 线，MaaEnd 式字段化用户配置）
+
+    用户配置的事实源是本类的 ConfigItem 字段（web 界面直接编辑，走通用
+    updateUser 链路）：Game 区为账号/区服/游戏路径，OneDragon 区为一条龙
+    任务编排（JSON，顺序即执行顺序）。运行时由这些字段生成 game_account.yml
+    与 one_dragon/_group.yml 注入当前活跃实例槽、结束恢复原状（MAS 不留
+    痕迹）。「直控」模式不使用字段配置，直接以 zzz-od 原生配置运行。
+    """
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 配置来源两态（对齐 MaaEnd 简洁/详细）：用户=本配置字段；直控=zzz-od 原生配置
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "用户", OptionsValidator(["用户", "直控"])
+        )
+        ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
+        ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
+        ## 此后配置会话与运行时注入都固定使用该槽
+        self.Info_SlotIdx = ConfigItem(
+            "Info", "SlotIdx", -1, RangeValidator(-1, 999)
+        )
+        ## 一条龙启动器选择（直控/用户两态通用）：
+        ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
+        ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
+        self.Info_LauncherMode = ConfigItem(
+            "Info",
+            "LauncherMode",
+            "自动",
+            OptionsValidator(["自动", "原始", "集成"]),
+        )
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 游戏区服（zzz-od game_account.yml 的 game_region 取值）
+        self.Game_GameRegion = ConfigItem(
+            "Game",
+            "GameRegion",
+            "cn",
+            OptionsValidator(["cn", "cn_b", "us", "eu", "asia", "twhkmo"]),
+        )
+        ## 游戏 exe 完整路径（ZenlessZoneZero.exe）
+        self.Game_GamePath = ConfigItem("Game", "GamePath", "", FileValidator())
+        ## 游戏界面语言
+        self.Game_GameLanguage = ConfigItem(
+            "Game", "GameLanguage", "cn", OptionsValidator(["cn", "en"])
+        )
+        ## 登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）
+        self.Game_Account = ConfigItem("Game", "Account", "")
+        ## 登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）
+        self.Game_Password = ConfigItem("Game", "Password", "", EncryptValidator())
+        ## B服登录账号名
+        self.Game_BilibiliAccountName = ConfigItem("Game", "BilibiliAccountName", "")
+        ## 游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）
+        self.Game_Platform = ConfigItem(
+            "Game", "Platform", "PC", OptionsValidator(["PC"])
+        )
+        ## 是否使用自定义窗口标题
+        self.Game_UseCustomWinTitle = ConfigItem(
+            "Game", "UseCustomWinTitle", False, BoolValidator()
+        )
+        ## 自定义窗口标题
+        self.Game_CustomWinTitle = ConfigItem("Game", "CustomWinTitle", "")
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙任务编排（JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，
+        ## 数组顺序即执行顺序；enabled=false 的任务由 zzz-od 跳过）
+        self.OneDragon_AppList = ConfigItem("OneDragon", "AppList", "[]")
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+        ## 智能启动器模式最近一次成功运行的启动器（""=尚未记录；下次智能优先用它）
+        self.Data_LauncherLastGood = ConfigItem(
+            "Data",
+            "LauncherLastGood",
+            "",
+            OptionsValidator(["", "原始", "集成"]),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 任务报告节点详情的推送模式（运行记录 diff 出的各任务结果）：
+        ## 关闭 = 不采集；逐条 = 逐条带回时间戳；汇总 = 按状态聚合
+        self.Notify_PushLogMode = ConfigItem(
+            "Notify",
+            "PushLogMode",
+            "汇总",
+            OptionsValidator(["关闭", "逐条", "汇总"]),
+        )
+        ## 是否发送用户统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 用户自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append(
+            {
+                "text": f"上次：{last_status}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
+
+        mode = str(self.get("Info", "Mode") or "用户")
+        if mode == "用户":
+            ## 一条龙任务编排仅用户模式消费（直控事实源是原生配置，MAS 字段会失真）
+            try:
+                app_list = json.loads(self.get("OneDragon", "AppList") or "[]")
+            except (TypeError, ValueError):
+                app_list = []
+            if not isinstance(app_list, list):
+                app_list = []
+            enabled_count = sum(
+                1 for item in app_list if isinstance(item, dict) and item.get("enabled")
+            )
+            if enabled_count > 0:
+                tags.append({"text": f"一条龙：{enabled_count} 项", "color": "orange"})
+            else:
+                tags.append({"text": "一条龙：未编排", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class ZzzOdConfig(ConfigBase):
+    """绝区零一条龙配置（zzz-od 线）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新绝区零一条龙脚本")
+        ## zzz-od 安装根目录（含 OneDragon 启动器、src 与 config）
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FolderValidator())
+
+        ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程（任务前启动游戏由此开关总控）
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 任务前由 MAS 启动游戏（检测到游戏进程正在运行时跳过重复启动）
+        self.Game_LaunchBeforeTask = ConfigItem(
+            "Game", "LaunchBeforeTask", False, BoolValidator()
+        )
+        ## 游戏路径（游戏本体 ZenlessZoneZero.exe）
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 启动游戏后的等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 任务结束后由 MAS 关闭游戏（收尾/手动停止时按进程名结束游戏本体，
+        ## 不再委托一条龙 --close-game）
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        ## 多用户账号切换方式（脚本级下拉，value 对应 manager 的分派分支）：
+        ## 单实例切换（默认，推荐）= 逐用户独立会话：注入该用户配置 → 单实例
+        ##   运行（仅运行当前，无槽间切换）→ 跑完关闭 → 下一个用户。失败域
+        ##   隔离最好，重试只重启失败用户；
+        ## 多实例切换（不推荐）= 全部启用用户合并为一轮多账号运行，一条龙内部
+        ##   依次切换账号。总时长最短，但单槽失败会拖整轮重试、切换次数随
+        ##   用户数线性增长；
+        ## MAS切换 = MAS 侧 OCR 操控游戏完成账号切换后交一条龙运行（暂未开放）。
+        self.Game_AccountSwitch = ConfigItem(
+            "Game",
+            "AccountSwitch",
+            "单实例切换",
+            OptionsValidator(["单实例切换", "多实例切换", "MAS切换"]),
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 单次任务重试次数
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是
+        ## 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层
+        ## 日志）也靠它兜底超时后切换启动器
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 40, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([ZzzOdUserConfig])
+
+        super().__init__()
+
+
 class GameSignAccountGroup(ConfigBase):
-    """游戏签到账号组配置"""
+    """游戏社区账号组配置"""
 
     def __init__(self) -> None:
 
@@ -3710,6 +4010,18 @@ class GameSignAccountGroup(ConfigBase):
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceId = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceId", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceFp = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceFp", "", EncryptValidator()
+        )
+        ## GameSignAccount - 云原神 combo token (DPAPI 加密)
+        self.CloudGenshinToken = ConfigItem(
+            "GameSignAccount", "CloudGenshinToken", "", EncryptValidator()
         )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
@@ -3775,6 +4087,10 @@ class ToolsConfig(ConfigBase):
         ## GameSign - 签到后发送通知
         self.GameSign_NotifyEnabled = ConfigItem(
             "GameSign", "NotifyEnabled", False, BoolValidator()
+        )
+        ## GameSign - 启用日常便笺
+        self.GameSign_ActivityEnabled = ConfigItem(
+            "GameSign", "ActivityEnabled", True, BoolValidator()
         )
         ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowStart = ConfigItem(
@@ -3861,14 +4177,14 @@ class ToolsConfig(ConfigBase):
         ]
 
     def game_sign_status(self) -> str:
-        """游戏签到状态标签"""
+        """游戏社区状态标签"""
 
         if not self.get("GameSign", "Enabled"):
             return TagItem(text="未启用", color="gray").model_dump_json()
         return TagItem(text="已启用", color="green").model_dump_json()
 
     def game_sign_result(self) -> str:
-        """游戏签到结果 JSON"""
+        """游戏社区结果 JSON"""
 
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 
@@ -3905,6 +4221,26 @@ class GlobalConfig(ConfigBase):
         ## 是否启用匿名遥测
         self.Function_IfEnableTelemetry = ConfigItem(
             "Function", "IfEnableTelemetry", True, BoolValidator()
+        )
+
+        ## Display ----------------------------------------------------------
+        ## 无人值守时是否允许 MAS 挂载虚拟显示器。
+        ## 所有真实显示输出都断开后 Windows 只保留一块占位的幻影屏，它照旧上报正常的
+        ## 分辨率但背后没有输出；冷启动时更会起在很小的分辨率上，把被托管的 PC 端游戏
+        ## 窗口压小并被游戏写进自己的配置，之后每轮都在同一处失败。挂一块真实的虚拟屏
+        ## 可从源头断掉。
+        ## 需要用户自行安装 Parsec 虚拟显示驱动，MAS 不分发驱动。
+        self.Display_IfEnableVirtualDisplay = ConfigItem(
+            "Display", "IfEnableVirtualDisplay", False, BoolValidator()
+        )
+        ## 虚拟显示器的刷新率（分辨率固定 1920x1080）。
+        ## 分辨率固定是因为只有它 Windows 给 100% 缩放，再高会被自动上缩放，游戏窗口
+        ## 又要面对 DPI 虚拟化。取值必须在驱动 advertise 的模式表里，否则会被 BADMODE 拒绝。
+        self.Display_VirtualDisplayMode = ConfigItem(
+            "Display",
+            "VirtualDisplayMode",
+            "1920x1080@60",
+            OptionsValidator(["1920x1080@60", "1920x1080@30"]),
         )
 
         ## Voice ------------------------------------------------------------
@@ -4123,6 +4459,7 @@ class GlobalConfig(ConfigBase):
                 OkNteConfig,
                 HSRConfig,
                 BetterGIConfig,
+                ZzzOdConfig,
             ]
         )
         ## 队列配置列表
@@ -4231,6 +4568,7 @@ CLASS_BOOK = {
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
     "BetterGI": BetterGIConfig,
+    "ZzzOd": ZzzOdConfig,
 }
 """配置类映射表"""
 

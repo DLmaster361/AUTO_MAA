@@ -48,6 +48,7 @@ from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 from app.utils.platform import IS_WINDOWS
 
 from .adb import parse_adb_devices, resolve_serial
+from .applaunch import AppLaunchMixin, is_package_missing
 from .bosskey import BossKey, read_boss_key
 from .settings import (
     InstanceSettings,
@@ -86,6 +87,17 @@ _INSTANCE_MUTATION_DELAY_SECONDS = 2.0
 _ADB_CACHE_SECONDS = 5.0
 _ADB_QUERY_TIMEOUT = 10
 
+#: 别家模拟器独有的系统应用。装着其中任何一个, 就说明这个序列号背后不是雷电。
+#:
+#: 用「认出别人」而不是「认出自己」: 雷电游戏中心 ``com.android.flysilkworm``
+#: 用户可以卸掉（旧实现还专门 ``pm disable-user`` 过它）, 拿它当雷电的身份证会误伤;
+#: 反过来, MuMu 在自己镜像里一定有这两个包, 认出来就能确定「这台不是雷电」。
+_FOREIGN_MARKER_PACKAGES = ("com.mumu.store", "com.netease.mumu.cloner")
+
+#: 序列号归属的缓存时长。别家模拟器关掉之后端口会回到雷电手上, 不能永久缓存;
+#: 但它也不会几秒一变, 所以比 adb devices 的缓存放宽一些。
+_OWNERSHIP_CACHE_SECONDS = 30.0
+
 
 class BossKeyUnavailableError(RuntimeError):
     """无法确定该实例的老板键，隐藏操作不可用。
@@ -99,18 +111,44 @@ class BossKeyUnavailableError(RuntimeError):
         self.reason = reason
 
 
-class LDPlayer14Manager(LDManager):
+class LDPlayer14Manager(AppLaunchMixin, LDManager):
     """一条雷电 14 安装的管理器。
 
     构造它需要一份**合成的单安装配置**：``Info.Type`` 必须是 ``ldplayer``
     （父类构造函数会校验），``Info.Path`` 必须正好是该安装的 ``ldconsole.exe``——
     实例锁的键就是这个路径 ``resolve().casefold()`` 加原生索引，路径口径不对
     就和旧配置、和设置写入各拿各的锁，配置守卫的回滚时序就挡不住了。
+
+    ``AppLaunchMixin`` 必须排在 ``LDManager`` 前面：带包启动改走
+    「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``launch --packagename``。
     """
 
     #: adb devices 的缓存。放类属性而不是覆写 __init__，免得和父类的构造契约纠缠。
     _adb_cache: list[str] | None = None
     _adb_cache_until: float = 0.0
+
+    #: 序列号 -> (是不是别家的, 缓存到什么时候)。同上放类属性；
+    #: 「谁占着这个端口」本来就是整机的事实，几个管理器实例共用一份反而更对。
+    _ownership_cache: dict[str, tuple[bool, float]] = {}
+
+    async def vendor_launch_app(self, idx: str, package_name: str) -> object:
+        """``ldconsole runapp``。
+
+        与被否掉的 ``launch --packagename`` 不是同一条命令：那条只在冷启动模拟器时
+        生效，这条是对**已经在跑**的实例启动应用。实测 0.06 秒到前台，而雷电镜像里
+        没有 ``monkey``（返回码 127），所以这条在雷电上是主力之一。
+        """
+        return await ProcessRunner.run_process(
+            self.emulator_path,
+            "runapp",
+            "--index",
+            idx,
+            "--packagename",
+            package_name,
+            timeout=self.config.get("Info", "MaxWaitTime"),
+            if_merge_std=True,
+            breakaway=True,
+        )
 
     def read_instance_config(self, idx: str) -> dict | None:
         """只读地取一份 ``leidianN.config``。读不出返回 ``None``。"""
@@ -233,6 +271,61 @@ class LDPlayer14Manager(LDManager):
         self._adb_cache_until = now + _ADB_CACHE_SECONDS
         return serials
 
+    async def _is_foreign_serial(self, serial: str) -> bool:
+        """这个序列号背后连的是不是别家的模拟器。
+
+        **为什么需要这一步。** ``emulator-NNNN`` 是 adb 的全局别名，谁占住回环上的
+        ``5554 + 2N`` 端口就归谁。实测 MuMu 6 除了自己的 ``127.0.0.1:16384``，
+        还会绑 ``127.0.0.1:5555``——正好是雷电 0 号的端口；而雷电绑的是
+        ``0.0.0.0:5555``，Windows 上更具体的绑定赢，回环流量因此进了 MuMu。
+        归属取决于两家的启动顺序，两个方向都实测到过，此时
+        :func:`~.adb.resolve_serial` 照样会把它标成「核对通过」。
+
+        判据用「认出别人」而不是「认出自己」，理由见 :data:`_FOREIGN_MARKER_PACKAGES`。
+        查不动（没有 adb、命令失败）时一律返回 ``False``：拿不准就维持原样，
+        不要凭一次查询失败把一台好设备判死。
+        """
+        now = time.monotonic()
+        cached = self._ownership_cache.get(serial)
+        if cached is not None and now < cached[1]:
+            return cached[0]
+
+        adb_path = self.get_adb_path()
+        if adb_path is None:
+            return False
+
+        foreign = False
+        for package in _FOREIGN_MARKER_PACKAGES:
+            try:
+                result = await ProcessRunner.run_process(
+                    adb_path,
+                    "-s",
+                    serial,
+                    "shell",
+                    "pm",
+                    "path",
+                    package,
+                    timeout=_ADB_QUERY_TIMEOUT,
+                    if_merge_std=True,
+                )
+            except Exception as e:  # noqa: BLE001 - 查不动就不下结论, 见 docstring
+                logger.debug(f"核对 {serial} 的归属失败: {e}")
+                return False
+            if not is_package_missing(str(getattr(result, "stdout", "") or "")):
+                foreign = True
+                break
+
+        self._ownership_cache[serial] = (foreign, now + _OWNERSHIP_CACHE_SECONDS)
+        if foreign:
+            # 只在缓存未命中时说一次：getInfo 会被状态接口反复轮询，
+            # 每轮都记一条会把日志刷满
+            logger.warning(
+                f"ADB 序列号 {serial} 实际连到的是别家模拟器，不能当作雷电实例使用。"
+                f"MuMu 会占用回环 5555 端口，正好是雷电 0 号的端口；"
+                f"请避免与 MuMu 同时运行，或改用 1 号及以后的实例"
+            )
+        return foreign
+
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         """在父类结果之上，把 ADB 地址换成核对过的序列号。
 
@@ -259,13 +352,21 @@ class LDPlayer14Manager(LDManager):
         for native_index, info in result.items():
             others = [i for i in all_indexes if str(i) != str(native_index)]
             outcome = resolve_serial(native_index, serials, others)
-            if outcome.source == "recovered":
+            address = outcome.serial
+
+            if await self._is_foreign_serial(address):
+                # 宁可交白卷也不交错的：把别家的设备当成本实例发出去，后面每一条
+                # adb 操作（连接、装包、启动应用）都会打到另一台模拟器上，
+                # 而日志还显示「核对通过」。原因由 _is_foreign_serial 记一次。
+                address = ""
+            elif outcome.source == "recovered":
                 logger.warning(
                     f"雷电实例 {native_index} 的 ADB 序列号与约定不符，"
-                    f"按实际连接认领为 {outcome.serial}"
+                    f"按实际连接认领为 {address}"
                 )
+
             resolved[native_index] = DeviceInfo(
-                title=info.title, status=info.status, adb_address=outcome.serial
+                title=info.title, status=info.status, adb_address=address
             )
         return resolved
 

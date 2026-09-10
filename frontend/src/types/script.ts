@@ -10,6 +10,7 @@ import type {
   MaaEndConfig,
   M9AConfig,
   BetterGIConfig,
+  ZzzOdConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -34,10 +35,12 @@ export type ScriptType =
   | 'MaaFW'
   | 'HSR'
   | 'BetterGI'
+  | 'ZzzOd'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
 export type BetterGIScriptConfig = BetterGIConfig
+export type ZzzOdScriptConfig = ZzzOdConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -243,6 +246,8 @@ export interface MaaFWScriptConfig {
   Game: {
     LaunchMode: MaaFWLaunchMode
     LaunchPath: string
+    /** 安卓游戏包名，留空则从项目的 pipeline 中自动识别。 */
+    PackageName: string
     Arguments: string
     WaitTime: number
     CloseOnFinish: boolean
@@ -586,6 +591,12 @@ export interface User {
     ServerChanTag: string
     ToAddress: string
   }
+  /** 仅 ZzzOd 用户携带：游戏账号区（标签展示消费 GameRegion/Account/BilibiliAccountName） */
+  Game?: {
+    GameRegion?: 'cn' | 'cn_b' | 'us' | 'eu' | 'asia' | 'twhkmo' | null
+    Account?: string | null
+    BilibiliAccountName?: string | null
+  }
   Task: {
     IfRoguelike: boolean
     IfInfrast: boolean
@@ -632,6 +643,7 @@ export interface AddScriptResponse {
     | MaaFWScriptConfig
     | HSRScriptConfig
     | BetterGIScriptConfig
+    | ZzzOdScriptConfig
 }
 
 // 脚本索引项
@@ -648,6 +660,7 @@ export interface ScriptIndexItem {
     | 'MaaFWConfig'
     | 'HSRConfig'
     | 'BetterGIConfig'
+    | 'ZzzOdConfig'
 }
 
 // 获取脚本API响应
@@ -668,6 +681,7 @@ export interface GetScriptsResponse {
     | MaaFWScriptConfig
     | HSRScriptConfig
     | BetterGIScriptConfig
+    | ZzzOdScriptConfig
   >
 }
 
@@ -687,6 +701,7 @@ export interface ScriptDetail {
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
+    | ZzzOdConfig
   users?: User[]
   createTime?: string
 }

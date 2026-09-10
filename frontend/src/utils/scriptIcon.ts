@@ -9,6 +9,7 @@ import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
+import zzzOdIcon from '@/assets/zzz-od.ico'
 
 const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
   MAA: maaIcon,
@@ -21,6 +22,7 @@ const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
   MaaFW: maafwIcon,
   HSR: hsrIcon,
   BetterGI: bettergiIcon,
+  ZzzOd: zzzOdIcon,
 }
 
 /** Return the host-owned icon for current and legacy persisted script types. */

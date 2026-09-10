@@ -50,7 +50,6 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
     UTC4,
-    UTC8,
 )
 
 from . import schema as schema_model
@@ -1973,7 +1972,10 @@ class HSRUserConfig(ConfigBase):
         # 剩余天数标签
         tags.append(_tag_remained_days(self))
 
-        now = datetime.now(tz=UTC8)
+        # 与 HSRAutoProxyTask._period_markers 同口径：星铁在服务器时间周一 04:00
+        # 重置，UTC+4 的零点正是这一刻。两边必须一致，否则用户列表上的「本周已完成」
+        # 标签会和实际跑不跑这个任务对不上。
+        now = datetime.now(tz=UTC4)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -2479,6 +2481,10 @@ class MaaFWConfig(ConfigBase):
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
+        ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
+        ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
+        self.Game_PackageName = ConfigItem("Game", "PackageName", "")
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
@@ -3952,7 +3958,7 @@ class ZzzOdConfig(ConfigBase):
 
 
 class GameSignAccountGroup(ConfigBase):
-    """游戏签到账号组配置"""
+    """游戏社区账号组配置"""
 
     def __init__(self) -> None:
 
@@ -3963,6 +3969,18 @@ class GameSignAccountGroup(ConfigBase):
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceId = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceId", "", EncryptValidator()
+        )
+        ## GameSignAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)
+        self.MiyousheDeviceFp = ConfigItem(
+            "GameSignAccount", "MiyousheDeviceFp", "", EncryptValidator()
+        )
+        ## GameSignAccount - 云原神 combo token (DPAPI 加密)
+        self.CloudGenshinToken = ConfigItem(
+            "GameSignAccount", "CloudGenshinToken", "", EncryptValidator()
         )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
@@ -4028,6 +4046,10 @@ class ToolsConfig(ConfigBase):
         ## GameSign - 签到后发送通知
         self.GameSign_NotifyEnabled = ConfigItem(
             "GameSign", "NotifyEnabled", False, BoolValidator()
+        )
+        ## GameSign - 启用日常便笺
+        self.GameSign_ActivityEnabled = ConfigItem(
+            "GameSign", "ActivityEnabled", True, BoolValidator()
         )
         ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
         self.GameSign_WindowStart = ConfigItem(
@@ -4114,14 +4136,14 @@ class ToolsConfig(ConfigBase):
         ]
 
     def game_sign_status(self) -> str:
-        """游戏签到状态标签"""
+        """游戏社区状态标签"""
 
         if not self.get("GameSign", "Enabled"):
             return TagItem(text="未启用", color="gray").model_dump_json()
         return TagItem(text="已启用", color="green").model_dump_json()
 
     def game_sign_result(self) -> str:
-        """游戏签到结果 JSON"""
+        """游戏社区结果 JSON"""
 
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 

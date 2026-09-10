@@ -56,9 +56,11 @@ from typing import Any
 import psutil
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.task.general.tools import execute_script_task
@@ -780,6 +782,9 @@ class AutoProxyTask(TaskExecuteBase):
                 paths=[self.script_log_path],
                 sink=self._route_push_log,
                 start_from_end=True,
+                # zzz-od 跨零点把 log.txt 滚动为 log.txt.YYYY-MM-DD（内容日期
+                # 式命名）：声明模板让轮转补偿在 inode 不可用的文件系统上也命中
+                rotated_name=f"{self.script_log_path.name}.%Y-%m-%d",
             )
             self.log_collect.open()
             for rule in ZZZOD_PUSH_RULES:
@@ -825,10 +830,10 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     for warning in self._guard_warnings:
                         await self._push_dispatch_log(warning)
-                        await Config.send_websocket_message(
+                        await Publisher.send(
                             id=self.task_info.task_id,
-                            type="Info",
-                            data={"Error": warning},
+                            type=protocol.TASK_NOTICE,
+                            data=WSTaskNoticeData(level="error", message=warning),
                         )
                 else:
                     # 单实例切换：仅当前用户（逐用户循环）
@@ -988,8 +993,14 @@ class AutoProxyTask(TaskExecuteBase):
                     break
 
                 # 自动模式：启动器未能启动（无应用层日志且运行记录无变化）时，
-                # 自动切换到另一启动器并占用下一轮重试
+                # 自动切换到另一启动器并占用下一轮重试。切换会先改写
+                # launcher_exe_path，中止残留进程必须用切换前的旧路径显式传入
+                # （如卡在「按回车键退出」的错误提示），否则下一轮 open_process
+                # 会因进程管理器仍被占用而抛「无法同时管理多个进程」，切换永远
+                # 不会真正发生
+                stale_launcher_path = self.launcher_exe_path
                 if await self._maybe_switch_launcher(log):
+                    await self.kill_managed_process(exe_path=stale_launcher_path)
                     continue
 
                 logger.warning(
@@ -1418,10 +1429,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.wait_event is not None:
             self.wait_event.set()
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"ZZZ-OD 自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"ZZZ-OD 自动代理任务出现异常: {e}"),
             )
         with suppress(Exception):
             await self.kill_managed_process(kill_game=self._mas_should_close_game())
@@ -1446,11 +1457,15 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception:
             pass
 
-    async def kill_managed_process(self, kill_game: bool = False) -> None:
+    async def kill_managed_process(
+        self, kill_game: bool = False, exe_path: Path | None = None
+    ) -> None:
         """中止 ZZZ-OD 启动器进程；kill_game 为真时由 MAS 结束游戏进程。
 
         游戏由启动器拉起、可能不在启动器进程树内（进程管理器跟踪不到），
         按进程名结束——手动停止调度时同样收尾游戏，不依赖一条龙 --close-game。
+        exe_path 显式指定按路径兜底结束的目标，默认当前 launcher_exe_path；
+        切换启动器后旧进程仍在时，必须传切换前的旧路径。
         """
 
         if self.launcher_process_manager is not None:
@@ -1460,9 +1475,10 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.opt(exception=True).warning(
                     f"通过进程管理器中止 ZZZ-OD 进程失败: {e}"
                 )
-        if self.launcher_exe_path is not None:
+        fallback_path = exe_path if exe_path is not None else self.launcher_exe_path
+        if fallback_path is not None:
             try:
-                await System.kill_process(self.launcher_exe_path)
+                await System.kill_process(fallback_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 ZZZ-OD 主进程失败: {e}")
         if kill_game:

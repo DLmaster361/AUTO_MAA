@@ -583,8 +583,9 @@ class ToolsConfig_ArknightsPC(BaseModel):
 
 
 class ToolsConfig_GameSign(BaseModel):
-    Enabled: bool | None = Field(default=None, description="是否启用游戏签到")
+    Enabled: bool | None = Field(default=None, description="是否启用游戏社区")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
+    ActivityEnabled: bool | None = Field(default=None, description="是否启用日常便笺")
     WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
     WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
     RunOnStartup: bool | None = Field(default=None, description="启动时运行")
@@ -597,18 +598,33 @@ class ToolsConfig_GameSign(BaseModel):
 
 
 class GameSignAccountGroupConfig(BaseModel):
-    """游戏签到账号组配置"""
+    """游戏社区账号组配置"""
 
     Name: str | None = Field(default=None, description="账号组名称")
     Enabled: bool | None = Field(default=None, description="是否启用")
     MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
+    MiyousheDeviceId: str | None = Field(
+        default=None,
+        description="米游社安卓设备 ID，仅用于绝区零便笺",
+        repr=False,
+    )
+    MiyousheDeviceFp: str | None = Field(
+        default=None,
+        description="米游社安卓设备指纹，仅用于绝区零便笺",
+        repr=False,
+    )
+    CloudGenshinToken: str | None = Field(
+        default=None,
+        description="云原神 combo token",
+    )
     KuroToken: str | None = Field(default=None, description="库街区登录凭证")
     SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
     TaygedoToken: str | None = Field(default=None, description="塔吉多及云异环登录凭证")
+    LastSignDate: str | None = Field(default=None, description="账号组上次签到日期")
 
 
 class GameSignAccountCreateOut(OutBase):
-    """游戏签到账号组创建响应"""
+    """游戏社区账号组创建响应"""
 
     accountId: str = Field(default="", description="账号组 UUID")
     data: GameSignAccountGroupConfig = Field(
@@ -617,34 +633,114 @@ class GameSignAccountCreateOut(OutBase):
 
 
 class GameSignAccountGetIn(BaseModel):
-    """游戏签到账号组查询请求"""
+    """游戏社区账号组查询请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
 
 
-class GameSignAccountsListOut(OutBase):
-    """游戏签到账号组列表响应"""
+class GameSignAccountInstanceOut(BaseModel):
+    """游戏社区账号组顺序项。"""
 
-    data: Dict[str, Any] = Field(default_factory=dict, description="账号组列表")
+    uid: str = Field(..., description="账号组 UUID")
+    type: str = Field(..., description="账号组配置类型")
+
+
+class GameSignAccountDataOut(BaseModel):
+    """动态 UUID 键对应的游戏社区账号组数据。"""
+
+    GameSignAccount: GameSignAccountGroupConfig = Field(
+        ..., description="账号组配置"
+    )
+
+
+class GameSignAccountsListOut(OutBase):
+    """游戏社区账号组列表响应"""
+
+    data: Dict[
+        str,
+        list[GameSignAccountInstanceOut] | GameSignAccountDataOut,
+    ] = Field(default_factory=dict, description="账号组列表")
 
 
 class GameSignAccountUpdateIn(BaseModel):
-    """游戏签到账号组更新请求"""
+    """游戏社区账号组更新请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
     data: GameSignAccountGroupConfig = Field(..., description="账号组配置")
 
 
 class GameSignAccountDeleteIn(BaseModel):
-    """游戏签到账号组删除请求"""
+    """游戏社区账号组删除请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
 
 
 class GameSignAccountReorderIn(BaseModel):
-    """游戏签到账号组排序请求"""
+    """游戏社区账号组排序请求"""
 
     order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
+class CommunityActivityQueryIn(BaseModel):
+    """游戏社区日常查询请求。"""
+
+    accountIds: list[str] | None = Field(
+        default=None,
+        description="指定账号组 UUID 列表；为空时查询全部已配置账号组",
+    )
+
+
+class CommunityActivityTaskOut(BaseModel):
+    """日常活动中的单项任务。"""
+
+    name: str = Field(..., description="任务名称")
+    completed: int = Field(..., description="已完成数量")
+    target: int = Field(..., description="目标数量")
+    status: str = Field(..., description="任务状态")
+    period: str = Field(default="daily", description="任务周期")
+
+
+class CommunityActivityResourceOut(BaseModel):
+    """日常活动中的可用资源。"""
+
+    name: str = Field(..., description="资源名称")
+    current: int = Field(..., description="当前数量")
+    target: int = Field(..., description="容量上限")
+    status: str = Field(..., description="资源状态")
+
+
+class CommunityActivitySnapshotOut(BaseModel):
+    """单个游戏角色的日常活动快照。"""
+
+    account: str = Field(..., description="账号组名称")
+    accountUid: str = Field(..., description="账号组 UUID")
+    game: str = Field(..., description="游戏名称")
+    platform: str = Field(..., description="社区平台名称")
+    status: Literal[
+        "success", "empty", "limited", "unavailable", "failed"
+    ] = Field(..., description="活动查询状态")
+    completed: int | None = Field(default=None, description="已完成数量")
+    target: int | None = Field(default=None, description="目标数量")
+    tasks: list[CommunityActivityTaskOut] = Field(
+        default_factory=list, description="每日任务"
+    )
+    resources: list[CommunityActivityResourceOut] = Field(
+        default_factory=list, description="可用资源"
+    )
+    reason: str = Field(default="", description="失败或受限原因")
+    updatedAt: str = Field(default="", description="查询时间")
+    roleName: str = Field(default="", description="角色名称")
+    roleUid: str = Field(default="", description="角色 UID")
+    server: str = Field(default="", description="角色区服")
+    source: str = Field(default="", description="已确认的数据来源路径")
+
+
+class CommunityActivityOut(OutBase):
+    """游戏社区日常活动查询响应。"""
+
+    data: list[CommunityActivitySnapshotOut] = Field(
+        default_factory=list, description="按账号和游戏拆分的活动快照"
+    )
 
 
 class TaygedoLoginIn(BaseModel):
@@ -653,14 +749,6 @@ class TaygedoLoginIn(BaseModel):
     accountId: str = Field(..., description="账号组 UUID")
     phone: str = Field(..., min_length=1, description="塔吉多账号或手机号")
     password: SecretStr = Field(..., min_length=1, description="塔吉多账号密码")
-
-
-class SklandLoginIn(BaseModel):
-    """森空岛一次性手机号密码登录请求。"""
-
-    accountId: str = Field(..., description="账号组 UUID")
-    phone: str = Field(..., min_length=1, description="鹰角网络通行证手机号")
-    password: SecretStr = Field(..., min_length=1, description="鹰角网络通行证密码")
 
 
 class ToolsConfig(BaseModel):
@@ -2828,6 +2916,10 @@ class MaaFWConfig_Game(BaseModel):
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
     )
+    PackageName: Optional[str] = Field(
+        default=None,
+        description="安卓游戏包名，留空则从项目的 pipeline 中自动识别",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
@@ -4452,7 +4544,10 @@ class UpdateCheckIn(BaseModel):
 class UpdateCheckOut(OutBase):
     if_need_update: bool = Field(..., description="是否需要更新前端")
     latest_version: str = Field(..., description="最新前端版本号")
-    update_info: Dict[str, List[str]] = Field(..., description="版本更新信息字典")
+    update_info: Dict[str, Dict[str, List[str]]] = Field(
+        ...,
+        description="版本更新信息：版本号 -> 分类 -> 条目，只含比当前版本新的版本段，按版本号降序",
+    )
 
 
 # ============== 日志模式调试相关模型 ==============

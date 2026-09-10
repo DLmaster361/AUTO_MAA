@@ -56,6 +56,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
 )
 from app.utils import get_logger
+from app.utils.paths import SOURCE_ROOT
 from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -1168,8 +1169,9 @@ async def prepare_maafw_agent_env(
                 interface,
                 runtime_pool_root=route.root,
                 runtime_pool_id=route.pool_id,
-                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
-                import_paths=[Path.cwd()],
+                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+                import_paths=[SOURCE_ROOT],
                 send_log=append_log,
                 progress=publish_progress,
             )

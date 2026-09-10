@@ -31,9 +31,10 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessInfo, ProcessManager, get_logger
@@ -260,10 +261,10 @@ class ScriptConfigTask(TaskExecuteBase):
         with suppress(Exception):
             restore_instance_view(self.root_path)
         self._restore_native_active()
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"zzz-od 设置任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"zzz-od 设置任务出现异常: {e}"),
         )
 
     async def _kill_processes(self) -> None:

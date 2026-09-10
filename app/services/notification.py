@@ -282,7 +282,14 @@ class Notification:
 
         await openclaw_qq_manager.send(title=title, content=content)
 
-    async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
+    async def WebhookPush(
+        self,
+        title: str,
+        content: str,
+        webhook: Webhook,
+        *,
+        image_base64: str = "",
+    ) -> None:
         """
         Webhook 推送通知
 
@@ -294,6 +301,8 @@ class Notification:
             通知内容
         webhook: Webhook
             Webhook配置对象
+        image_base64: str, optional
+            可选图片的纯 Base64 数据，供 OneBot 等协议使用
         """
         if not webhook.get("Info", "Enabled"):
             return
@@ -313,6 +322,7 @@ class Notification:
             template_vars = {
                 "title": title,
                 "content": content,
+                "image_base64": image_base64,
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "time": datetime.now().strftime("%H:%M:%S"),
@@ -331,6 +341,18 @@ class Notification:
                 # 递归替换JSON对象中的变量
                 def replace_variables(obj):
                     if isinstance(obj, dict):
+                        # 普通任务报告没有图片时，OneBot 图片模板仍需投递可读正文。
+                        if (
+                            not image_base64
+                            and obj.get("type") == "image"
+                            and isinstance(obj.get("data"), dict)
+                            and obj["data"].get("file")
+                            == "base64://{image_base64}"
+                        ):
+                            return {
+                                "type": "text",
+                                "data": {"text": f"{title}\n\n{content}"},
+                            }
                         return {k: replace_variables(v) for k, v in obj.items()}
                     elif isinstance(obj, list):
                         return [replace_variables(item) for item in obj]

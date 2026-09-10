@@ -9,6 +9,7 @@ import {
   MirrorLookup,
   RUNTIME_TAKEOVER_MESSAGE,
   RuntimeInitializationService,
+  describeRuntimeFailureDetails,
   emitDevelopmentSkipProgress,
   mapDoctorChecksToCriticalFiles,
   mapMirrorSelection,
@@ -246,6 +247,43 @@ describe('阶段映射', () => {
     expect(unmapped).toEqual(['bootstrap'])
     expect(stages).toContain('dependencies.sync')
     expect(stages).toContain('workspace.clone')
+  })
+})
+
+describe('失败 details 摘要', () => {
+  it('没有可打的键时返回空串', () => {
+    expect(describeRuntimeFailureDetails({})).toBe('')
+  })
+
+  // UPDATE_STATE_AMBIGUOUS 在 Runtime 侧有二十来个抛出点，只有 reason 分得清是哪一个。
+  it('保留 reason 这类定位字段', () => {
+    expect(describeRuntimeFailureDetails({ reason: 'prepared_update_missing' })).toBe(
+      ' details={"reason":"prepared_update_missing"}'
+    )
+  })
+
+  it('logPath / stderr / checks 已由别处取用，不重复进这一行', () => {
+    expect(
+      describeRuntimeFailureDetails({
+        logPath: 'D:\\AUTO-MAS\\logs\\runtime\\bootstrap.log',
+        stderr: 'No pyvenv.cfg file',
+        checks: [{ id: 'venv' }],
+      })
+    ).toBe('')
+  })
+
+  it('保留镜像轮换的 attempts', () => {
+    const text = describeRuntimeFailureDetails({
+      attempts: [{ source: 'cnb', outcome: 'switch_source', failureKind: 'branch_missing' }],
+    })
+    expect(text).toContain('cnb')
+    expect(text).toContain('branch_missing')
+  })
+
+  it('超长 details 截断而不是整条塞进日志', () => {
+    const text = describeRuntimeFailureDetails({ blob: 'x'.repeat(5000) })
+    expect(text.length).toBeLessThan(1100)
+    expect(text).toContain('已截断')
   })
 })
 

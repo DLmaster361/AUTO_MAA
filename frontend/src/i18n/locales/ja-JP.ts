@@ -24,6 +24,9 @@ export default {
     unknown: '不明',
   },
   comp: {
+    changelog: {
+      empty: 'このバージョンの更新履歴はまだありません',
+    },
     editUser: 'ユーザーを編集',
     addUser2: 'ユーザーを追加',
     enabled: 'オン',
@@ -72,7 +75,7 @@ export default {
     moduleName: 'モジュール名',
     emulators: 'エミュレータ',
     testRoute: 'テストルート',
-    checkIns: 'ログインボーナス',
+    checkIns: 'ゲームコミュニティ',
     port: 'ポート',
     portNumber: 'ポート番号',
     warning: '警告',
@@ -865,6 +868,10 @@ export default {
     masManagedConfigurationOff: 'MAS 管理の設定は無効になっています',
     masManagesGame: 'MAS がゲームを管理',
     mfwAdbControllerUses: 'MFW の ADB controller はこのエミュレータ設定を使います',
+    mfwGamePackageName: 'ゲームのパッケージ名',
+    mfwGamePackageNamePassed:
+      'エミュレータ起動と同時にゲームを起動します。空欄ならプロジェクトの pipeline から自動判別し、判別できない場合や候補が複数ある場合は起動しません。ここに手動で入力できます',
+    mfwGamePackageNamePlaceholder: '空欄で自動判別、例: com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',
@@ -1638,7 +1645,8 @@ export default {
     searchAndAdd: '自動検索して追加',
     removePath: 'パスを削除',
     slotRange: 'デバイス番号 {slots}',
-    deviceHint: '各インストールのインスタンスをまとめた一覧です。スクリプトはデバイス番号で紐付けます。',
+    deviceHint:
+      '各インストールのインスタンスをまとめた一覧です。スクリプトはデバイス番号で紐付けます。',
     refresh: '更新',
     colSource: '取得元',
     colSlot: 'デバイス番号',
@@ -1713,8 +1721,7 @@ export default {
     deleteWarning:
       'デバイス {slot} は一覧から消え、{count} 個のスクリプトに影響します。この番号が他のインスタンスに再割り当てされることはないため、紐づいていたスクリプトはデバイスを選び直してください。',
     addTitle: 'エミュレーターを追加',
-    addHint:
-      'LDPlayer 14 と MuMu 6 に対応しています。他のバージョンは旧設定から追加できます。',
+    addHint: 'LDPlayer 14 と MuMu 6 に対応しています。他のバージョンは旧設定から追加できます。',
     add: '追加',
     removeTitle: 'エミュレーターのパスを削除',
     removeWarning:
@@ -1778,7 +1785,45 @@ export default {
     },
   },
   gamesign: {
-    title: 'ゲームログインボーナス',
+    title: 'ゲームコミュニティ',
+    nav: {
+      sign: 'チェックイン',
+      activity: 'デイリーノート',
+    },
+    activity: {
+      title: 'デイリーノート',
+      queriedAt: '{time} に照会',
+      refresh: 'デイリーノートを更新',
+      queryFailed: 'デイリーノートを取得できませんでした',
+      empty: '表示できるデイリーノートはありません',
+      drag: 'ドラッグして並べ替え',
+      dailyProgress: 'デイリー状況',
+      tasks: 'デイリー任務',
+      noteTasks: '任務と定期項目',
+      weeklyTasks: '週間・定期項目',
+      resources: '利用可能なリソース',
+      roleUid: 'UID {uid}',
+      noRole: 'キャラクター未連携',
+      status: {
+        success: '取得済み',
+        empty: 'キャラクターなし',
+        limited: '制限中',
+        unavailable: '利用不可',
+        failed: '失敗',
+        unknown: '不明',
+      },
+      platform: {
+        skland: '森空島',
+        miyoushe: 'HoYoLAB 中国版',
+      },
+      game: {
+        arknights: 'アークナイツ',
+        endfield: 'アークナイツ：エンドフィールド',
+        genshin: '原神',
+        starrail: '崩壊：スターレイル',
+        zenless: 'ゼンレスゾーンゼロ',
+      },
+    },
     statusInvalid: 'ログインボーナスの状態レスポンスが不正です',
     resultInvalid: 'ログインボーナスの結果レスポンスが不正です',
     signStatus: {
@@ -1791,15 +1836,17 @@ export default {
     defaultUserName: 'ユーザー',
     newUserName: 'ユーザー {n}',
     section: {
-      settings: 'ログインボーナス設定',
+      settings: 'コミュニティ設定',
       signAll: 'すべて受け取る',
       noticeTitle: '機能の説明とプライバシーについて',
-      toolDesc: 'このツールは各コミュニティの認証情報を管理し',
+      toolDesc:
+        'ゲームコミュニティツールは各コミュニティの認証情報を管理し、起動時・スケジュール実行時・手動実行時にチェックインします。',
       privacyNotice:
-        'アカウントとパスワードによるトークン取得では、どちらも保存されません。入力した情報はそのログイン要求のあいだメモリ上にのみ存在し、完了または失敗した時点で破棄されます。設定・ログ・通知のいずれにも書き込まれません。',
-      enable: 'ログインボーナス機能を有効にする',
-      enableDesc:
-        'MAS のスケジュールに従って受け取ります。手動実行は 1 日 1 回の制限を受けません。',
+        'QR またはパスワードでトークンを取得する際、アカウント・電話番号・パスワードは保存されません。パスワードは現在の要求中にのみ存在し、設定・ログ・通知には書き込まれません。',
+      enable: 'コミュニティツールを有効にする',
+      enableDesc: 'MAS のタスクスケジュールに従ってコミュニティのチェックインを実行します。',
+      activityEnable: 'デイリーノートを有効にする',
+      activityEnableDesc: 'ゲームごとのデイリー情報を表示します。オフにすると照会しません。',
       notify: '結果を通知する',
       notifyDesc: '設定済みの通知チャンネルに結果を送信します',
       runOnStartup: '起動時に受け取る',
@@ -1813,7 +1860,7 @@ export default {
       add: 'ユーザーを追加',
       colName: 'ユーザー名',
       colEnabled: '有効',
-      colTags: 'コミュニティ別の受取状況',
+      colTags: '各コミュニティの状態',
       colActions: '操作',
       drag: 'ドラッグして並び替え',
       tooltipTitle: '{platform} — 受取の詳細',
@@ -1841,32 +1888,31 @@ export default {
     },
     login: {
       taygedoTitle: 'Taygedo のトークンをアカウントとパスワードで取得',
-      sklandTitle: 'Skland のトークンをアカウントとパスワードで取得',
       disclaimerTitle: 'アカウント・パスワード利用に関する注意',
       currentAccount: '対象アカウント',
       taygedoAccount: 'アカウントまたは電話番号',
       taygedoAccountPlaceholder: 'Taygedo のアカウントまたは電話番号を入力してください',
       password: 'パスワード',
       taygedoPasswordPlaceholder: 'Taygedo のパスワードを入力してください',
-      sklandPhone: '電話番号',
-      sklandPhonePlaceholder: 'Hypergryph 通行証の電話番号を入力してください',
-      sklandPasswordPlaceholder: 'Hypergryph 通行証のパスワードを入力してください',
       submit: 'トークンを取得して保存',
     },
     qr: {
       title: '米游社 QR ログイン',
+      sklandTitle: '森空島 QR ログイン',
       alt: 'QR ログイン',
       hint: '米游社アプリを開き、左上のスキャンから上の QR コードを読み取ってください',
+      sklandHint: '森空島アプリを開き、スキャンから上の QR コードを読み取ってください',
+      sklandWaiting: '森空島アプリで QR コードを読み取ってください',
       retry: 'QR コードを再生成',
       responseInvalid: 'QR コードの状態レスポンスが不正です。更新してからお試しください',
       expired: 'QR コードの有効期限が切れました。更新してから読み取り直してください',
-      noCookie:
-        '読み取りは確認されましたが、有効な認証 Cookie を取得できませんでした。QR コードを再生成してください',
+      noCookie: '読み取りは確認されましたが、ログイン処理から完全な認証情報を取得できませんでした',
       saving: '認証情報を保存しています...',
       saveTokenFailed: 'トークンを保存できませんでした',
       scannedButSaveFailed: '読み取りには成功しましたが、トークンを保存できませんでした',
       success: 'ログインしました。トークンを自動入力しました',
       loginSuccess: '米游社 QR ログインに成功しました',
+      sklandLoginSuccess: '森空島 QR ログインに成功しました',
       queryFailed: '状態を取得できませんでした',
       scanned: '読み取り済みです。確認をお待ちください...',
       cancelled: 'ログインをキャンセルしました',
@@ -1885,6 +1931,8 @@ export default {
       reorderFailed: '並び替えを保存できませんでした',
       reorderError: '並び替えを保存できませんでした：{error}',
       tokenSaved: 'トークンを保存しました',
+      miyousheDevicePairRequired:
+        '米游社の端末 ID と端末フィンガープリントは、両方を入力するか両方を空にしてください',
       needTaygedoCredential: 'Taygedo のアカウントとパスワードを入力してください',
       needSklandCredential: 'Skland の電話番号とパスワードを入力してください',
       autoSignRunning: '自動受け取りが実行中です。しばらくしてからお試しください',
@@ -1892,6 +1940,7 @@ export default {
       signPartialNotify: '受け取りは完了しましたが、一部の通知を送信できませんでした',
       signDone: '受け取りが完了しました',
       signError: '受け取りに失敗しました: {error}',
+      externalLinkFailed: '外部リンクを開けませんでした。しばらくしてからお試しください',
     },
   },
   history: {
@@ -2221,6 +2270,7 @@ export default {
     input: '入力',
     couldNotPickLaunch: '起動する exe を選択できませんでした',
     qqDirectMessageOver: 'OneBot HTTP API 経由で QQ のダイレクトメッセージを送信',
+    qqDirectMessageOverImage: 'OneBot HTTP API 経由で QQ の画像ダイレクトメッセージを送信',
     notifyGetRequest: 'GET リクエストで通知を送信',
     restartApp: 'アプリを再起動',
     couldNotReorder: '並び替えを保存できませんでした',
@@ -2850,7 +2900,8 @@ export default {
     display: {
       section: '仮想ディスプレイ',
       intro:
-        '実際の映像出力がすべて失われると、Windows はプレースホルダーの幻影ディスプレイだけを残します。見かけ上は正常な解像度を報告しますが、実際には何も出力しておらず、ゲームの描画も画面キャプチャも信頼できません。出力が無い状態でのコールドブートはさらに厄介で、非常に低い解像度で起動し、縮んだウィンドウサイズがゲームに記憶されます。有効にすると、MAS は「実際の映像出力が一つも無い」場合にだけ仮想ディスプレイを一時的に接続し、タスク終了時に取り外します。Parsec 仮想ディスプレイドライバーは各自でインストールしてください。MAS には同梱されていません。',
+        '実際の映像出力がすべて失われると、Windows はプレースホルダーの幻影ディスプレイだけを残します。見かけ上は正常な解像度を報告しますが、実際には何も出力しておらず、ゲームの描画も画面キャプチャも信頼できません。出力が無い状態でのコールドブートはさらに厄介で、非常に低い解像度で起動し、縮んだウィンドウサイズがゲームに記憶されます。有効にすると、MAS は「実際の映像出力が一つも無い」場合にだけ仮想ディスプレイを一時的に接続し、タスク終了時に取り外します。{driverLink}。MAS には同梱されていません。',
+      introDriverLink: 'Parsec 仮想ディスプレイドライバーは各自でインストールしてください',
       enable: '仮想ディスプレイを有効化',
       enableTip:
         '実際の映像出力を検出できないときだけ接続します。モニターが正常に動作していれば追加しません。タスク終了時に取り外し、プログラムが強制終了された場合は次回起動時に残ったディスプレイを片付けます。',
@@ -2867,9 +2918,11 @@ export default {
       checkPassed: '診断に合格しました',
       checkIssue: '診断に合格しませんでした',
       monitors: '診断時のモニター',
-      download: 'Parsec 仮想ディスプレイドライバーをダウンロード',
-      driverUnavailable: '利用可能な仮想ディスプレイドライバーを検出できません（{reason}）。スイッチは操作できません',
-      enabledButUnavailable: 'スイッチは有効ですが、利用可能なドライバーを検出できません（{reason}）。この機能は動作しません',
+      download: 'Parsec 仮想ディスプレイドライバーをダウンロード（GitHub）',
+      driverUnavailable:
+        '利用可能な仮想ディスプレイドライバーを検出できません（{reason}）。スイッチは操作できません',
+      enabledButUnavailable:
+        'スイッチは有効ですが、利用可能なドライバーを検出できません（{reason}）。この機能は動作しません',
       stage: {
         installed: 'ドライバー導入',
         openable: 'ドライバー呼び出し',
@@ -3035,6 +3088,8 @@ export default {
       copyVersion: 'バージョン：{version}',
       copyBackendDate: 'バックエンドの日付：{date}',
       copyBackendHash: 'バックエンドのハッシュ：{hash}',
+      viewChangelog: '更新履歴',
+      changelogTitle: '{version} の更新履歴',
     },
     tray: {
       section: 'トレイメニューのカスタマイズ',

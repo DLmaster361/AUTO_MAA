@@ -14,6 +14,7 @@ import {
 } from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
+import type { ChangelogData } from '@/utils/changelog'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
@@ -37,7 +38,7 @@ const fileSize = ref(0)
 const speed = ref(0)
 const failureReason = ref('')
 const latestVersion = ref('')
-const updateData = ref<Record<string, string[]>>({})
+const updateData = ref<ChangelogData>({})
 
 let subscriptionIds: string[] = []
 let disposeConnectedListener: (() => void) | null = null
@@ -296,7 +297,7 @@ export function disposeUpdateDownloadSubscriptions(): void {
   stopRuntimeMonitoring()
 }
 
-const start = async (version: string, data: Record<string, string[]>) => {
+const start = async (version: string, data: ChangelogData) => {
   logger.info(`开始下载: ${version}`)
   const operationGeneration = invalidateSnapshot()
   resetState()

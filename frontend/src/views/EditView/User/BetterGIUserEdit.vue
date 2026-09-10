@@ -695,7 +695,7 @@
                     :script-id="scriptId"
                     :user-id="userId"
                     :kind="selectedGroupIdentity.kind"
-                    :group-name="selectedGroupIdentity.key"
+                    :group-name="projectEditorGroupName"
                     :folder-name="projectEditorFolder"
                     :display-name="projectEditorDisplayName"
                     :editable="groupsEditable"
@@ -1642,9 +1642,13 @@ const COMBAT_BUILTIN_SET = new Set<string>([
 //   2) 改后名不会改变步骤名，已保存的每实例设置不会丢失。
 // uid 最小者沿用基名（兼容旧 Plan 中已存在的「自动秘境」步骤），其余为「基名-uid」。
 const stepNameIn = (row: ConfigGroupIdentity, rows: ConfigGroupIdentity[]): string => {
-  if (row.kind !== 'builtin' || !COMBAT_BUILTIN_SET.has(row.key)) return row.key
+  // 体力作战是本地虚拟项，无实例概念
+  if (row.kind === 'stamina') return row.key
+  // 战斗组的实例命名规则推广到全部可重复配置组：uid 最小者沿用基名（兼容旧 Plan 中
+  // 已存在的「自动秘境」步骤），其余为「基名-{uid}」。自定义组由此获得每实例身份，
+  // 开关与设置各自独立（与「后名」解耦：后名仅作显示别名）。
   const uids = rows
-    .filter(i => i.kind === 'builtin' && i.key === row.key)
+    .filter(i => i.kind === row.kind && i.key === row.key)
     .map(i => i.uid ?? 0)
   const firstUid = uids.length ? Math.min(...uids) : (row.uid ?? 0)
   return row.uid === firstUid ? row.key : `${row.key}-${row.uid}`
@@ -1723,7 +1727,8 @@ const groupEnabled = (item: ConfigGroupIdentity): boolean => {
   }
   if (item.kind === 'builtin') return formData.OneDragon.Groups.includes(item.key)
   if (item.kind === 'stamina') return staminaCombatEnabled.value
-  return Boolean(customGroupsTable.value.find(r => r.name === item.key)?.enabled)
+  // 自定义组：每实例独立启停（行实例自带 enabled），与战斗组实例行为一致
+  return item.enabled !== false
 }
 
 // 队列是否包含某配置组
@@ -1804,13 +1809,21 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
     const suffix = typeof rec.suffix === 'string' ? rec.suffix : undefined
     const uid = typeof rec.uid === 'number' ? rec.uid : undefined
     const planUid = typeof rec.planUid === 'string' ? rec.planUid : undefined
-    rows.push(makeDragonRow({ kind, key: name, suffix, uid, planUid }))
+    const enabled = typeof rec.enabled === 'boolean' ? rec.enabled : undefined
+    rows.push(makeDragonRow({ kind, key: name, suffix, uid, planUid, enabled }))
   }
-  // 第二遍：战斗组每实例启用状态来自 Plan，按「行实例 uid」定位步骤名（与后名解耦）
+  // 第二遍：战斗组每实例启用状态来自 Plan；自定义组来自队列条目自带的 enabled。
+  // 存量数据无该字段时回退按名查自定义组管理表，避免把用户已关闭的组误判为启用。
   const planEnabled = readPlanEnabled()
   for (const r of rows) {
     if (r.kind === 'builtin' && COMBAT_BUILTIN_SET.has(r.key)) {
       r.enabled = planEnabled.get(stepNameIn(r, rows)) ?? true
+    } else if (
+      r.kind !== 'builtin' &&
+      r.kind !== 'stamina' &&
+      r.enabled === undefined
+    ) {
+      r.enabled = customGroupsTable.value.find(x => x.name === r.key)?.enabled ?? true
     }
   }
   // uid 已持久化：让自增序号跳过已用值，避免新行与既有行 uid 撞号
@@ -1831,11 +1844,23 @@ const persistDragonQueue = () => {
     .filter(i => i.kind !== 'stamina')
     .map(i => {
       let planUid: string | undefined
+      const stepName = stepNameIn(i, dragonList.value)
       if (i.kind === 'builtin' && COMBAT_BUILTIN_SET.has(i.key)) {
-        const stepName = stepNameIn(i, dragonList.value)
         planUid = planSteps.find(s => s && s.name === stepName)?.uid
       }
-      return { kind: i.kind, name: i.key, suffix: i.suffix, uid: i.uid, planUid }
+      const entry: Record<string, unknown> = {
+        kind: i.kind,
+        name: i.key,
+        suffix: i.suffix,
+        uid: i.uid,
+        planUid,
+      }
+      // 实例名（组名-{uid}）：非首实例才有，供后端定位该实例独立的设置副本。
+      // 内置组不写：BGI 一条龙只认内置基名，实例名会导致任务无法识别。
+      if (stepName !== i.key && i.kind !== 'builtin') entry.step = stepName
+      // 自定义组每实例开关（战斗组启用状态走 Plan，不写此字段）
+      if (i.kind !== 'builtin') entry.enabled = i.enabled !== false
+      return entry
     })
   void saveField('OneDragon.Queue', JSON.stringify(entries))
   // 存在战斗实例时确保执行层开启：否则 Plan 中的 per-instance 设置/启停不会被运行时消费
@@ -1985,8 +2010,9 @@ const toggleConfigGroup = (item: ConfigGroupIdentity) => {
   } else if (item.kind === 'stamina') {
     toggleStaminaCombat()
   } else {
-    const row = customGroupsTable.value.find(r => r.name === item.key)
-    if (row) toggleCustomGroupEnabled(row)
+    // 自定义组：翻转本行实例的 enabled 并落库（每实例独立，不再按名共用开关）
+    item.enabled = !(item.enabled !== false)
+    persistDragonQueue()
   }
 }
 
@@ -2543,6 +2569,13 @@ const projectEditorFolder = computed<string>(() => {
 const projectEditorDisplayName = computed<string>(() => {
   const sel = selectedGroupIdentity.value
   return sel ? groupLabel(sel) : ''
+})
+// 右栏设置的读写键：按「实例名」（首实例=基名，其余=基名-{uid}）定位 per-user 副本，
+// 使同一配置组的多份各自保存设置、互不串台。首实例实例名即基名，兼容存量设置副本。
+// 注意：读设置 UI/目录（projectEditorFolder）仍用基名——BGI 目录只认基名。
+const projectEditorGroupName = computed<string>(() => {
+  const sel = selectedGroupIdentity.value
+  return sel ? stepNameOf(sel) : ''
 })
 
 // 每周秘境秘境候选目录（官方 tp.json 扫描；只随 scriptId，不随用户/配置组）

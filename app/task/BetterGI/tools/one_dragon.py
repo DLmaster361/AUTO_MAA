@@ -246,10 +246,107 @@ def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
         return []
     js_dir = root / _JS_SCRIPT_REL_DIR / folder
     settings = js_dir / "settings.json"
-    data = read_file(settings)
+    if not settings.is_file():
+        return []
+    try:
+        raw = settings.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    # 先按严格 JSON 解析（绝大多数脚本合规）
+    data: Any = None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        # 部分脚本的 settings.json 带 JS 风格注释（如「铁匠铺」的 // 与 /* */），
+        # 严格解析会失败并导致该脚本设置项整体丢失（界面表现为「无设置文件」）。
+        data = _loads_jsonc(raw)
     if isinstance(data, list):
         return [item for item in data if isinstance(item, dict)]
     return []
+
+
+def _loads_jsonc(text: str) -> Any:
+    """解析带 ``//`` 与 ``/* */`` 注释的 JSON（JSONC），失败返回 ``None``。
+
+    仅用于兼容 BetterGI 第三方脚本不合规的 settings.json；字符串字面量内的
+    ``//`` 不做处理，避免误删内容。
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    in_str = False
+    esc = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        out.append(ch)
+        i += 1
+    cleaned = "".join(out)
+    try:
+        return json.loads(cleaned)
+    except ValueError:
+        pass
+    # 尾随逗号：注释移除后可能残留（如 `"type": "select", // 类型` 后紧跟 `}`）
+    try:
+        return json.loads(_drop_trailing_commas(cleaned))
+    except ValueError:
+        return None
+
+
+def _drop_trailing_commas(text: str) -> str:
+    """删除对象/数组末尾多余的逗号（JSONC 常见写法），字符串字面量内不受影响。"""
+    buf: list[str] = []
+    k, n = 0, len(text)
+    in_str = False
+    esc = False
+    while k < n:
+        ch = text[k]
+        if in_str:
+            buf.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            k += 1
+            continue
+        if ch == '"':
+            in_str = True
+            buf.append(ch)
+            k += 1
+            continue
+        if ch == ",":
+            j = k + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            if j < n and text[j] in "}]":
+                k += 1
+                continue
+        buf.append(ch)
+        k += 1
+    return "".join(buf)
 
 
 def read_script_readme(root: Path, folder: str) -> str:
@@ -345,6 +442,21 @@ def _safe_write_per_user_copy(
         pass
 
 
+def _read_per_user_copy(script_id: str, user_id: str, name: str) -> Any:
+    """读取 per-user 配置组副本；名字非法（含路径分隔符的路线名等）时返回 ``None``。
+
+    与 ``_safe_write_per_user_copy`` 成对：per-user 副本名必须是合法 ScriptGroup 名，
+    而路线名等合法 BGI 引用可能含 ``/``，此处不得抛「配置组名非法」。
+    """
+    try:
+        path = per_user_script_group_path(script_id, user_id, name)
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    return read_file(path)
+
+
 def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
     """列出某用户 per-user ScriptGroup 副本的文件名（不含 ``.json``）。
 
@@ -359,7 +471,27 @@ def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
             name = p.stem.strip()
             if name and name not in names:
                 names.append(name)
-    return names
+    # 多实例副本（「组名-{uid}」）不是独立配置组：仅当基名也在列表中才隐藏，
+    # 避免它们混进「可编辑配置组 / 添加候选」被当成新组重复加入队列。
+    base_set = set(names)
+    return [
+        n
+        for n in names
+        if not (_instance_base_name(n) and _instance_base_name(n) in base_set)
+    ]
+
+
+def _instance_base_name(name: str) -> str:
+    """从实例名（形如「组名-{行uid}」）解析基名；非实例名返回空串。
+
+    仅用于回退：BGI 实配与 per-user 副本都只按**基名**存盘，非首实例（``组名-48``）
+    在自己还没有专属副本时必须继承基名内容，否则右栏读不到任何设置。
+    """
+    text = str(name or "")
+    head, sep, tail = text.rpartition("-")
+    if not sep or not tail.isdigit():
+        return ""
+    return head
 
 
 def read_user_script_group(
@@ -387,6 +519,11 @@ def read_user_script_group(
         group = _make_keymouse_script_group(name, rec)
         write_file(per_user_script_group_path(script_id, user_id, name), group)
         return group
+    # 多实例回退：实例名（组名-{uid}）既无专属副本、BGI 也无同名实配 → 继承基名内容。
+    # 非首实例据此正常展示设置；只有用户在右栏保存后才生成实例专属副本（设置独立）。
+    base = _instance_base_name(name)
+    if base and base != name:
+        return read_user_script_group(root, script_id, user_id, base)
     return existing
 
 
@@ -688,6 +825,15 @@ def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
             if kind not in ("js", "pathing", "scriptgroup", "keymouse", "custom"):
                 kind = "custom"
         entry: dict[str, Any] = {"kind": kind, "name": name}
+        # 每实例独立开关：仅当条目显式带 enabled 时才记录（存量数据没有该字段，
+        # 需回退到按名查询自定义组管理表，否则会把用户已关闭的组误判为启用）。
+        if "enabled" in item:
+            entry["enabled"] = bool(item["enabled"])
+        # 实例名（形如「组名-{行uid}」，与战斗组 stepNameIn 同规则）：同一配置组的
+        # 多个实例靠它区分，用于定位该实例独立的设置副本。缺省即等于基名（首实例）。
+        step = str(item.get("step", "")).strip()
+        if step:
+            entry["step"] = step
         # 保留前端条目 planUid（其绑定的执行层 Plan 步骤 uid）：同名多实例如
         # 「自动秘境」×3 依赖它定向排序，否则只能按 Plan 原顺序 FIFO。
         item_plan_uid = str(item.get("planUid", "")).strip()
@@ -1106,6 +1252,7 @@ def materialize_user_script_groups(
     script_id: str,
     user_id: str,
     config: dict[str, Any],
+    instance_base: dict[str, str] | None = None,
 ) -> list[Path]:
     """把用户独立配置的自定义配置组物化到 BGI User/ScriptGroup（统一编号，彻底去耦合）。
 
@@ -1129,59 +1276,55 @@ def materialize_user_script_groups(
         本次物化写入的文件路径列表（供运行结束删除）。
     """
     created: list[Path] = []
+    instance_base = instance_base or {}
     defs = config.get("TaskDefinitions")
     if not isinstance(defs, dict):
         return created
-    rename: dict[str, str] = {}
-    seen: set[str] = set()
     idx = 0
-    for name in defs.values():
+    # 多实例：逐 uid 物化——同一配置组的多份各自生成一个物化组，不再按名去重
+    for uid, name in list(defs.items()):
         if not isinstance(name, str) or not name:
             continue
-        if name in _BUILTIN_ONE_DRAGON_GROUPS or name in seen:
+        if name in _BUILTIN_ONE_DRAGON_GROUPS:
             continue
-        seen.add(name)
-        # 名字可能含路径分隔符（如 AutoPathing 路线名「矿物/铁块/.../路线」）：
-        # 该类名字合法、可作 BGI 一条龙引用，但不可作 ScriptGroup 文件名/per-user 副本名，
-        # 故解析失败（ValueError）直接视为「无 MAS 副本」，交由下方录制/脚本/路径分支解析，
-        # 不再抛「配置组名非法」。
-        try:
-            per_user_copy_path = per_user_script_group_path(script_id, user_id, name)
-        except ValueError:
-            per_user_copy_path = None
-        copy = read_file(per_user_copy_path) if per_user_copy_path else None
+        # 实例名（形如「组名-{行uid}」）→ 基名：BGI 目录只认基名，且首实例/存量数据
+        # 的副本就按基名存，回退与解析都用它。缺省即实例名等于基名。
+        base = instance_base.get(name) or name
+        # 1) 该实例自己的 per-user 设置副本（多实例各自独立，互不串台）
+        copy = _read_per_user_copy(script_id, user_id, name)
+        # 2) 回退：基名副本（首实例与存量数据均按基名存）
+        if not (isinstance(copy, dict) and copy) and base != name:
+            copy = _read_per_user_copy(script_id, user_id, base)
         if not (isinstance(copy, dict) and copy):
             # 录制（KeyMouse）：引用录制文件名但无 MAS 副本 → 自动生成单项目配置组副本
-            rec = _keymouse_file_for(root, name)
+            rec = _keymouse_file_for(root, base)
             if rec:
                 copy = _make_keymouse_script_group(name, rec)
-                try:
-                    write_file(per_user_script_group_path(script_id, user_id, name), copy)
-                except ValueError:
-                    pass
+                _safe_write_per_user_copy(script_id, user_id, name, copy)
             else:
                 # 脚本（JS）：引用 JsScript 下的脚本文件夹 → 物化为单 Javascript 项目配置组，
                 # 使其可由 --startGroups 执行层直连（去耦合：不再依赖 BGI 一条龙裸名解析分支）
-                js = _js_script_file_for(root, name)
+                js = _js_script_file_for(root, base)
                 if js:
                     copy = _make_js_script_group(js)
                     _safe_write_per_user_copy(script_id, user_id, name, copy)
                 else:
                     # 路径（地图追踪）：引用 AutoPathing 下的路径文件 → 物化为单 Pathing 项目配置组
-                    pt = _pathing_file_for(root, name)
+                    pt = _pathing_file_for(root, base)
                     if pt:
                         copy = _make_pathing_group(pt)
                         _safe_write_per_user_copy(script_id, user_id, name, copy)
                     else:
-                        # 引用 BGI 已有配置组：无 per-user 副本时以 BGI 实配为底稿物化
-                        # （四类统一编号命名，前后名彻底解耦），使其同样经 --startGroups
-                        # 执行层运行。名字含路径分隔符（非法组名）时读取失败 → 原样保留。
+                        # 引用 BGI 已有配置组：以 BGI 实配为底稿物化（四类统一编号命名，
+                        # 前后名彻底解耦）。BGI 只认基名，故按 base 读取。
                         try:
-                            existing = read_script_group(root, name)
+                            existing = read_script_group(root, base)
                         except ValueError:
                             existing = {}
                         if not (isinstance(existing, dict) and existing):
-                            # 无副本且非录制/脚本/路径/BGI 已有组：原样保留名字（BGI 自解析）
+                            # 无法解析：回退基名交 BGI 自解析（实例名对 BGI 无意义）
+                            if base != name:
+                                defs[uid] = base
                             continue
                         copy = existing
         idx += 1
@@ -1190,11 +1333,8 @@ def materialize_user_script_groups(
         out_path = root / _SCRIPT_GROUP_REL_DIR / f"{prefixed}.json"
         write_file(out_path, copy)
         created.append(out_path)
-        rename[name] = prefixed
-    if rename:
-        for uid, name in defs.items():
-            if isinstance(name, str) and name in rename:
-                defs[uid] = rename[name]
+        # 逐实例改写引用：不能按名映射——同名多实例的物化名各不相同
+        defs[uid] = prefixed
     return created
 
 
@@ -1352,7 +1492,19 @@ def write_user_one_dragon(
         [n for n in (slot_config.get("TaskDefinitions") or {}).values() if isinstance(n, str)],
     )
 
-    materialized = materialize_user_script_groups(root, script_id, user_id, slot_config)
+    # 多实例：实例名（组名-{行uid}）→ 基名 的映射，供物化回退到基名副本/实配，
+    # 以及按基名在 BGI 目录（JsScript/AutoPathing/KeyMouseScript/ScriptGroup）解析。
+    _instance_base: dict[str, str] = {}
+    for _e in queue or []:
+        if not isinstance(_e, dict):
+            continue
+        _n = str(_e.get("name") or "").strip()
+        _s = str(_e.get("step") or "").strip()
+        if _n and _s and _s != _n:
+            _instance_base[_s] = _n
+    materialized = materialize_user_script_groups(
+        root, script_id, user_id, slot_config, _instance_base
+    )
     # 路径 B（自定义项执行层）：把已物化的自定义配置组（MAS-{短id}-自定义配置组{N}）从原生槽位剔除，
     # 避免与 --startGroups 执行层重复执行。组名直接取自本次物化结果（materialized 的路径 stem），
     # 不依赖短 id/原名，与 materialize_user_script_groups 的编号规则完全同源。排除必须在物化之后：
@@ -2183,12 +2335,26 @@ def apply_groups(
             if not name:
                 continue
             uid = str(uuid.uuid4())
-            new_defs[uid] = name
+            # 自定义项多实例：实例名形如「组名-{行uid}」，只用于 MAS 侧定位该实例的
+            # 独立设置副本；BGI 侧最终由物化改写为 MAS-{短id}-自定义配置组{N}，
+            # 无法物化时回退基名（见 materialize_user_script_groups）。
+            # 内置组一律用基名：BGI 一条龙只认内置基名，把实例名（如「自动秘境-3」）
+            # 写进 TaskDefinitions 会让 BGI 无法识别，按基名的排除逻辑也会失配。
+            step = (
+                ""
+                if name in _BUILTIN_ONE_DRAGON_GROUPS
+                else str(entry.get("step") or "").strip()
+            )
+            new_defs[uid] = step or name
             new_order.append(uid)
             if name in _BUILTIN_ONE_DRAGON_GROUPS:
                 present_builtin.add(name)
                 new_enabled[uid] = name in selected_set
+            elif "enabled" in entry:
+                # 每实例独立开关（队列条目自带 enabled），与战斗组实例行为一致
+                new_enabled[uid] = bool(entry["enabled"])
             else:
+                # 存量数据无 per-instance enabled：回退按名查自定义组管理表
                 new_enabled[uid] = _custom_enabled_for(name)
     else:
         # 旧行为：单遍扫描旧顺序，内置组按按钮开关置 enabled，自定义组按管理表/原样保留

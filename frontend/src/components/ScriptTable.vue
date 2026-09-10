@@ -984,22 +984,16 @@ const isZzzOdUserMode = (user: User): boolean => user.Info.Mode !== '直控'
 const getZzzOdRegion = (user: User): string => user.Game?.GameRegion || 'cn'
 
 const getZzzOdRegionLabel = (user: User): string => {
-  switch (getZzzOdRegion(user)) {
-    case 'cn':
-      return '国服'
-    case 'cn_b':
-      return 'B服'
-    case 'us':
-      return '美服'
-    case 'eu':
-      return '欧服'
-    case 'asia':
-      return '亚服'
-    case 'twhkmo':
-      return '港澳台服'
-    default:
-      return '国服'
+  // 区服文案复用编辑页的 i18n 键，避免英文界面下标签显示中文
+  const labels: Record<string, string> = {
+    cn: t('edit.zzzodRegionCn'),
+    cn_b: t('edit.zzzodRegionCnB'),
+    us: t('edit.zzzodRegionUs'),
+    eu: t('edit.zzzodRegionEu'),
+    asia: t('edit.zzzodRegionAsia'),
+    twhkmo: t('edit.zzzodRegionTwHkMo'),
   }
+  return labels[getZzzOdRegion(user)] ?? labels.cn
 }
 
 // ZzzOd：B服账号名存 BilibiliAccountName，其余区服存 Account

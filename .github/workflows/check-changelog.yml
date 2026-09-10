@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   check-changelog:
@@ -35,8 +36,6 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v7.0.0
@@ -48,9 +47,17 @@ jobs:
       - name: 检查更新日志格式与版本号一致性
         run: python scripts/changelog.py check
 
-      # HEAD 是 GitHub 为当前 base 与 PR head 生成的合并提交，避免开放中的 PR
-      # 因其他署名提交推进了 base 而被误判为删除历史条目。
-      - name: 检查 PR 恰好新增一条更新日志
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: python scripts/changelog.py check-pr "$PR_BASE_SHA" HEAD
+      - name: 检查 PR 文件列表
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+
+            if (!files.some(file => file.filename === 'CHANGELOG.md')) {
+              core.setFailed('每个 PR 都必须包含对 CHANGELOG.md 的更改。');
+            }

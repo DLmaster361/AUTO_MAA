@@ -3872,10 +3872,29 @@ class ZzzOdUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {
+                "text": f"上次：{last_status}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
 
         mode = str(self.get("Info", "Mode") or "用户")
-        tags.append({"text": f"来源：{mode}", "color": "orange"})
+        if mode == "用户":
+            ## 一条龙任务编排仅用户模式消费（直控事实源是原生配置，MAS 字段会失真）
+            try:
+                app_list = json.loads(self.get("OneDragon", "AppList") or "[]")
+            except (TypeError, ValueError):
+                app_list = []
+            if not isinstance(app_list, list):
+                app_list = []
+            enabled_count = sum(
+                1 for item in app_list if isinstance(item, dict) and item.get("enabled")
+            )
+            if enabled_count > 0:
+                tags.append({"text": f"一条龙：{enabled_count} 项", "color": "orange"})
+            else:
+                tags.append({"text": "一条龙：未编排", "color": "orange"})
 
         remained_day = self.get("Info", "RemainedDay")
         if remained_day == -1:
@@ -3967,9 +3986,11 @@ class ZzzOdConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 单次运行超时时间（分钟）；一条龙含游戏内全流程，默认放宽
+        ## 单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是
+        ## 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层
+        ## 日志）也靠它兜底超时后切换启动器
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 180, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 40, RangeValidator(1, 9999)
         )
 
         self.UserData = MultipleConfig([ZzzOdUserConfig])

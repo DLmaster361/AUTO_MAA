@@ -3866,6 +3866,8 @@ class ZzzOdUserConfig(ConfigBase):
                 app_list = json.loads(self.get("OneDragon", "AppList") or "[]")
             except (TypeError, ValueError):
                 app_list = []
+            if not isinstance(app_list, list):
+                app_list = []
             enabled_count = sum(
                 1 for item in app_list if isinstance(item, dict) and item.get("enabled")
             )

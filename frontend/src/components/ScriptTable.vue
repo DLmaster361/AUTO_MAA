@@ -1026,7 +1026,7 @@ const getZzzOdAccountText = (user: User): string => {
     // 展开状态：显示完整账号或未设置
     return accountValue ? `账号: ${accountValue}` : '账号: 未设置'
   }
-  // 收起状态：只显示 4 位尾号，避免明文暴露完整账号
+  // 收起状态：只显示 4 位尾号以压缩卡片内展示宽度（账号本就明文可见，非脱敏）
   return accountValue ? accountValue.slice(-4) : '账号: 未设置'
 }
 

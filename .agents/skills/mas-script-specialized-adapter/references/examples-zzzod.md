@@ -106,25 +106,32 @@ MAS 通用模型是「每用户一份完整配置，脚本级=`data/{script_id}/
 - 配队等 MAS 不管的内容不注入不回读，持久留在槽里；
 - Default（脚本级）会话直接拉起 GUI，无注入/回读。
 
-## 配置恢复（通用服务 + 通用组件）
+## 配置恢复（基座统一分发 + 专项池声明）
 
-ZzzOd 的「配置恢复」接入通用能力（专项只喂参数）：
+ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 config-restore.md）：
 
-- 后端：`app.core.config.zzzod_restore_service()` 用 `ConfigRestoreService` 组装双目标
-  （mas 在前、onedragon 在后，`script_name="一条龙"` 专项统一名）；`list_zzzod_backups`
-  等改为 `service.list(target)` 薄委托。
-- 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（传 `scriptName="一条龙"`
-  而非脚本实例名、`targets`/`api`/字段映射/`onRestored`/`onDetail`）。
-- 会话遮罩：配置/查看会话拉起原生 GUI 期间用 `GuiSessionMask`（纯 UI，专项传
-  开关/文案/按钮）。
-- **归档三时机落地**（`ConfigRestoreTarget.snapshot` + `service.ensure`）：
-  ① 进入编辑页归档 onedragon（用户模式 `ensureOnedragonBackup`、直控
-  `enterDirectMode` 内 `ensureDirectBackup`）——MAS 操作前原始态；② 退出编辑页
-  `onUnmounted` 归档（直控 onedragon 终态；用户模式绑定槽 mas 终态 + onedragon
-  终态）——MAS 侧配置的编辑会话包络；③ 运行前 `_prepare_injection` 两者都归档
-  （原有）。`ensure_zzzod_mas_backup` 对未绑定槽/空槽跳过（无可恢复内容）。
+- 池声明：`app/task/ZzzOd/tools/restore_service.py` 的 `RESTORE_POOLS`
+  （mas=用户槽 / onedragon=原生，`RESTORE_SCRIPT_NAME="一条龙"`）；备份内部
+  业务（槽占用守卫、字段回填、预览构建）依赖门面 helper，留在
+  `app.core.config`（`get_zzzod_backup_preview` / `restore_zzzod_backup` /
+  `ensure_zzzod_mas_backup` / `ensure_zzzod_direct_backup`），池函数经
+  `ctx.config` 薄委托。
+- core 门面：`restore_service()` isinstance 分发 + `list/ensure/restore/
+  preview_config_backup` 四个通用方法；HTTP 层只有通用端点 `/backup/*`
+  （list/ensure/restore/preview），preview 的 `data` 载荷 = ZzzOd 结构
+  （info/account/tasks/instances）。
+- 前端：`ZzzOdUserEdit.vue` 用 `ConfigRestoreSection` 组件（`scriptName`
+  传统一名「一条龙」、内置预览渲染直接吃解包后的载荷），`restoreApi` 调
+  `BackupService` 通用函数；三时机 ensure 走通用 ensure（`ensurePoolBackup`
+  收 `'mas'`/`'onedragon'` 字符串）。
+- 会话遮罩：配置/查看会话拉起原生 GUI 期间用 `GuiSessionMask`（纯 UI）。
+- **归档三时机落地**：① 进入编辑页归档 onedragon（用户模式 `ensureDirectBackup`、
+  直控 `enterDirectMode` 内同函数）——MAS 操作前原始态；② 退出编辑页
+  `onUnmounted` 归档（直控 onedragon 终态；用户模式绑定槽 mas 终态 +
+  onedragon 终态）；③ 运行前 `_prepare_injection` 两者都归档（原有）。
+  `ensure_zzzod_mas_backup` 对未绑定槽/空槽跳过（无可恢复内容）。
   归档全部指纹去重：内容无变化不产生新条目，恢复列表只留真实变更点。
-- 完整用法见 [config-restore.md](config-restore.md)。
+- 文件级快照/回写原语见 [config-archive.md](config-archive.md)。
 
 ## 陷阱
 

@@ -1701,100 +1701,6 @@ class AppConfig(GlobalConfig):
 
         return self._zzzod_root(self._zzzod_script_config(script_id))
 
-    async def list_zzzod_backups(
-        self, script_id: str, user_id: str, target: str
-    ) -> list[dict]:
-        """列出配置备份（时间倒序）。target=onedragon 原生配置 / mas 用户槽。"""
-
-        service = self.zzzod_restore_service(script_id, user_id)
-        return [{"time": ts} for ts in await service.list(target)]
-
-    def zzzod_restore_service(
-        self, script_id: str, user_id: str
-    ) -> "ConfigRestoreService":
-        """构建 ZzzOd 配置恢复服务（双目标：mas 在前、onedragon 在后）。
-
-        供其他专项参考：配置恢复的「列表/预览/恢复」统一走
-        :class:`app.utils.config_restore.ConfigRestoreService`，各专项只提供
-        ``ConfigRestoreTarget`` 回调（闭包捕获脚本/用户上下文）。脚本名
-        「一条龙」用于文案参数化。
-        """
-
-        from app.utils.config_restore import ConfigRestoreService, ConfigRestoreTarget
-
-        async def list_mas():
-            from app.task.ZzzOd.tools import list_mas_backups
-
-            _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
-            slot = int(user_cfg.get("Info", "SlotIdx") or -1)
-            if slot <= 0:
-                return []
-            return list_mas_backups(script_id, slot)
-
-        async def list_onedragon():
-            from app.task.ZzzOd.tools import list_onedragon_backups
-
-            return list_onedragon_backups(script_id)
-
-        async def preview_mas(ts: str) -> dict:
-            return await self.get_zzzod_backup_preview(
-                script_id, user_id, ts, target="mas"
-            )
-
-        async def preview_onedragon(ts: str) -> dict:
-            return await self.get_zzzod_backup_preview(
-                script_id, user_id, ts, target="onedragon"
-            )
-
-        async def restore_mas(ts: str) -> object:
-            return await self.restore_zzzod_backup(
-                script_id, user_id, ts, target="mas"
-            )
-
-        async def restore_onedragon(ts: str) -> object:
-            return await self.restore_zzzod_backup(
-                script_id, user_id, ts, target="onedragon"
-            )
-
-        async def snapshot_mas() -> dict:
-            return await self.ensure_zzzod_mas_backup(script_id, user_id)
-
-        async def snapshot_onedragon() -> dict:
-            return self.ensure_zzzod_direct_backup(script_id)
-
-        return ConfigRestoreService(
-            script_name="一条龙",
-            targets=[
-                ConfigRestoreTarget(
-                    key="mas",
-                    list_backups=list_mas,
-                    preview=preview_mas,
-                    restore=restore_mas,
-                    snapshot=snapshot_mas,
-                ),
-                ConfigRestoreTarget(
-                    key="onedragon",
-                    list_backups=list_onedragon,
-                    preview=preview_onedragon,
-                    restore=restore_onedragon,
-                    snapshot=snapshot_onedragon,
-                ),
-            ],
-        )
-
-    async def ensure_zzzod_backup(
-        self, script_id: str, user_id: str, target: str
-    ) -> dict:
-        """按需归档目标池当前配置（指纹去重，无变化自动跳过）。
-
-        编辑界面三时机的 ZzzOd 入口：进入编辑页归档 onedragon（MAS 操作前
-        原始态）、退出编辑页归档 mas（用户侧终态）、运行前两者都归档
-        （:meth:`ZzzOd.AutoProxyTask._prepare_injection`）。
-        """
-
-        service = self.zzzod_restore_service(script_id, user_id)
-        return await service.ensure(target)
-
     async def ensure_zzzod_mas_backup(
         self, script_id: str, user_id: str
     ) -> dict:
@@ -2399,6 +2305,72 @@ class AppConfig(GlobalConfig):
             "original_available": "原始" in available,
             "integrated_available": "集成" in available,
         }
+
+    # ════════════ 配置恢复（基座统一分发，池声明见各专项 tools/restore_service） ════════════
+
+    def restore_service(self, script_id: str, user_id: str) -> "ConfigRestoreService":
+        """按脚本类型分发到专项恢复池，绑定上下文构建运行时服务。
+
+        专项只声明池表（普通函数，显式收 :class:`RestoreContext`），本方法
+        与下方四个通用门面方法就是全部接线——新专项接入不再改 HTTP 层
+        与 schema，只在分发链加一个分支。
+        """
+
+        from app.utils.config_restore import RestoreContext, build_restore_service
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if isinstance(script_config, ZzzOdConfig):
+            from app.task.ZzzOd.tools.restore_service import (
+                RESTORE_POOLS,
+                RESTORE_SCRIPT_NAME,
+            )
+        else:
+            raise ValueError("该专项暂不支持配置恢复")
+        return build_restore_service(
+            RestoreContext(
+                config=self,
+                script_config=script_config,
+                script_id=script_id,
+                user_id=user_id,
+            ),
+            RESTORE_SCRIPT_NAME,
+            RESTORE_POOLS,
+        )
+
+    async def list_config_backups(
+        self, script_id: str, user_id: str, target: str
+    ) -> list[dict]:
+        """列出配置备份（时间倒序）。target 取值由专项池定义。"""
+
+        service = self.restore_service(script_id, user_id)
+        return [{"time": ts} for ts in await service.list(target)]
+
+    async def ensure_config_backup(
+        self, script_id: str, user_id: str, target: str
+    ) -> dict:
+        """按需归档目标池当前配置（指纹去重，无变化自动跳过）。
+
+        编辑界面三时机的统一入口：进入/退出编辑页（前端触发）、运行前
+        （各专项任务流程调用专项归档函数，不经本方法）。
+        """
+
+        return await self.restore_service(script_id, user_id).ensure(target)
+
+    async def restore_config_backup(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict:
+        """把指定备份恢复到目标位置（恢复前存底由专项池函数自理）。"""
+
+        await self.restore_service(script_id, user_id).restore(target, ts)
+        return {"target": target}
+
+    async def get_config_backup_preview(
+        self, script_id: str, user_id: str, ts: str, target: str
+    ) -> dict:
+        """读取指定备份的配置摘要（纯读不恢复）；载荷结构由专项定义。"""
+
+        payload = await self.restore_service(script_id, user_id).preview(target, ts)
+        return {"time": ts, "target": target, "data": payload}
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]

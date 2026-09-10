@@ -513,6 +513,19 @@ def extract_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
     return result
 
 
+def weekly_plan_keys(group: str) -> set[str]:
+    """该组所有 weekly 平铺键集合（用于从原生剩余中剥离）。"""
+    keys: set[str] = set()
+    if group == "自动秘境":
+        keys.add("SundayEverySelectedValue")
+        for day in WEEKDAY_KEYS:
+            keys.update({f"{day}PartyName", f"{day}DomainName", f"{day}SelectedValue"})
+    elif group == "自动地脉花":
+        for day in WEEKDAY_KEYS:
+            keys.update({f"LeyLine{day}Country", f"LeyLine{day}Type", f"LeyLineRun{day}"})
+    return keys
+
+
 def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any]:
     """把 Plan settings 里的 weeklyDomain/weeklyLeyLine 还原为平铺右栏键（回显）。"""
     out: dict[str, Any] = {}

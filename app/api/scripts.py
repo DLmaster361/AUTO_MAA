@@ -80,6 +80,104 @@ def _bettergi_script_config(script_id: str):
     return script_config
 
 
+def _bettergi_user_id(script_config: RuntimeBetterGIConfig, user_id: str):
+    """Validate that a BetterGI user exists before domain access."""
+
+    try:
+        script_config.UserData[uuid.UUID(user_id)]
+    except KeyError:
+        raise ValueError("用户不存在或无权访问该配置")
+
+
+def _bettergi_user_config(script_config: RuntimeBetterGIConfig, user_id: str):
+    """Resolve a BetterGI user config and reject unknown IDs before domain access."""
+
+    user_config = script_config.UserData[uuid.UUID(user_id)]
+    return user_config
+
+
+def _read_combat_from_plan(
+    script_config, user_id: str, group: str, source: str, data: dict
+) -> dict:
+    """把战斗组 Plan 里的设置反查回右栏键，合并进读取结果（回显）。"""
+    from app.task.BetterGI.tools import one_dragon_plan
+
+    target_group = _combat_target_group(source, group)
+    mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(
+        one_dragon_plan.resolve_base_name(target_group)
+    )
+    if not mapping:
+        return data
+    user_config = _bettergi_user_config(script_config, user_id)
+    plan_json = user_config.get("OneDragon", "Plan") or ""
+    data.update(one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {})
+    # 还原 weekly 嵌套结构为平铺右栏键（供前端周表回显）
+    steps = one_dragon_plan.parse_one_dragon_plan(plan_json) if plan_json else []
+    target = next((s for s in steps if s.get("name") == target_group), None)
+    if target:
+        data.update(
+            one_dragon_plan.flatten_weekly_struct(
+                target_group, target.get("settings") or {}
+            )
+        )
+    # 「开启每日地脉花」未配置（Plan 无该键，如新用户）时默认开启：与种子模板的
+    # 「每日耗尽模式」标准状态一致；用户选过每周模式则 Plan 已有显式 false，不受影响。
+    if target_group == "自动地脉花":
+        data.setdefault("leyLineDailyEnabled", True)
+    return data
+
+
+def _route_combat_to_plan(
+    script_config,
+    user_id: str,
+    group: str,
+    settings: dict,
+    source: str,
+) -> tuple[dict, "str | None"]:
+    """战斗4项右栏设置：可映射字段翻译后写入 OneDragon.Plan（执行层参数源）。
+
+    原生侧**保留全量字段**（双写）：执行层只接管「Plan 中有该组步骤且队列中启用」
+    的战斗组，其余战斗组仍走原生一条龙 / 全局 config.json，必须能读到最新值；
+    已被接管的组会从一条龙副本剔除，多写的原生值不会被消费。
+
+    返回 ``(原生字段, 新 Plan JSON 或 None)``。非战斗组 / 无可映射键时返回
+    ``(settings, None)``，调用方按原逻辑写原生存储即可。
+    """
+    from app.task.BetterGI.tools import one_dragon_plan
+
+    target_group = _combat_target_group(source, group)
+    mapping = one_dragon_plan.RIGHTBAR_TO_PLAN.get(
+        one_dragon_plan.resolve_base_name(target_group)
+    )
+    if not mapping or not settings:
+        return settings, None
+    plan_settings = {k: v for k, v in settings.items() if k in mapping}
+    extra = one_dragon_plan.extract_weekly_struct(target_group, settings)
+    if not plan_settings and not extra:
+        return settings, None
+    user_config = _bettergi_user_config(script_config, user_id)
+    plan_json = user_config.get("OneDragon", "Plan") or ""
+    new_plan = one_dragon_plan.merge_rightbar_into_plan(
+        plan_json, target_group, plan_settings, extra=extra or None
+    )
+    return settings, new_plan
+
+
+def _combat_target_group(source: str, group: str) -> str:
+    """确定右栏设置归属的战斗组（支持同一战斗组的多个独立实例）。
+
+    优先采用前端传入的**实例组名**（形如 ``自动幽境危战-3``、``自动秘境-3``）：
+    同一战斗组可配多个实例，各自独立保存/回显设置。未传组名（或组名不是内置
+    战斗组）时按 source 固定映射（globalStygian→自动幽境危战、globalDomain→
+    自动秘境），兼容不带 groupName 的调用方与旧数据。
+    """
+    from app.task.BetterGI.tools import one_dragon_plan
+
+    if group and one_dragon_plan.resolve_base_name(group):
+        return group
+    return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(source, group)
+
+
 def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
     user_config = script_config.UserData[uuid.UUID(user_id)]
     return user_config

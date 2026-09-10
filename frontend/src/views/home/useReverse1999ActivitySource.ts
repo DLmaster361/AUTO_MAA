@@ -46,7 +46,10 @@ const parseTime = (value: unknown): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-const formatTime = (date: Date | null): string => (date ? date.toISOString().slice(0, 19) : '')
+// 必须保留 toISOString() 末尾的 Z：切成裸 ISO 串后，消费端的 new Date(value) 会按
+// 本机时区解析，倒计时与「已结束」判定整体提前一个时区偏移量（东八区提前 8 小时）。
+// 被 #497 删掉的后端接口输出的也是带 +08:00 偏移的时间。
+const formatTime = (date: Date | null): string => (date ? date.toISOString() : '')
 
 /** 复刻后端的版本选择：进行中 > 即将开始 > 已结束 */
 const selectVersion = (data: Record<string, RawVersion>): RawVersion | null => {

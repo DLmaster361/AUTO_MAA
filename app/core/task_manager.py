@@ -673,9 +673,10 @@ class Task(TaskExecuteBase):
         for i in range(start_index):
             self.task_info.script_list[i].status = "跳过"
 
-        # 依次运行任务
-        async with ensure_desktop_available():
-            await self._run_script_list(start_index)
+        # 依次运行任务。桌面保障是常驻守卫，这里只强制它立刻巡检一次：轮询有几秒窗口，
+        # 而任务一旦在幻影屏上起来，游戏就会把坏掉的窗口尺寸记进自己的配置。
+        await ensure_desktop_available()
+        await self._run_script_list(start_index)
 
     async def _run_script_list(self, start_index: int) -> None:
         for self.task_info.current_index in range(

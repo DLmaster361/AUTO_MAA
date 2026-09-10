@@ -995,6 +995,12 @@ def build_runner_environment(
     env["VIRTUAL_ENV"] = str(venv)
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    # `python -m` 会把 cwd 插到 sys.path[0]，排在 PYTHONPATH 之前。受 Runtime 监督时
+    # cwd 是 <app-root>，那里还躺着安装包自带的旧 app/ 包（只随整包安装更新），会把
+    # PYTHONPATH 里的源码根整个盖掉，worker 于是跑上一个版本的引擎代码。这里禁掉 cwd
+    # 前置，让 import_paths 说了算；worker 的 cwd 仍是 <app-root>，因为运行池、更新
+    # 缓存等用户数据都按它解析。运行池的解释器约束是 3.12/3.13，该变量必然生效。
+    env["PYTHONSAFEPATH"] = "1"
     env["PATH"] = f"{scripts_dir}{os.pathsep}{env.get('PATH', '')}"
     if resolved_import_paths:
         env["PYTHONPATH"] = os.pathsep.join(resolved_import_paths)

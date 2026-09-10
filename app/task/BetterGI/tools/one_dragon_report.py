@@ -150,3 +150,46 @@ def parse_one_dragon_report(log: str) -> list[dict] | None:
     for s in steps:
         s.pop("issue", None)
     return steps
+
+
+# ── 路径 B 执行层（--startGroups MAS一条龙）步骤级标记解析 ──
+_MAS_PLAN_BEGIN_RE = re.compile(r"MAS_PLAN_BEGIN\s+(\d+)")
+_MAS_STEP_RE = re.compile(r"MAS_STEP_(BEGIN|DONE|FAIL|SKIP|DAILY|UNKNOWN):\s*(\S+)(?:\s+(.*))?")
+_MAS_PLAN_DONE_RE = re.compile(r"MAS_PLAN_DONE")
+_MAS_PLAN_FAIL_RE = re.compile(r"MAS_PLAN_FAIL")
+
+
+def parse_one_dragon_plan_report(log: str) -> list[dict] | None:
+    """解析路径 B 执行层（``--startGroups MAS一条龙``）的步骤级报告。
+
+    main.js 每步打印 ``MAS_STEP_BEGIN/DONE/FAIL/SKIP/DAILY/UNKNOWN: <uid> <name> [detail]``，
+    整段以 ``MAS_PLAN_BEGIN <n>`` 开始、``MAS_PLAN_DONE`` / ``MAS_PLAN_FAIL`` 结束。
+    返回步骤字典列表（``uid`` / ``name`` / ``status`` / ``detail``）；未出现
+    ``MAS_PLAN_BEGIN`` 时返回 None（该次运行未走执行层，调用方据此省略执行层区块）。
+    """
+    if not log:
+        return None
+    steps: list[dict] = []
+    began = False
+    for raw in log.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if _MAS_PLAN_BEGIN_RE.search(line):
+            began = True
+            continue
+        if _MAS_PLAN_DONE_RE.search(line) or _MAS_PLAN_FAIL_RE.search(line):
+            continue
+        sm = _MAS_STEP_RE.match(line)
+        if not sm:
+            continue
+        status = sm.group(1).lower()
+        uid = sm.group(2)
+        rest = (sm.group(3) or "").strip()
+        parts = rest.split(" ", 1)
+        name = parts[0] if parts else ""
+        detail = parts[1] if len(parts) > 1 else ""
+        steps.append({"uid": uid, "name": name, "status": status, "detail": detail})
+    if not began:
+        return None
+    return steps

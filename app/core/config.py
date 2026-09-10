@@ -252,7 +252,7 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.3"
+    VERSION = "v5.5.0-beta.4"
 
     def __init__(self) -> None:
         super().__init__()

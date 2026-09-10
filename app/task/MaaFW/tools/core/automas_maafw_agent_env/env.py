@@ -487,7 +487,15 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
         packages.append(AGENT_BOOTSTRAP_PACKAGE)
-    return packages
+    # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
+    # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
+    # 延迟导入：``automas_maafw_runner`` 的包初始化会 import ``run_plan``，而
+    # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
+    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        pin_agent_maafw_requirement,
+    )
+
+    return pin_agent_maafw_requirement(project_path, packages)
 
 
 def _project_agent_requirements_hash(project_path: Path) -> str:

@@ -379,12 +379,33 @@ class AppLaunchMixin(DeviceBase):
         """
         return None
 
+    async def prepare_launch(self, idx: str) -> None:
+        """启动模拟器之前的一步。默认什么都不做，两家后端各自覆盖（雷电在这里设纯净模式）。
+
+        这一步失败不该拦住模拟器启动：覆盖时自己记警告；万一漏了抛出来，
+        :meth:`open` 也只记一条警告继续往下走。
+        """
+
+    async def after_boot(self, idx: str, info: DeviceInfo) -> None:
+        """模拟器在线之后、拉应用之前的一步。默认什么都不做（MuMu 在这里禁广告组件）。
+
+        约束同 :meth:`prepare_launch`。
+        """
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         """启动设备；给了包名就在设备就绪后把应用也拉起来。
 
-        不给包名时行为与原生实现完全一致，只开模拟器。
+        不给包名时行为与原生实现完全一致，只开模拟器——中间多出的两个钩子默认是空的。
         """
+        try:
+            await self.prepare_launch(idx)
+        except Exception as e:  # noqa: BLE001 - 钩子失败不拦启动
+            logger.warning(f"启动前钩子失败，实例 {idx} 照常启动: {e}")
         info = await super().open(idx)
+        try:
+            await self.after_boot(idx, info)
+        except Exception as e:  # noqa: BLE001 - 同上
+            logger.warning(f"启动后钩子失败，实例 {idx} 继续: {e}")
         if package_name:
             await self.launch_app(idx, package_name, info)
         return info

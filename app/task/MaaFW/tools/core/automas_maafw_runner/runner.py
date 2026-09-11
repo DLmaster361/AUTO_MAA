@@ -2249,6 +2249,8 @@ class MaaFWRunner:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                # 引导解释器同样不能被宿主 PYTHONHOME / PYTHONPATH 带偏。
+                env=strip_host_python_environment(),
             )
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or "").strip()

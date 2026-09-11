@@ -1162,6 +1162,8 @@ def _python_supports_venv(python: str) -> bool:
             text=True,
             encoding="utf-8",
             errors="replace",
+            # 探测与真正拉起解释器用同一份环境，宿主 PYTHONHOME / PYTHONWARNINGS 不参与判定。
+            env=_clean_process_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -1354,6 +1356,7 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=_clean_process_environment(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(

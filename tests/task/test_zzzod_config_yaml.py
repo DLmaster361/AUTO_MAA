@@ -23,6 +23,7 @@
 实例槽备份恢复闭环与运行记录 diff 的纯逻辑。
 """
 
+import json
 import shutil
 from pathlib import Path
 
@@ -647,3 +648,39 @@ def test_archive_force_protects_existing_backups(tmp_path: Path) -> None:
     assert len(times) == 2
     assert ts_book[0] not in times
     assert ts_book[1] not in times
+
+
+def test_materialize_user_applist(tmp_path: Path) -> None:
+    """退出归档前的编排物化：AppList 整表进槽 _group.yml，空/非法跳过。
+
+    槽只有会话/运行注入才带编排；用户只在 MAS 页面保存过编排就退出的话，
+    直接快照槽会漏掉它，恢复这种备份会把编排清空。
+    """
+
+    from app.task.ZzzOd.tools.backup_archive import materialize_user_applist
+
+    slot = tmp_path / "14"
+    write_file(slot / "game_account.yml", {"account": "主号"})
+
+    applist = json.dumps(
+        [
+            {"app_id": "coffee", "enabled": True},
+            {"app_id": "email", "enabled": False},
+        ]
+    )
+    assert materialize_user_applist(slot, applist) is True
+    assert read_app_group(slot) == [
+        {"app_id": "coffee", "enabled": True},
+        {"app_id": "email", "enabled": False},
+    ]
+    # 账号等既有文件不受影响
+    assert read_game_account(slot)["account"] == "主号"
+
+    # 空编排 / 非法 JSON：跳过不写盘
+    assert materialize_user_applist(slot, "[]") is False
+    assert materialize_user_applist(slot, "not-json") is False
+    assert materialize_user_applist(slot, None) is False
+    assert read_app_group(slot) == [
+        {"app_id": "coffee", "enabled": True},
+        {"app_id": "email", "enabled": False},
+    ]

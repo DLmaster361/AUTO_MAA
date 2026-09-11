@@ -228,12 +228,16 @@ class OkNteManager(TaskExecuteBase):
 
         method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            method = method_cls(
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            kwargs: dict = dict(
                 script_info=self.script_info,
                 script_config=self.script_config,  # type: ignore[arg-type]
                 user_config=self.user_config,  # type: ignore[arg-type]
                 game_manager=self.game_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                kwargs["view_only"] = self.task_info.view_only
+            method = method_cls(**kwargs)
 
             sub_check = await method.check()
             if sub_check != "Pass":

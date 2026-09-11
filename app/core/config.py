@@ -1715,12 +1715,22 @@ class AppConfig(GlobalConfig):
             collect_mas_user_info,
             instance_dir,
             list_mas_backups,
+            materialize_user_applist,
         )
 
         _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         slot_dir = instance_dir(self._zzzod_script_root(script_id), slot)
-        if slot <= 0 or not slot_dir.is_dir() or not any(slot_dir.iterdir()):
+        if slot <= 0 or not slot_dir.is_dir():
+            return {"created": False, "time": ""}
+
+        # 归档前把 MAS 页面的任务编排物化进槽：AppList 只存在 UserData，槽
+        # 只有会话/运行时才被注入——直接快照会漏掉刚保存的编排，恢复这种
+        # 备份反而会把编排清空
+        materialize_user_applist(
+            slot_dir, user_cfg.get("OneDragon", "AppList")
+        )
+        if not any(slot_dir.iterdir()):
             return {"created": False, "time": ""}
 
         dest = archive_mas_backup(
@@ -2321,6 +2331,11 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         if isinstance(script_config, ZzzOdConfig):
             from app.task.ZzzOd.tools.restore_service import (
+                RESTORE_POOLS,
+                RESTORE_SCRIPT_NAME,
+            )
+        elif isinstance(script_config, OkNteConfig):
+            from app.task.OkNte.tools.restore_service import (
                 RESTORE_POOLS,
                 RESTORE_SCRIPT_NAME,
             )

@@ -53,7 +53,7 @@
         {{ `${t('edit.configRestorePreviewTitle')} · ${previewTime}` }}
       </slot>
     </template>
-    <a-spin :spinning="previewLoading">
+    <a-spin :spinning="previewLoading" class="preview-scroll">
       <p v-if="previewError" class="restore-desc">{{ previewError }}</p>
       <!-- 自定义预览：专项通过 #preview 插槽完全接管预览区（字段型适配器等）；
            raw 为后端预览响应原文（内置 info/account/tasks/instances 之外的
@@ -440,6 +440,12 @@ const confirmRestore = (item: BackupItem) => {
 .backup-time {
   color: var(--ant-color-text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* 预览内容限高在弹窗内滚动，摘要过长不撑破窗口 */
+.preview-scroll {
+  max-height: 56vh;
+  overflow-y: auto;
 }
 
 /* 配置预览弹窗：摘要表格与任务标签 */

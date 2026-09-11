@@ -34,6 +34,7 @@ zzz-od 特有的文件集收集（排除 MAS 槽）、恢复语义（先清合�
 强制归档当前）与归档目录布局。
 """
 
+import json
 import shutil
 from pathlib import Path
 
@@ -52,7 +53,9 @@ from .zzz_od_config import (
     _one_dragon_file,
     _view_sidecar_path,
     instance_dir,
+    normalize_app_group_entries,
     restore_instance_view,
+    write_app_group,
 )
 
 logger = get_logger("ZZZ-OD 配置备份")
@@ -318,3 +321,22 @@ def restore_mas_backup(
         # 恢复前强制归档当前内容——「恢复前的配置」在列表里有明确的时间戳条目
         archive_mas_backup(script_id, slot_idx, slot_dir, force=True, meta=meta)
     restore_dir(mas_backup_root(script_id, slot_idx), ts, slot_dir)
+
+
+def materialize_user_applist(slot_dir: Path, applist_json: str | None) -> bool:
+    """把 MAS 页面任务编排（AppList JSON 整表）物化进绑定槽 ``_group.yml``。
+
+    槽只有在配置会话/运行注入时才会带上编排；用户只在 MAS 页面保存过编排
+    就退出的话，直接快照槽会漏掉它，恢复这种备份会把编排清空。退出编辑页
+    归档 mas 前调用：写盘与注入同款（整表含未启用项原位，不清运行记录）。
+    AppList 为空或非法时跳过，返回是否实际写入。
+    """
+
+    try:
+        apps = json.loads(str(applist_json or "[]"))
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(apps, list) or not apps:
+        return False
+    write_app_group(slot_dir, normalize_app_group_entries(apps))
+    return True

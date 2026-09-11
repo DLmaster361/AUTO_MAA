@@ -29,11 +29,19 @@ from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
 
+from .tools.backup_archive import archive_runtime_backups
+
 logger = get_logger("OK-NTE 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """OK-NTE GUI 配置会话"""
+    """拉起 OK-NTE 原生 GUI；用户会话把 MAS 侧配置下发到读取目录，关闭回写。
+
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
+    会话下发的 MAS 目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    （原生目录即备份）；结束不回写 MAS 配置，原生目录由 manager 的任务前
+    快照还原（临时注入，看完还原）。
+    """
 
     def __init__(
         self,
@@ -41,6 +49,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_config: OkNteConfig,
         user_config: MultipleConfig[OkNteUserConfig],
         game_manager: ProcessManager | None,
+        view_only: bool = False,
     ):
         super().__init__()
 
@@ -52,6 +61,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.game_manager = game_manager
+        # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
+        self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.oknte_process_manager: ProcessManager = ProcessManager()
         self.wait_event: asyncio.Event = asyncio.Event()
@@ -88,10 +99,29 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     async def set_oknte(self) -> None:
-        """将 AUTO-MAS 侧用户配置下发到 OK-NTE GUI 读取目录。"""
+        """将 AUTO-MAS 侧用户配置下发到 OK-NTE GUI 读取目录。
+
+        查看会话（view_only）的脚本级入口跳过下发——原生目录就是刚恢复的
+        备份；用户级入口照常下发（MAS 目录即备份内容，下发是查看的必经
+        复制，GUI 所见即备份）。
+        """
 
         logger.info(f"开始配置 OK-NTE GUI: 设置脚本 {self.cur_user_item.user_id}")
         await self._kill_oknte_process()
+
+        # 下发前双池归档（mas 下发源 + native 原生现状；指纹去重，失败不阻断会话）：
+        # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录
+        archive_runtime_backups(
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
+            self.script_config_path,
+            self.script_config.get("Script", "ConfigPathMode"),
+        )
+
+        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
+        if self.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("OK-NTE 查看会话跳过配置下发: 原生目录即所选备份")
+            return
 
         if not self.mas_config_dir.exists() or not any(self.mas_config_dir.iterdir()):
             logger.info("未找到用户级 OK-NTE 配置，使用脚本当前配置启动 GUI")
@@ -119,6 +149,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def final_task(self) -> None:
         await self._kill_oknte_process()
+
+        # 查看会话：只读预览，不把原生目录回写 MAS 配置（原生现场由 manager
+        # 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("OK-NTE 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
 
         self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":

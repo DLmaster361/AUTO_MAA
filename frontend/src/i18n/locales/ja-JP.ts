@@ -2262,6 +2262,8 @@ export default {
     firstRunEstimate: '初回の準備には数分かかります。ほかのことをしていて大丈夫です',
     slowHint: 'いつもより時間がかかっています。バックエンドの応答を待っています',
     viewLog: 'ログを見る',
+    transferSource: '{source} から',
+    probeUnavailable: '{source} は利用できません',
   },
   init: {
     failure: {

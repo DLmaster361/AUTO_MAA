@@ -131,15 +131,21 @@ async function dispatchCombat(step) {
         (s.transientResinUseCount || 0) +
         (s.fragileResinUseCount || 0) +
         (s.originalResinUseCount || 0);
+      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现；这里只规范化一次，
+      // 并把这个结果同时用于「模式判断」与下面的 Param 透传，避免两处得出相反结论
+      // （例如字符串 "false" 会被 !! 转成 true，BGI 就会收到
+      // 「模式=树脂耗尽 / 参数=指定次数」的矛盾设置）。
+      const specifyResinUse = s.specifyResinUse === true || s.specifyResinUse === "true";
       let roundNum;
-      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现，兼容两种写法
-      if (s.specifyResinUse === true || s.specifyResinUse === "true") {
+      if (specifyResinUse) {
         // 指定次数模式：轮数 = 各树脂次数之和；次数全为 0 时回退步骤级配置
         roundNum = resinRounds > 0 ? resinRounds : s.domainRoundNum != null ? s.domainRoundNum : 1;
       } else {
-        // 耗尽模式：不设实际轮数上界，由 BGI 在体力耗尽时自行正常结束
-        // （实测收尾行「体力耗尽或者设置轮次已达标，结束自动秘境」，不抛异常）
-        roundNum = s.domainRoundNum != null ? s.domainRoundNum : 999;
+        // 耗尽模式：不设轮数上界，由 BGI 在体力耗尽时自行正常结束
+        // （实测收尾行「体力耗尽或者设置轮次已达标，结束自动秘境」，不抛异常）。
+        // 不回退 s.domainRoundNum：耗尽模式与「限定轮数」互斥，该键前端从不产出，
+        // 回退只会让残留它的旧设置被意外截断。
+        roundNum = 999;
       }
       const p = new AutoDomainParam(roundNum);
       if (partyName) p.partyName = partyName;
@@ -147,7 +153,8 @@ async function dispatchCombat(step) {
       if (reward != null) p.sundaySelectedValue = String(reward);
       if (s.autoArtifactSalvage != null) p.autoArtifactSalvage = !!s.autoArtifactSalvage;
       if (s.maxArtifactStar != null) p.maxArtifactStar = String(s.maxArtifactStar);
-      if (s.specifyResinUse != null) p.specifyResinUse = !!s.specifyResinUse;
+      // 用上面规范化后的值，确保与轮数换算取到同一个模式
+      if (s.specifyResinUse != null) p.specifyResinUse = specifyResinUse;
       if (s.originalResinUseCount != null) p.originalResinUseCount = s.originalResinUseCount;
       if (s.condensedResinUseCount != null) p.condensedResinUseCount = s.condensedResinUseCount;
       if (s.transientResinUseCount != null) p.transientResinUseCount = s.transientResinUseCount;

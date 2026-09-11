@@ -60,6 +60,20 @@ let initService: InitializationService | null = null
 let backendService: BackendService | null = null
 
 /**
+ * 向发起 IPC 调用的渲染进程回推事件。
+ *
+ * 初始化进度回调与后端状态回调都活得比一次 IPC 调用长：窗口已关闭、应用正在退出时，
+ * Runtime 子进程仍会往 stdout 吐 bootstrap 进度，后端子进程退出也会触发状态回调。这时
+ * 再对已销毁的 `WebContents` 调用 `send` 会抛「Object has been destroyed」，并且是在
+ * 子进程事件回调里抛出、无人接住，直接成为主进程的未捕获异常。渲染进程已销毁时静默丢弃。
+ */
+function sendToSender(event: IpcMainInvokeEvent, channel: string, payload: unknown): void {
+  const sender = event.sender
+  if (sender.isDestroyed()) return
+  sender.send(channel, payload)
+}
+
+/**
  * 获取或创建初始化服务实例
  */
 function getInitService(targetBranch: string = 'dev'): InitializationService {
@@ -140,7 +154,7 @@ async function runStageViaRuntime(
     stage,
     progress => {
       if (progress.stage !== stage) return
-      event.sender.send(progressChannel, progress)
+      sendToSender(event, progressChannel, progress)
     },
     selectedMirror,
     toRetryMode(rebuild)
@@ -237,7 +251,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const installer = new PythonInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
-      event.sender.send('python-progress', progress)
+      sendToSender(event, 'python-progress', progress)
     }, selectedMirror)
 
     if (!result.success) {
@@ -271,7 +285,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const installer = new PipInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
-      event.sender.send('pip-progress', progress)
+      sendToSender(event, 'pip-progress', progress)
     }, selectedMirror)
 
     if (!result.success) {
@@ -305,7 +319,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const installer = new GitInstaller(appRoot, mirrorService)
 
     const result = await installer.install(progress => {
-      event.sender.send('git-progress', progress)
+      sendToSender(event, 'git-progress', progress)
     }, selectedMirror)
 
     if (!result.success) {
@@ -342,7 +356,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const repoService = new RepositoryService(appRoot, mirrorService, targetBranch)
 
       const result = await repoService.pullRepository(progress => {
-        event.sender.send('repository-progress', progress)
+        sendToSender(event, 'repository-progress', progress)
       }, selectedMirror)
 
       if (!result.success) {
@@ -379,7 +393,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const depService = new DependencyService(appRoot, mirrorService)
 
       const result = await depService.installDependencies(progress => {
-        event.sender.send('dependency-progress', progress)
+        sendToSender(event, 'dependency-progress', progress)
       }, selectedMirror)
 
       if (!result.success) {
@@ -425,7 +439,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
       const result = await initService.initialize(progress => {
         // 发送进度到渲染进程
-        event.sender.send('initialization-progress', progress)
+        sendToSender(event, 'initialization-progress', progress)
       }, startBackend)
 
       if (result.success) {
@@ -434,7 +448,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
         // 设置状态回调
         backendService.setStatusCallback(status => {
-          event.sender.send('backend-status', status)
+          sendToSender(event, 'backend-status', status)
         })
 
         logger.info(`初始化成功完成，阶段: ${result.completedStages.join(', ')}`)
@@ -454,7 +468,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const initService = getInitService(targetBranch)
 
     const result = await initService.updateOnly(progress => {
-      event.sender.send('initialization-progress', progress)
+      sendToSender(event, 'initialization-progress', progress)
     })
 
     if (!result.success) {
@@ -473,7 +487,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
     // 设置状态回调
     backend.setStatusCallback(status => {
-      event.sender.send('backend-status', status)
+      sendToSender(event, 'backend-status', status)
     })
 
     const result = await backend.startBackend()
@@ -505,7 +519,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
     // 设置状态回调
     backend.setStatusCallback(status => {
-      event.sender.send('backend-status', status)
+      sendToSender(event, 'backend-status', status)
     })
 
     const result = await backend.restartBackend()
@@ -538,7 +552,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
       const result = await updateBackendViaRuntime(
         typeof targetVersion === 'string' ? targetVersion : '',
-        progress => event.sender.send(BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
+        progress => sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress),
         {
           backend: getBackendService(),
           launchConfig: resolveRuntimeLaunchConfig(getAppRoot()),
@@ -559,7 +573,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
       logger.info(`重试 Runtime 后端更新: ${action}`)
       const result = await retryBackendUpdate(action, progress =>
-        event.sender.send(BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
+        sendToSender(event, BACKEND_UPDATE_PROGRESS_CHANNEL, progress)
       )
 
       if (!result.success) {

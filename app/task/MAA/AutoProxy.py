@@ -1326,15 +1326,6 @@ class AutoProxyTask(TaskExecuteBase):
                 if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
                     self.task_dict[en_task] = False
 
-            if self.mode == "Routine" and (
-                "任务出错: 理智作战" in log
-                or any(
-                    f"理智作战: {task_name} 添加任务失败" in log
-                    for task_name in ("活动关优先", "理智作战", "剩余理智")
-                )
-            ):
-                self.task_dict["Fight"] = True
-
             if any(self.task_dict.values()):
                 self.cur_user_log.status = "MAA 部分任务执行失败"
             else:

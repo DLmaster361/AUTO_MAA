@@ -91,13 +91,22 @@ def apply_package(
     # 上一轮崩在中途时，backup 里存着唯一一份旧文件。下面的 _reset_dir 会把它
     # 清掉，所以**必须**先回滚——否则「崩溃后用户点一次手动更新」就会永久丢掉
     # 那些文件。调用方各自记得先回滚是靠不住的（API 入口就没有），把它做成这里
-    # 的前置不变量。回滚失败则拒绝继续：宁可不更新，也不能把旧文件冲掉。
+    # 的前置不变量。回滚没做成就拒绝继续：宁可不更新，也不能把旧文件冲掉。
+    # rollback() 对损坏或不认识的 journal 是返回 False 而不是抛，所以返回值也要查。
     if has_pending_journal(install_root):
         logger.warning(f"HSR 更新：{install_root} 存在未完成的更新，先回滚再继续")
-        rollback(install_root)
+        if not rollback(install_root):
+            raise HSRUpdateError(
+                f"{install_root} 有无法识别的未完成更新记录，为保住备份已拒绝继续；"
+                f"请检查 {journal_path(install_root)}"
+            )
 
-    _reset_dir(stage)
-    _reset_dir(backup)
+    try:
+        _reset_dir(stage)
+        _reset_dir(backup)
+    except OSError as exc:
+        _cleanup(work)
+        raise HSRUpdateError(f"准备更新工作目录失败：{exc}") from exc
 
     try:
         _extract(package, stage, seven_zip=seven_zip)
@@ -121,7 +130,12 @@ def apply_package(
         "to_version": to_version,
         "entries": [{"rel": rel, "action": action} for rel, action in plan],
     }
-    _write_journal(install_root, journal)
+    try:
+        _write_journal(install_root, journal)
+    except OSError as exc:
+        # 还没动安装目录，直接清掉 stage 走人，别把几百 MB 留在人家目录里。
+        _cleanup(work)
+        raise HSRUpdateError(f"写入更新记录失败：{exc}") from exc
 
     try:
         _commit(plan, source_root, install_root, backup)

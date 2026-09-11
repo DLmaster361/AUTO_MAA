@@ -20,7 +20,7 @@ from app.task.HSR.tools.update.apply import (
     journal_path,
     rollback,
 )
-from app.task.HSR.tools.update.discover import is_newer
+from app.task.HSR.tools.update.discover import HSRUpdateError, is_newer
 from app.task.HSR.tools.update.engines import get_spec, select_asset_name
 
 
@@ -236,6 +236,44 @@ def test_pending_journal_is_rolled_back_before_a_new_apply(
 
     assert (install / "SRA-cli.exe").read_bytes() == b"old-binary"
     assert _snapshot(install) == before
+
+
+@pytest.mark.parametrize(
+    "bad_journal",
+    [
+        b"{ this is not json",
+        json.dumps({"schema": 999, "entries": []}).encode(),
+    ],
+    ids=["corrupt-json", "unknown-schema"],
+)
+def test_unreadable_journal_blocks_apply_instead_of_wiping_backup(
+    install: Path, tmp_path: Path, bad_journal: bytes
+) -> None:
+    """rollback() 对读不懂的 journal 是返回 False 而不是抛。
+
+    apply_package 若不查这个返回值，紧接着的 _reset_dir(backup) 就会把上一轮
+    崩溃留下的唯一备份清掉。这里备份里的文件必须原样留着、journal 也留着，
+    等人来看。
+    """
+
+    work = install / ".automas_update"
+    backup = work / "backup"
+    backup.mkdir(parents=True)
+    (backup / "SRA-cli.exe").write_bytes(b"old-binary")
+    journal_path(install).write_bytes(bad_journal)
+
+    with pytest.raises(HSRUpdateError, match="无法识别的未完成更新记录"):
+        apply_package(
+            tmp_path / "irrelevant.zip",
+            install,
+            engine="SRA",
+            from_version="v2.19.0",
+            to_version="v2.21.0",
+            seven_zip=None,
+        )
+
+    assert (backup / "SRA-cli.exe").read_bytes() == b"old-binary"
+    assert has_pending_journal(install)
 
 
 def test_single_root_folder_is_stripped(tmp_path: Path, install: Path) -> None:

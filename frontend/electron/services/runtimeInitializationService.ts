@@ -247,7 +247,7 @@ export interface BootstrapProgressUpdate {
   item?: string
   /** 当前字节来自哪个源的 key。 */
   source?: string
-  /** 最近 1 秒窗口的吞吐（字节/秒）。 */
+  /** 最近 1 秒窗口的吞吐（字节/秒）；测速时 `0` 表示探测失败、缺失表示只测了首字节。 */
   bytesPerSecond?: number
   /** 已下载字节数；只有下载类 stage 给，测速的「已完成源数」不透传。 */
   current?: number

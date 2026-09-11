@@ -43,7 +43,8 @@ const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'runtime', '__
 
 /**
  * 夹具由本机构建的 auto-mas-runtime.exe 真实跑出来，不是手写的。
- * 例外：`bootstrap-network-relay.ndjson` 按 M14 契约手写（Runtime 侧并行实现），字段名与契约表一致。
+ * 例外：`bootstrap-network-relay.ndjson` 按 2026-09-11 M14 构建的真机样本裁剪重写，事件顺序、
+ * 数值形态照真机；git 类源的测速按修订后契约不带 bytesPerSecond。
  */
 function fixtureEvents(name: string): RuntimeEvent[] {
   return readFileSync(join(fixturesDir, name), 'utf8')
@@ -548,22 +549,41 @@ describe('网络细节透传', () => {
   it('测速事件按原 stage 透传源 key 与实测速度，但不推进主进度条', () => {
     const updates = replayAll('bootstrap-network-relay.ndjson')
     const probes = updates.filter(u => u.runtimeStage === NETWORK_PROBE_STAGE)
-    expect(probes).toHaveLength(12)
+    expect(probes).toHaveLength(18)
 
     const running = probes.filter(u => u.runtimeStatus === 'running')
     expect(running.map(u => u.source)).toEqual([
-      'aliyun',
-      'tsinghua',
+      'github',
+      'cdn-gh-proxy',
+      'edgeone-gh-proxy',
+      'agentsmirror',
+      'gh-proxy',
       'github',
       'cnb',
+      'astral',
       'github',
       'gh-proxy',
+      'pypi',
       'aliyun',
       'tsinghua',
-      'pypi',
+      'ustc',
     ])
+    // 正数 = 实测吞吐，0 = 探测失败，缺失 = 只测首字节（git 类源）
     expect(running.map(u => u.bytesPerSecond)).toEqual([
-      3355443, 1153434, 0, 2202010, 524288, 2097152, 3355443, 1153434, 419430,
+      5420756,
+      4266111,
+      16774854,
+      225525,
+      26201,
+      undefined,
+      undefined,
+      8854451,
+      9251466,
+      0,
+      7840993,
+      5370009,
+      0,
+      164019,
     ])
     expect(running.every(u => u.item === u.source)).toBe(true)
 
@@ -576,13 +596,19 @@ describe('网络细节透传', () => {
 
     const done = probes.filter(u => u.runtimeStatus === 'succeeded')
     expect(done.map(u => u.message)).toEqual([
-      '测速完成，下载顺序：aliyun → cnb → tsinghua → github',
-      '测速完成，下载顺序：gh-proxy → github',
-      '测速完成，下载顺序：aliyun → tsinghua → pypi',
+      'uv 源顺序：edgeone-gh-proxy → github → cdn-gh-proxy → agentsmirror → gh-proxy',
+      'git 源顺序：github → cnb',
+      'python 源顺序：github → astral → gh-proxy',
+      'package-index 源顺序：pypi → aliyun → ustc → tsinghua',
     ])
 
-    // 第一轮测速在任何 uv 事件之前到达，它就是 python 段的开头
-    expect(probes[0]).toMatchObject({ stage: 'python', status: 'started', progress: 10 })
+    // 真机顺序：uv.check 与一条无数值的 uv.download 先到，第一轮测速挂在已开始的 python 段上
+    expect(updates[0]).toMatchObject({
+      stage: 'python',
+      status: 'started',
+      runtimeStage: 'uv.check',
+    })
+    expect(probes[0]).toMatchObject({ stage: 'python', status: 'running', progress: 10 })
     // 依赖段开始后的测速挂在依赖段上，进度停在段起始值
     expect(probes[probes.length - 1]).toMatchObject({
       stage: 'dependency',
@@ -595,42 +621,89 @@ describe('网络细节透传', () => {
     const updates = replayAll('bootstrap-network-relay.ndjson')
 
     const uv = updates.filter(u => u.runtimeStage === 'uv.download')
-    expect(uv.map(u => u.progress)).toEqual([10, 50, 99])
-    expect(uv.every(u => u.indeterminate === false)).toBe(true)
-    expect(uv.every(u => u.item === 'uv-x86_64-pc-windows-msvc.zip' && u.source === 'aliyun')).toBe(
-      true
-    )
-    expect(uv.map(u => u.bytesPerSecond)).toEqual([0, 3355443, 3145728])
-    expect(uv[1]).toMatchObject({ current: 9437184, total: 18874368, runtimeStatus: 'running' })
+    // 第一条是真机上测速之前那条没有数值的 running
+    expect(uv[0]).toMatchObject({ indeterminate: true, progress: 10 })
+    expect(uv[0].item).toBeUndefined()
+
+    const uvBytes = uv.slice(1)
+    expect(uvBytes.map(u => u.progress)).toEqual([10, 79, 99])
+    expect(uvBytes.every(u => u.indeterminate === false)).toBe(true)
+    expect(
+      uvBytes.every(
+        u => u.item === 'uv-x86_64-pc-windows-msvc.zip' && u.source === 'edgeone-gh-proxy'
+      )
+    ).toBe(true)
+    expect(uvBytes.map(u => u.bytesPerSecond)).toEqual([0, 15036024, 19013455])
+    expect(uvBytes[1]).toMatchObject({
+      current: 15036024,
+      total: 19013455,
+      runtimeStatus: 'running',
+    })
 
     // python.install 在仓库之后到达，挂在 repository 段上（既有段序规则），细节照常透传
     const python = updates.filter(u => u.runtimeStage === 'python.install' && u.item !== undefined)
     expect(python.map(u => u.stage)).toEqual(['repository', 'repository', 'repository'])
-    expect(python.map(u => u.progress)).toEqual([10, 50, 99])
+    expect(python.map(u => u.progress)).toEqual([10, 52, 99])
     expect(python[0].item).toBe(
       'cpython-3.12.13+20260807-x86_64-pc-windows-msvc-install_only_stripped.tar.gz'
     )
-    expect(python[0].source).toBe('gh-proxy')
+    // 中继换源后 source 跟着变
+    expect(python.map(u => u.source)).toEqual(['github', 'astral', 'astral'])
   })
 
-  it('依赖同步的分母中途增大时百分比停住不倒退，换文件后文件名跟着换', () => {
+  it('依赖同步的 total 全程恒定、current 累计，换文件后文件名与来源跟着换', () => {
     const updates = replayAll('bootstrap-network-relay.ndjson')
     const deps = updates.filter(u => u.runtimeStage === 'dependencies.sync' && u.item !== undefined)
 
     expect(deps.map(u => u.item)).toEqual([
-      'numpy-2.3.2-cp312-cp312-win_amd64.whl',
-      'numpy-2.3.2-cp312-cp312-win_amd64.whl',
-      'opencv_python-4.12.0.88-cp37-abi3-win_amd64.whl',
-      'opencv_python-4.12.0.88-cp37-abi3-win_amd64.whl',
-      'opencv_python-4.12.0.88-cp37-abi3-win_amd64.whl',
+      'maafw-5.12.3-py3-none-win_amd64.whl',
+      'onnxruntime-1.29.0-cp312-cp312-win_amd64.whl',
+      'MaaAgentBinary-1.0.1-py3-none-any.whl',
+      'onnxruntime-1.29.0-cp312-cp312-win_amd64.whl',
+      'opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl',
+      'annotated_doc-0.0.5-py3-none-any.whl',
+      'win32_setctime-1.2.0-py3-none-any.whl',
     ])
-    // 10485760/52428800 本来是 20%，被单调钳位停在上一条的 80
-    expect(deps.map(u => u.progress)).toEqual([10, 80, 80, 80, 99])
-    expect(deps.map(u => u.current)).toEqual([0, 8388608, 10485760, 41943040, 52428800])
-    expect(deps.map(u => u.total)).toEqual([10485760, 10485760, 52428800, 52428800, 52428800])
+    expect(deps.map(u => u.progress)).toEqual([10, 10, 23, 45, 70, 99, 99])
+    expect(deps.map(u => u.current)).toEqual([
+      16384, 12295188, 33299008, 64690673, 100000000, 143019809, 143023892,
+    ])
+    expect(new Set(deps.map(u => u.total))).toEqual(new Set([143023892]))
+    expect(deps[4].source).toBe('aliyun')
 
     const dependency = updates.filter(u => u.stage === 'dependency')
     expect(dependency[dependency.length - 1]).toMatchObject({ status: 'completed', progress: 100 })
+  })
+
+  it('分母中途增大时按字节算出的百分比被单调钳位停住，不倒退', () => {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+    const wheel = (current: number, total: number, item: string) =>
+      bridge.observe('dependencies.sync', '正在下载锁定依赖', undefined, {
+        status: 'running',
+        current,
+        total,
+        item,
+        source: 'aliyun',
+        bytesPerSecond: 3355443,
+      })
+
+    wheel(0, 10485760, 'numpy.whl')
+    wheel(8388608, 10485760, 'numpy.whl')
+    // 10485760/52428800 本来是 20%，停在上一条的 80
+    wheel(10485760, 52428800, 'opencv.whl')
+    wheel(41943040, 52428800, 'opencv.whl')
+    wheel(52428800, 52428800, 'opencv.whl')
+
+    expect(updates.map(u => u.progress)).toEqual([10, 80, 80, 80, 99])
+    expect(updates.map(u => u.total)).toEqual([10485760, 10485760, 52428800, 52428800, 52428800])
+    expect(updates.map(u => u.item)).toEqual([
+      'numpy.whl',
+      'numpy.whl',
+      'opencv.whl',
+      'opencv.whl',
+      'opencv.whl',
+    ])
   })
 
   it('回放旧版 Runtime 的真实事件流时没有任何网络细节字段，段序与以前一致', () => {
@@ -681,20 +754,20 @@ describe('网络细节透传', () => {
     const outcome = await createService().bootstrap(update => updates.push(update))
 
     expect(outcome.success).toBe(true)
-    expect(updates.filter(u => u.runtimeStage === NETWORK_PROBE_STAGE)).toHaveLength(12)
+    expect(updates.filter(u => u.runtimeStage === NETWORK_PROBE_STAGE)).toHaveLength(18)
     expect(
       updates.find(
         u =>
           u.runtimeStage === 'dependencies.sync' &&
-          u.item === 'opencv_python-4.12.0.88-cp37-abi3-win_amd64.whl'
+          u.item === 'opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl'
       )
     ).toMatchObject({
       stage: 'dependency',
       status: 'running',
       source: 'aliyun',
-      bytesPerSecond: 3355443,
-      current: 10485760,
-      total: 52428800,
+      bytesPerSecond: 12000000,
+      current: 100000000,
+      total: 143023892,
     })
     expect(updates[updates.length - 1]).toMatchObject({ stage: 'dependency', status: 'completed' })
   })

@@ -46,16 +46,30 @@
 
 ### 1.3 目录布局（专项独立，互不干扰）
 
+mas（MAS 侧用户配置）池按脚本、按用户分目录；native（脚本原生配置）池分两级：
+
 ```
-data/{script_id}/
-└── {Script}Backups/            ← 统一叫 <Script>Backups（如 OkNteBackups）
-    ├── mas/<user_id>/…         ← MAS 侧用户配置池（user 级，按用户分）
-    │   └── 20260910-215808/…   ← 单份时间戳归档
-    └── native/…                ← 脚本原生配置池（script 级）
+data/OkNteBackups/                    ← 原生池「项目级根」（跨脚本共享、不随脚本删除）
+└── native/{fingerprint}/…            ← 脚本原生配置池（script 级，物理根指纹分桶）
+    └── 20260910-215808/…             ← 单份时间戳归档
+data/{script_id}/OkNteBackups/
+└── mas/<user_id>/…                   ← MAS 侧用户配置池（user 级，按用户分）
+    └── 20260910-215808/…             ← 单份时间戳归档
 ```
 
-布局函数（`backup_root` / `mas_backup_root` / `native_backup_root` / `mas_config_dir`）
-必须落在专项模块内，命名与路径规则对齐 OkNte 范本。
+- **项目级（自包含式适配器默认，OkNte/ZzzOd 原生池）**：native 挂到项目级根
+  （`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
+  `config_root_key(路径)` = 规范化绝对路径的短哈希：同一份物理配置无论被哪
+  个脚本引用都归同一个池，跨脚本共享、不随脚本删除（同一路径必然同格式，
+  不会混池）。
+- **脚本级（通用适配器兜底，如 General）**：native 仍挂在自己脚本目录下
+  `data/{script_id}/{Script}Backups/native`——配置路径可随意更改、无法判定
+  软件身份，项目级会键漂移混池。
+- **判定标准**：能否明确「路径对应的软件」——能（专项安装目录/配置路径）才
+  允许项目级；不能（通用脚本任意路径）保持脚本级或明确警示风险。
+
+布局函数（`project_backup_root` / `mas_backup_root` / `native_backup_root(config_path)`
+/ `mas_config_dir`）必须落在专项模块内，命名与路径规则对齐 OkNte 范本。
 
 ## 2. 存档内容（什么算「配置」由专项收集函数决定）
 
@@ -90,13 +104,18 @@ data/{script_id}/
 
 目录副本类专项（OkNte：MAS 目录里就是用户配置，天然终态）直接存档即可。
 
-字段化 + 物化副本类专项（ZzzOd）：`AppList` 编排只存在 UserData 字段，备份
-池物化的是绑定槽目录，而槽只有「在一条龙内配置」会话或运行时才被注入——
-直接快照会**漏掉刚保存的编排，恢复这种备份会把它清空**。
+字段化 + 物化副本类专项（ZzzOd）：**账号字段与 AppList 编排都只存在
+UserData 字段**，备份池物化的是绑定槽目录，而槽只有「在一条龙内配置」
+会话或运行时才被注入——直接快照会**漏掉账号（账号/密码/游戏路径/区服/
+语言/B服名）与刚保存的编排，预览读取与恢复回填都会把它们清空**。
 
-解法：退出归档 mas 前先把 UserData 字段物化进槽副本（`materialize_user_applist`，
-与注入同款写盘、整表含未启用项、不清运行记录），再走入库归档。物化函数放
-专项 tools 内并可单测。**拿不准「终态」真实位置时，先问用户确认（见 §6）。**
+解法：**「以本页配置为准」的 MAS 槽快照一律走唯一入口**
+`archive_mas_config_backup(script_id, slot, slot_dir, user_config, force=, meta=)`
+（内部先物化账号+编排进槽再快照：账号写非空字段、编排整表含未启用项、
+与注入同款写盘、不清运行记录；账号缺省不落盘、槽内既有值保持）；编辑页
+退出 / 会话启动 / 运行注入前 / 实例导入覆盖前 / 恢复前存底全走它，**禁止
+直接调裸快照 `archive_mas_backup`**——正是曾漏物化导致备份缺账号。拿不准
+「终态」真实位置时，先问用户确认（见 §6）。
 
 ## 4. 专项调用样例
 
@@ -104,36 +123,28 @@ data/{script_id}/
 
 ```python
 # app/task/OkNte/tools/backup_archive.py（节选，签名与实装一致）
-def collect_config_files(config_path: Path, mode: str) -> dict[str, Path] | None:
-    """Folder=整目录；File=单文件。空 ConfigPath 返回 None（防整树归档）。"""
-    if not config_path.name:                      # 空名守卫，必须配单测
-        return None
-    if mode == "Folder":
-        if not config_path.exists() or not any(config_path.iterdir()):
-            return None
-        return dir_files(config_path)             # 原语：目录 → 文件集
-    if mode == "File":
-        return {config_path.name: config_path} if config_path.is_file() else None
-    return None
+def native_backup_root(config_path: Path) -> Path:
+    """项目级原生池：data/OkNteBackups/native/{物理根指纹}，跨脚本共享。"""
+    return project_backup_root() / "native" / config_root_key(config_path)
 
-def archive_native_backup(script_id: str, config_path: Path, mode: str):
+def archive_native_backup(config_path: Path, mode: str):
     files = collect_config_files(config_path, mode)
     if files is None:
         return None
-    return archive_files(files, native_backup_root(script_id), keep=KEEP_COUNT)
+    return archive_files(files, native_backup_root(config_path), keep=KEEP_COUNT)
 
-def restore_native_backup(script_id: str, ts: str, config_path: Path, mode: str) -> None:
+def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
     # 1) 恢复前 force 归档当前（误恢复可找回）
     archive_files(
         collect_config_files(config_path, mode) or {},
-        native_backup_root(script_id), keep=KEEP_COUNT, force=True,
+        native_backup_root(config_path), keep=KEEP_COUNT, force=True,
     )
     # 2) 回写：Folder 用 restore_dir 整目录替换；File 模式抄回原文件名
-    backup = get_backup_dir(native_backup_root(script_id), ts)
+    backup = get_backup_dir(native_backup_root(config_path), ts)
     if backup is None:
         raise ValueError(f"备份不存在: {ts}")
     if mode == "Folder":
-        restore_dir(native_backup_root(script_id), ts, config_path)
+        restore_dir(native_backup_root(config_path), ts, config_path)
     else:  # File
         for rel, src in dir_files(backup).items():
             src.replace(config_path.parent / rel)   # 写回同目录同名文件
@@ -144,7 +155,7 @@ def archive_runtime_backups(script_id, user_id, config_path, mode) -> None:
     with suppress(Exception):  # noqa: SIM117 -- ok
         archive_mas_backup(script_id, user_id, mas_config_dir(script_id, user_id))
     with suppress(Exception):
-        archive_native_backup(script_id, config_path, mode)
+        archive_native_backup(config_path, mode)
 ```
 
 挂点：`ScriptConfigTask.set_<script>` 最前面（kill 进程之后、任何覆盖动作之前）
@@ -153,10 +164,8 @@ def archive_runtime_backups(script_id, user_id, config_path, mode) -> None:
 
 ### 4.2 ZzzOd（整目录 / 文件集两视角）
 
-- 槽目录（`MAS-` 槽）用 `archive_dir(src, store_root)` 整目录存档，收集时排除
-  运行时注入内容；
-- 原生配置用收集函数 + `archive_files` 存文件集；
-- 退出归档前 `materialize_user_applist` 物化编排字段（§3.1）；
+- MAS 槽配置快照走统一入口 `archive_mas_config_backup`（先物化账号+编排进槽
+  再快照，见 §3.1）；原生配置用收集函数 + `archive_files` 存文件集；
 - 恢复回调内先 `force=True` 归档当前再 `restore_dir` 回写。
 
 ## 5. 原语与可自定义接口清单
@@ -172,6 +181,7 @@ def archive_runtime_backups(script_id, user_id, config_path, mode) -> None:
 | `get_backup_dir(store_root, ts)` | 定位单份归档；非法/不存在返回 None |
 | `dir_files(source)` | 目录 → 相对文件集 |
 | `file_set_hash(files)` | 文件集指纹（rel 键 + 大小 + 字节） |
+| `config_root_key(config_path)` | 物理配置根的稳定身份指纹（规范化绝对路径短哈希），项目级原生池分桶用 |
 
 ### 5.2 专项必须提供 / 可自定义的接口（放专项模块）
 

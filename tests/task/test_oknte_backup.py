@@ -107,31 +107,30 @@ def test_native_backup_folder_and_file_mode(
     """native 池：Folder 整目录恢复、File 单文件写回；缺失跳过。"""
 
     monkeypatch.chdir(tmp_path)
-    script_id = "s-0002"
 
     # Folder 模式：备份 → 修改 → 恢复闭环
     config_dir = tmp_path / "native" / "configs"
     config_dir.mkdir(parents=True)
     (config_dir / "Basic Options.json").write_text("{}", encoding="utf-8")
-    first = archive_native_backup(script_id, config_dir, "Folder")
+    first = archive_native_backup(config_dir, "Folder")
     assert first is not None
     (config_dir / "Basic Options.json").write_text('{"bad": true}', encoding="utf-8")
-    restore_native_backup(script_id, first.name, config_dir, "Folder")
+    restore_native_backup(config_dir, first.name, "Folder")
     assert json.loads((config_dir / "Basic Options.json").read_text("utf-8")) == {}
-    assert len(list_native_backups(script_id)) == 2  # 恢复前强制存底 +1
+    assert len(list_native_backups(config_dir)) == 2  # 恢复前强制存底 +1
 
     # File 模式：单文件备份与写回
     config_file = tmp_path / "native" / "conf.json"
     config_file.write_text('{"v": 1}', encoding="utf-8")
-    file_backup = archive_native_backup(script_id, config_file, "File")
+    file_backup = archive_native_backup(config_file, "File")
     assert file_backup is not None
     config_file.write_text('{"v": 999}', encoding="utf-8")
-    restore_native_backup(script_id, file_backup.name, config_file, "File")
+    restore_native_backup(config_file, file_backup.name, "File")
     assert json.loads(config_file.read_text("utf-8")) == {"v": 1}
 
     # 缺失配置跳过（无可归档内容），不产生归档条目
-    assert archive_native_backup(script_id, tmp_path / "nope", "Folder") is None
-    assert archive_native_backup(script_id, tmp_path / "nope.json", "File") is None
+    assert archive_native_backup(tmp_path / "nope", "Folder") is None
+    assert archive_native_backup(tmp_path / "nope.json", "File") is None
 
 
 def test_runtime_backups_skip_missing(
@@ -140,10 +139,11 @@ def test_runtime_backups_skip_missing(
     """运行前双池归档：mas/native 任一缺失都静默跳过，绝不抛错。"""
 
     monkeypatch.chdir(tmp_path)
+    missing_native = tmp_path / "no-config-path"
     # mas 目录与原生配置都不存在：不抛错、不产生归档
     archive_runtime_backups("s-0003", "u-0003", None, "Folder")
     assert list_mas_backups("s-0003", "u-0003") == []
-    assert list_native_backups("s-0003") == []
+    assert list_native_backups(missing_native) == []
 
     # mas 存在、原生缺失：只归档 mas
     mas_dir = tmp_path / "data" / "s-0003" / "u-0003" / "ConfigFile"
@@ -151,7 +151,7 @@ def test_runtime_backups_skip_missing(
     (mas_dir / "a.json").write_text("{}", encoding="utf-8")
     archive_runtime_backups("s-0003", "u-0003", None, "Folder")
     assert len(list_mas_backups("s-0003", "u-0003")) == 1
-    assert list_native_backups("s-0003") == []
+    assert list_native_backups(missing_native) == []
 
 
 def test_force_archive_protects_selected_backup(tmp_path: Path) -> None:

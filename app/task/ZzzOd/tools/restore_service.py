@@ -48,7 +48,10 @@ async def _list_mas(ctx) -> list[str]:
 async def _list_onedragon(ctx) -> list[str]:
     from app.task.ZzzOd.tools import list_onedragon_backups
 
-    return list_onedragon_backups(ctx.script_id)
+    root = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    if not root:
+        return []
+    return list_onedragon_backups(root)
 
 
 async def _preview_mas(ctx, ts: str) -> dict:

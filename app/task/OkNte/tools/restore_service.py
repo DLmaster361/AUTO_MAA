@@ -70,7 +70,10 @@ async def _list_mas(ctx) -> list[str]:
 
 
 async def _list_native(ctx) -> list[str]:
-    return list_native_backups(ctx.script_id)
+    config_path, _ = _native_config_path(ctx)
+    if config_path is None:
+        return []
+    return list_native_backups(config_path)
 
 
 def _preview_payload(ctx, ts: str, backup: Path | None) -> dict:
@@ -97,7 +100,10 @@ async def _preview_mas(ctx, ts: str) -> dict:
 
 
 async def _preview_native(ctx, ts: str) -> dict:
-    return _preview_payload(ctx, ts, get_native_backup_dir(ctx.script_id, ts))
+    config_path, _ = _native_config_path(ctx)
+    if config_path is None:
+        return {"files": []}
+    return _preview_payload(ctx, ts, get_native_backup_dir(config_path, ts))
 
 
 async def _restore_mas(ctx, ts: str) -> object:
@@ -111,7 +117,7 @@ async def _restore_native(ctx, ts: str) -> object:
     config_path, mode = _native_config_path(ctx)
     if config_path is None:
         raise ValueError("请先设置 OK-NTE 配置路径")
-    restore_native_backup(ctx.script_id, ts, config_path, mode)
+    restore_native_backup(config_path, ts, mode)
 
 
 async def _snapshot_mas(ctx) -> dict:
@@ -124,12 +130,8 @@ async def _snapshot_mas(ctx) -> dict:
 
 async def _snapshot_native(ctx) -> dict:
     config_path, mode = _native_config_path(ctx)
-    dest = (
-        archive_native_backup(ctx.script_id, config_path, mode)
-        if config_path is not None
-        else None
-    )
-    times = list_native_backups(ctx.script_id)
+    dest = archive_native_backup(config_path, mode) if config_path is not None else None
+    times = list_native_backups(config_path) if config_path is not None else []
     return {"created": dest is not None, "time": times[0] if times else ""}
 
 

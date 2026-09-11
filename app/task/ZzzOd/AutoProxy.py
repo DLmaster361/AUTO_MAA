@@ -51,7 +51,6 @@ import uuid
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import psutil
 
@@ -75,7 +74,7 @@ from .tools import (
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCESS,
-    archive_mas_backup,
+    archive_mas_config_backup,
     archive_onedragon_backup,
     backup_instance,
     clear_run_records,
@@ -90,6 +89,7 @@ from .tools import (
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
+    user_field_patch,
     write_app_group,
     write_game_account,
     write_instance_view,
@@ -330,32 +330,6 @@ def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
     if not isinstance(raw, list):
         raise ValueError("一条龙任务编排数据异常, 请重新编辑任务配置")
     return [item for item in raw if isinstance(item, dict) and item.get("enabled")]
-
-
-def user_field_patch(user_config: ZzzOdUserConfig) -> dict[str, Any]:
-    """MAS 用户字段 → ``game_account.yml`` patch（仅非空字段，其余保留槽值）。"""
-
-    patch: dict[str, Any] = {}
-    for yaml_key, section, field in (
-        ("game_region", "Game", "GameRegion"),
-        ("game_path", "Game", "GamePath"),
-        ("game_language", "Game", "GameLanguage"),
-        ("account", "Game", "Account"),
-        ("password", "Game", "Password"),
-        ("bilibili_account_name", "Game", "BilibiliAccountName"),
-        ("platform", "Game", "Platform"),
-    ):
-        value = str(user_config.get(section, field) or "").strip()
-        if value:
-            patch[yaml_key] = value
-    # 布尔字段原样写入（YAML 布尔而非字符串）：MAS 字段是事实源，False 也下发
-    patch["use_custom_win_title"] = bool(
-        user_config.get("Game", "UseCustomWinTitle")
-    )
-    title = str(user_config.get("Game", "CustomWinTitle") or "").strip()
-    if title:
-        patch["custom_win_title"] = title
-    return patch
 
 
 def inject_user_fields(
@@ -606,7 +580,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 必须在 ensure_user_slot（可能注册新槽）与合成视图写入之前，
         # 捕获的是未被本次 MAS 操作触碰的原生状态；MAS 槽快照在下方循环内逐槽归档
         with suppress(Exception):
-            archive_onedragon_backup(self.script_info.script_id, self.script_root_path)
+            archive_onedragon_backup(self.script_root_path)
         used_idxs = collect_used_slot_idxs(
             exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users}
         )
@@ -617,10 +591,13 @@ class AutoProxyTask(TaskExecuteBase):
             if instance_dir(self.script_root_path, slot).is_dir():
                 backup_instance(self.script_root_path, slot, backup_dir)
                 # 时间戳归档：MAS 用户槽快照（含配队等全部内容），供配置恢复
-                archive_mas_backup(
+                # ——统一入口会先物化本页账号+编排进槽（账号/编排只存在
+                # UserData，槽要注入才带上；直接快照会漏、恢复会清空本页字段）
+                archive_mas_config_backup(
                     self.script_info.script_id,
                     slot,
                     instance_dir(self.script_root_path, slot),
+                    cfg,
                     meta=collect_mas_user_info(cfg),
                 )
                 self._injected_slots.append((slot, backup_dir))

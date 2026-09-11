@@ -2009,7 +2009,8 @@ const previewFieldLabels: Record<string, string> = {
 const formatPreviewValue = (key: string, raw: string): string => {
   switch (key) {
     case 'status':
-      return raw === 'true' ? t('edit.yes') : t('edit.no')
+      // 后端传 str(bool)（"True"/"False"），大小写与 YAML 表示不定，统一小写比较
+      return raw.toLowerCase() === 'true' ? t('edit.yes') : t('edit.no')
     case 'mode':
       return raw === '用户'
         ? t('edit.zzzodModeUser')

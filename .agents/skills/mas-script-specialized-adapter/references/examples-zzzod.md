@@ -128,11 +128,11 @@ ZzzOd 的「配置恢复」接入通用基座（专项只声明池，详见 conf
 - **归档三时机落地**：① 进入编辑页归档 onedragon（用户模式 `ensureDirectBackup`、
   直控 `enterDirectMode` 内同函数）——MAS 操作前原始态；② 退出编辑页
   `onUnmounted` 归档（直控 onedragon 终态；用户模式绑定槽 mas 终态 +
-  onedragon 终态）——**mas 归档前先把 AppList 物化进绑定槽**
-  （`materialize_user_applist`：AppList 只存在 UserData，槽只有会话/运行
-  才被注入，直接快照会漏掉刚保存的编排，恢复这种备份会把它清空）；③ 运行
+  onedragon 终态）——**mas 槽快照一律走统一入口 `archive_mas_config_backup`
+  （先物化账号+编排进槽再快照**：账号/编排只存在 UserData，槽只有会话/运行
+  才被注入，直接快照会漏掉，恢复这种备份会把它清空）；③ 运行
   前 `_prepare_injection` 两者都归档（原有）。
-  `ensure_zzzod_mas_backup` 对未绑定槽/空槽跳过（无可恢复内容）。
+  `ensure_zzzod_mas_backup` 对未绑定槽跳过（无可恢复内容）。
   归档全部指纹去重：内容无变化不产生新条目，恢复列表只留真实变更点。
 - 文件级快照/回写原语见 [config-archive.md](config-archive.md)。
 

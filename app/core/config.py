@@ -1706,16 +1706,15 @@ class AppConfig(GlobalConfig):
     ) -> dict:
         """确保 MAS 用户绑定槽有当前状态的备份（指纹去重，无变化跳过）。
 
-        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽或槽目录
-        为空时跳过（没有可恢复的内容），返回 ``created=False``。
+        供编辑界面退出时机调用（MAS 侧配置终态）。用户尚未绑定槽时跳过
+        （没有可恢复的内容），返回 ``created=False``。
         """
 
         from app.task.ZzzOd.tools import (
-            archive_mas_backup,
+            archive_mas_config_backup,
             collect_mas_user_info,
             instance_dir,
             list_mas_backups,
-            materialize_user_applist,
         )
 
         _, _, user_cfg, _ = self._zzzod_user(script_id, user_id)
@@ -1724,19 +1723,13 @@ class AppConfig(GlobalConfig):
         if slot <= 0 or not slot_dir.is_dir():
             return {"created": False, "time": ""}
 
-        # 归档前把 MAS 页面的任务编排物化进槽：AppList 只存在 UserData，槽
-        # 只有会话/运行时才被注入——直接快照会漏掉刚保存的编排，恢复这种
-        # 备份反而会把编排清空
-        materialize_user_applist(
-            slot_dir, user_cfg.get("OneDragon", "AppList")
-        )
-        if not any(slot_dir.iterdir()):
-            return {"created": False, "time": ""}
-
-        dest = archive_mas_backup(
+        # 统一入口：归档前物化本页账号+编排进槽（账号/编排只存在 UserData，
+        # 槽要注入才带；不物化会漏、恢复会把本页字段清空），见文档 §3.1 陷阱
+        dest = archive_mas_config_backup(
             script_id,
             slot,
             slot_dir,
+            user_cfg,
             meta=collect_mas_user_info(user_cfg),
         )
         times = list_mas_backups(script_id, slot)
@@ -1763,6 +1756,7 @@ class AppConfig(GlobalConfig):
             collect_mas_user_info,
             get_mas_backup_dir,
             instance_dir,
+            materialize_user_fields,
             normalize_app_group_entries,
             read_app_group,
             read_game_account,
@@ -1774,7 +1768,7 @@ class AppConfig(GlobalConfig):
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
 
         if target == "onedragon":
-            restore_onedragon_backup(script_id, ts, root)
+            restore_onedragon_backup(root, ts)
             logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
             return -1
 
@@ -1789,16 +1783,20 @@ class AppConfig(GlobalConfig):
                 f"目标槽 {slot:02d} 当前已被「{occupant}」占用，"
                 "为避免覆盖他人配置已中止恢复，请先处理占用后再试"
             )
+        # 恢复前先物化本页账号+编排进槽，再走 restore_mas_backup 内部「强制
+        # 归档当前」——这份「恢复前存底」才能回到本页配置状态（否则缺账号，
+        # 误恢复想找回时会把本页账号清空）
+        slot_dir = instance_dir(root, slot)
+        materialize_user_fields(slot_dir, user_cfg)
         restore_mas_backup(
             script_id,
             slot,
             ts,
-            root / "config" / f"{slot:02d}",
+            slot_dir,
             meta=collect_mas_user_info(user_cfg),
         )
 
         # 恢复后的槽内容 = 该时点的 MAS 配置；把 MAS 管理的字段全量回填本页
-        slot_dir = instance_dir(root, slot)
         account = read_game_account(slot_dir)
         # 任务编排整表回填（含未启用项原位保留顺序，运行侧只消费启用项）
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
@@ -1855,7 +1853,7 @@ class AppConfig(GlobalConfig):
             ensure_user_slot,
         )
         from app.task.ZzzOd.tools import (
-            archive_mas_backup,
+            archive_mas_config_backup,
             collect_mas_user_info,
             instance_dir,
             normalize_app_group_entries,
@@ -1868,10 +1866,13 @@ class AppConfig(GlobalConfig):
         if slot > 0:
             slot_dir = root / "config" / f"{slot:02d}"
             if slot_dir.is_dir():
-                archive_mas_backup(
+                # 覆盖前存底走统一入口（先物化再快照）：不物化的「导入前」
+                # 备份缺账号，恢复它会把本页账号清空
+                archive_mas_config_backup(
                     script_id,
                     slot,
                     slot_dir,
+                    user_cfg,
                     force=True,
                     meta=collect_mas_user_info(user_cfg),
                 )
@@ -2005,14 +2006,48 @@ class AppConfig(GlobalConfig):
                 return str(item.get("name") or f"原生实例 {slot:02d}")
         return None
 
+    @staticmethod
+    def _preview_account_fields(account: dict) -> list[dict]:
+        """备份预览用的账号字段列表；密码一律掩码、不返回明文。
+
+        预览是纯展示（恢复直接回写备份文件内容，不经此值），密码明文没有
+        理由出现在响应里；其余字段缺失时合并默认值（无值前端兜底 ``—``）。
+        mas 与 onedragon 两个预览分支共用。
+        """
+
+        from app.task.ZzzOd.tools.zzz_od_config import DEFAULT_GAME_ACCOUNT
+
+        return [
+            {
+                "key": key,
+                "value": (
+                    "••••••••"
+                    if key == "password" and account.get(key)
+                    else str(
+                        account[key]
+                        if account.get(key) is not None
+                        else DEFAULT_GAME_ACCOUNT.get(key, "")
+                    )
+                ),
+            }
+            for key in (
+                "game_region",
+                "game_path",
+                "game_language",
+                "account",
+                "password",
+                "bilibili_account_name",
+            )
+        ]
+
     def get_zzzod_backup_preview(
         self, script_id: str, user_id: str, ts: str, target: str
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复），供「预览配置」快速展示。
 
         - target="mas"：基本信息卡信息字段（用户名/启用/模式/启动器/剩余天数/
-          备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值）
-          + 任务编排（应用目录并入中文名）；
+          备注/节点详情推送，来自备份内信息快照）+ 账号字段（缺失合并默认值，
+          密码掩码）+ 任务编排（应用目录并入中文名）；
         - target="onedragon"：备份内 one_dragon.yml 注册表的实例列表。
         """
 
@@ -2024,16 +2059,13 @@ class AppConfig(GlobalConfig):
             read_app_group,
             read_game_account,
         )
-        from app.task.ZzzOd.tools.zzz_od_config import (
-            DEFAULT_GAME_ACCOUNT,
-        )
         from app.utils.io import read_file
 
         # 脚本安装根目录（onedragon/mas 两条分支都要用：实例名书、槽目录）
         root = self._zzzod_root(self._zzzod_script_config(script_id))
 
         if target == "onedragon":
-            backup = get_onedragon_backup_dir(script_id, ts)
+            backup = get_onedragon_backup_dir(root, ts)
             if backup is None:
                 raise ValueError(f"备份不存在: {ts}")
             data = read_file(backup / "one_dragon.yml") or {}
@@ -2050,24 +2082,7 @@ class AppConfig(GlobalConfig):
                 # 目录名不带零填充，与一条龙原生实例目录同构）
                 backup_idx_dir = backup / str(idx)
                 account = read_game_account(backup_idx_dir)
-                account_fields = [
-                    {
-                        "key": key,
-                        "value": str(
-                            account[key]
-                            if account.get(key) is not None
-                            else DEFAULT_GAME_ACCOUNT.get(key, "")
-                        ),
-                    }
-                    for key in (
-                        "game_region",
-                        "game_path",
-                        "game_language",
-                        "account",
-                        "password",
-                        "bilibili_account_name",
-                    )
-                ]
+                account_fields = self._preview_account_fields(account)
                 task_fields = []
                 for task in read_app_group(backup_idx_dir):
                     app_id = str(task.get("app_id") or "").strip()
@@ -2122,26 +2137,8 @@ class AppConfig(GlobalConfig):
                 continue
             info_fields.append({"key": key, "value": str(info[field])})
 
-        keys = (
-            "game_region",
-            "game_path",
-            "game_language",
-            "account",
-            "password",
-            "bilibili_account_name",
-        )
         account = read_game_account(backup)
-        account_fields = [
-            {
-                "key": key,
-                "value": str(
-                    account[key]
-                    if account.get(key) is not None
-                    else DEFAULT_GAME_ACCOUNT.get(key, "")
-                ),
-            }
-            for key in keys
-        ]
+        account_fields = self._preview_account_fields(account)
 
         name_book = {
             str(item.get("app_id")): str(item.get("app_name") or "")
@@ -2291,8 +2288,8 @@ class AppConfig(GlobalConfig):
             list_onedragon_backups,
         )
 
-        dest = archive_onedragon_backup(script_id, root)
-        times = list_onedragon_backups(script_id)
+        dest = archive_onedragon_backup(root)
+        times = list_onedragon_backups(root)
         return {
             "created": dest is not None,
             "time": times[0] if times else "",

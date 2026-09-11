@@ -45,6 +45,7 @@
     :open="previewOpen"
     :footer="null"
     width="540px"
+    :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
     @update:open="previewOpen = $event"
   >
     <template #title>

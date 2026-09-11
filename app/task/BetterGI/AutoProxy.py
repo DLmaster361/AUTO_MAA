@@ -228,6 +228,13 @@ class AutoProxyTask(TaskExecuteBase):
         self._party_err_pushed = False
 
     async def check(self) -> str:
+        # 跨日重置：必须在 ProxyTimesLimit 上限比较之前完成，否则昨日达上限的用户
+        # LastProxyDate/ProxyTimes 永不被重置，从次日起被永久跳过（对齐 ZzzOd）。
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
+            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
+            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+
         root = Path(self.script_config.get("Info", "RootPath"))
         if not root.is_dir():
             return "请设置 BetterGI 脚本路径"
@@ -296,7 +303,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.one_dragon_queue = one_dragon.parse_one_dragon_queue(
             self.cur_user_config.get("OneDragon", "Queue") or ""
         )
-        self.use_execution_layer = bool(
+        # 直控模式（非用户独立配置）下 MAS 不干预一条龙：禁用执行层与自定义项执行层，
+        # 仅按所选实配名裸跑 BGI 一条龙（启动参数已固定 startOneDragon <configName>）。
+        # 否则残留的 UseExecutionLayer/Plan/Queue 会触发路径 B 执行层，违背直控设计初衷。
+        self.use_execution_layer = bool(self.use_mas_config) and bool(
             self.cur_user_config.get("OneDragon", "UseExecutionLayer")
         )
         # 路径 B（自定义项执行层）：队列中 kind ∈ CUSTOM_EXEC_KINDS 的条目，运行时改由
@@ -510,10 +520,6 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def main_task(self):
         await self.prepare()
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.cur_user_item.status = "运行"
 
@@ -903,9 +909,12 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         # 1. 订阅脚本仓库（BetterGI 自行拉取/更新切换账号脚本）+ 生成配置组
+        #    首次使用/误删导致脚本本地缺失时，临时开启「运行前同步更新」，
+        #    让 BGI 在跑切号组前先把脚本同步拉下，避免「第一次启动切号必失败」。
+        script_missing = not account_switch.switch_script_dir(self.script_root_path).is_dir()
         try:
             script_present = account_switch.ensure_switch_subscription(
-                self.script_root_path
+                self.script_root_path, sync_update=script_missing
             )
             account_switch.write_switch_group(
                 self.script_root_path,

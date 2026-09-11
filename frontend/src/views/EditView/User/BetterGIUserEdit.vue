@@ -376,7 +376,10 @@
                       }
                     "
                     @change="
-                      saveField('Task.OneDragonConfigName', formData.Task.OneDragonConfigName)
+                      (v: string) => {
+                        formData.Task.OneDragonConfigName = v
+                        saveField('Task.OneDragonConfigName', v)
+                      }
                     "
                   />
                 </a-form-item>

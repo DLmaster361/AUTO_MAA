@@ -29,6 +29,9 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
     canonicalize_requirements,
     install_python_runtime,
 )
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     MaaFWRuntimeInstallCancelled,
     host_bootstrap_python_request,
@@ -1015,24 +1018,15 @@ def build_runner_environment(
     *,
     import_paths: Iterable[str | Path] = (),
 ) -> dict[str, str]:
-    env = os.environ.copy()
-    for name in (
-        "PYTHONHOME",
-        "PYTHONUSERBASE",
-        "PIP_TARGET",
-        "PIP_PREFIX",
-        "PIP_USER",
-    ):
-        env.pop(name, None)
+    # 宿主的 PYTHONPATH / PYTHONWARNINGS 等一律不进 worker：worker 能 import 什么只由
+    # import_paths 决定（剔除名单与运行池 / agent 共用，见 host_environment 模块）。
+    env = strip_host_python_environment()
 
     venv = Path(venv_path).resolve()
     scripts_dir = venv / ("Scripts" if os.name == "nt" else "bin")
     resolved_import_paths = [
         str(Path(path).resolve()) for path in import_paths if Path(path).exists()
     ]
-    existing_python_path = env.get("PYTHONPATH", "")
-    if existing_python_path:
-        resolved_import_paths.append(existing_python_path)
 
     env["VIRTUAL_ENV"] = str(venv)
     env["PYTHONNOUSERSITE"] = "1"

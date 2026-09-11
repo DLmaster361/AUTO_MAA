@@ -147,6 +147,66 @@ describe('parseRuntimeEventLine', () => {
   })
 })
 
+describe('parseRuntimeEventLine：M14 网络细节字段', () => {
+  // bootstrap-network-relay.ndjson 按 M14 契约手写（Runtime 侧并行实现），字段名与契约表一致。
+  const lines = fixture('bootstrap-network-relay.ndjson').trim().split('\n')
+  const events = lines.map(line => parseRuntimeEventLine(line))
+
+  it('测速事件解析出 item / source / bytesPerSecond 与源数计数', () => {
+    const probe = events.find(
+      event => event?.type === 'progress' && event.stage === 'network.probe'
+    )
+    expect(probe).toMatchObject({
+      type: 'progress',
+      stage: 'network.probe',
+      status: 'running',
+      item: 'aliyun',
+      source: 'aliyun',
+      bytesPerSecond: 3355443,
+      current: 1,
+      total: 4,
+    })
+    expect(probe?.type === 'progress' && probe.percent).toBeUndefined()
+  })
+
+  it('下载事件解析出文件名、来源、速度与真实字节', () => {
+    const download = events.find(
+      event =>
+        event?.type === 'progress' && event.stage === 'uv.download' && event.current === 9437184
+    )
+    expect(download).toMatchObject({
+      item: 'uv-x86_64-pc-windows-msvc.zip',
+      source: 'aliyun',
+      bytesPerSecond: 3355443,
+      current: 9437184,
+      total: 18874368,
+      percent: 50,
+    })
+  })
+
+  it('旧版 Runtime 的事件没有这三个字段时解析为 undefined', () => {
+    const legacyLine = fixture('bootstrap-success.ndjson').trim().split('\n')[2]
+    const legacy = parseRuntimeEventLine(legacyLine)
+    expect(legacy).toMatchObject({ type: 'progress', stage: 'uv.download' })
+    if (legacy?.type !== 'progress') throw new Error('夹具第三行应是 progress')
+    expect(legacy.item).toBeUndefined()
+    expect(legacy.source).toBeUndefined()
+    expect(legacy.bytesPerSecond).toBeUndefined()
+    expect(legacy.current).toBeUndefined()
+  })
+
+  it('类型不对或空串的新字段同样按缺失处理', () => {
+    const event = parseRuntimeEventLine(
+      '{"protocol":1,"type":"progress","stage":"python.install","status":"running","message":"x",' +
+        '"item":"","source":42,"bytesPerSecond":"fast"}'
+    )
+    if (event?.type !== 'progress') throw new Error('应解析为 progress')
+    expect(event.item).toBeUndefined()
+    expect(event.source).toBeUndefined()
+    expect(event.bytesPerSecond).toBeUndefined()
+  })
+})
+
 describe('NdjsonEventStream', () => {
   it('跨 chunk 拼接半行', () => {
     const [helloLine, progressLine] = fixture('version.ndjson').trim().split('\n')

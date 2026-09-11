@@ -7,7 +7,7 @@
 // ⚠️ 待实机复核（技术路径文档 #4/#5/#7）：
 //   - settings 注入方式（全局 `settings` 还是脚本参数）、脚本入口约定；
 //   - 地脉花 useAdventurerHandbook 语义反转（AutoPlan 记录需取反）；
-//   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算；
+//   - 秘境 domainRoundNum 轮数 ↔ 树脂次数的换算（已落地，见 dispatchCombat 自动秘境分支）；
 //   - 字段名以目标版本 bettergi.d.ts 复核（本文件依据 bettergi-scripts-list 0.64 附近 d.ts）。
 
 const COMBAT_STEPS = ["自动秘境", "自动地脉花", "自动幽境危战", "自动首领讨伐"];
@@ -122,7 +122,26 @@ async function dispatchCombat(step) {
         masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
         return;
       }
-      const p = new AutoDomainParam(s.domainRoundNum != null ? s.domainRoundNum : 1);
+      // 轮数换算（原文件头 TODO #7）：前端右栏不暴露 domainRoundNum，直接取默认值 1
+      // 会让 BGI 的 AutoDomain 只刷 1 轮就「正常返回」（不抛异常）——表现为第二轮角色
+      // 一动不动、攒够超时后反复 ESC 回主界面、最后被 MAS 记成 MAS_STEP_DONE 成功。
+      // 这里按「指定树脂刷取次数」求和换算轮数：浓缩/须臾/脆弱/原粹每次各计 1 轮。
+      const resinRounds =
+        (s.condensedResinUseCount || 0) +
+        (s.transientResinUseCount || 0) +
+        (s.fragileResinUseCount || 0) +
+        (s.originalResinUseCount || 0);
+      let roundNum;
+      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现，兼容两种写法
+      if (s.specifyResinUse === true || s.specifyResinUse === "true") {
+        // 指定次数模式：轮数 = 各树脂次数之和；次数全为 0 时回退步骤级配置
+        roundNum = resinRounds > 0 ? resinRounds : s.domainRoundNum != null ? s.domainRoundNum : 1;
+      } else {
+        // 耗尽模式：不设实际轮数上界，由 BGI 在体力耗尽时自行正常结束
+        // （实测收尾行「体力耗尽或者设置轮次已达标，结束自动秘境」，不抛异常）
+        roundNum = s.domainRoundNum != null ? s.domainRoundNum : 999;
+      }
+      const p = new AutoDomainParam(roundNum);
       if (partyName) p.partyName = partyName;
       if (domainName) p.domainName = domainName;
       if (reward != null) p.sundaySelectedValue = String(reward);

@@ -110,11 +110,15 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
 
 
 def _has_completed_annihilation_week(log: str) -> bool:
-    """判断剿灭日志是否表明本周额度已完成。"""
+    """判断剿灭日志是否表明本周额度已完成。
+
+    MAA 理智不足无法开战时同样打印「完成任务: 剿灭作战」且无进度行，
+    与已达上限在日志上不可区分，故无进度行一律视为未达标，宁可下次重试。
+    """
 
     progress = _parse_annihilation_weekly_progress(log)
     return "完成任务: 剿灭作战" in log and (
-        progress is None or progress[0] >= progress[1]
+        progress is not None and progress[0] >= progress[1]
     )
 
 

@@ -1903,6 +1903,17 @@ const initDragonList = () => {
         pushDragon(order, { kind, key: row.name })
       }
     }
+    // 与 readStoredQueue 第二遍一致：战斗组每实例启用态来自 Plan，自定义组缺省按管理表回退。
+    // 新用户（无持久化队列）必须在此回显，否则战斗开关恒为默认开启、关闭后刷新即回弹
+    // （一旦手动加一项使队列非空、走 if 分支才会正确显示，正是此 bug 的表象）。
+    const planEnabledInit = readPlanEnabled()
+    for (const r of order) {
+      if (r.kind === 'builtin' && COMBAT_BUILTIN_SET.has(r.key)) {
+        r.enabled = planEnabledInit.get(stepNameIn(r, order)) ?? true
+      } else if (r.kind !== 'builtin' && r.kind !== 'stamina' && r.enabled === undefined) {
+        r.enabled = customGroupsTable.value.find(x => x.name === r.key)?.enabled ?? true
+      }
+    }
     dragonList.value = order
   }
   dragonListReady = true

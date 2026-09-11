@@ -147,6 +147,9 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
     「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``control launch -pkg``。
     """
 
+    #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
+    store_package = "com.mumu.store"
+
     async def vendor_launch_app(self, idx: str, package_name: str) -> object:
         """``MuMuManager control -v N app launch -pkg``。
 

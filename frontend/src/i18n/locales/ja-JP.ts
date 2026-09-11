@@ -1754,6 +1754,7 @@ export default {
     start: '起動',
     stop: '停止',
     hide: 'ウィンドウを隠す',
+    openStore: 'ゲームセンターを開く',
     settings: '設定',
     settingsTitle: 'インスタンス設定',
     settingsHint:
@@ -1832,6 +1833,7 @@ export default {
       creating: '作成中',
       deleting: '削除中',
       operating: '処理中',
+      openingStore: '起動中',
     },
     configGuard: '設定ガード',
     guardTip:
@@ -1866,6 +1868,8 @@ export default {
       batchPartial: '成功 {ok} 台、失敗 {fail} 台',
       batchFailed: '一括設定に失敗しました',
       operateFailed: 'デバイスの操作に失敗しました',
+      storeOpened: 'ゲームセンターを開きました',
+      storeOpenFailed: 'ゲームセンターを開けませんでした',
       createOk: 'インスタンスを作成しました（デバイス番号 #{slot}）',
       createFailed: 'インスタンスの作成に失敗しました',
       deleteOk: 'インスタンスを削除しました',

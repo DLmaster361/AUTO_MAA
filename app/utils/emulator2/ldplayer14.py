@@ -123,6 +123,9 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``launch --packagename``。
     """
 
+    #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
+    store_package = "com.android.flysilkworm"
+
     #: adb devices 的缓存。放类属性而不是覆写 __init__，免得和父类的构造契约纠缠。
     _adb_cache: list[str] | None = None
     _adb_cache_until: float = 0.0

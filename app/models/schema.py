@@ -4106,6 +4106,22 @@ class Emulator2InstanceDeleteIn(BaseModel):
     slot: str = Field(..., description="要删除的设备号")
 
 
+class Emulator2StoreOpenIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要打开游戏中心的设备号")
+
+
+class Emulator2StoreOpenOut(OutBase):
+    ok: bool = Field(default=False, description="游戏中心是否已在前台")
+    reason: str = Field(
+        default="",
+        description=(
+            "结局原因码: launched / already-running / no-store / not-installed"
+            " / no-adb / boot-timeout / launch-timeout"
+        ),
+    )
+
+
 class Emulator2InstanceDeletePreviewOut(OutBase):
     ok: bool = Field(default=False, description="设备号是否有效")
     reason: str = Field(default="", description="失败原因枚举")

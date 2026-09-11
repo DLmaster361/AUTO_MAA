@@ -49,6 +49,8 @@ from app.models.schema import (
     Emulator2SettingsIn,
     Emulator2SettingsOut,
     Emulator2StableModeIn,
+    Emulator2StoreOpenIn,
+    Emulator2StoreOpenOut,
 )
 from app.utils.emulator2 import service
 
@@ -222,6 +224,28 @@ async def delete_instance(
     except Exception as e:
         return Emulator2InstanceDeleteOut(**_error(e))
     return Emulator2InstanceDeleteOut(**result)
+
+
+@router.post(
+    "/instances/store/open",
+    tags=["Action"],
+    summary="打开游戏中心",
+    response_model=Emulator2StoreOpenOut,
+    status_code=200,
+)
+async def open_store(
+    payload: Emulator2StoreOpenIn = Body(...),
+) -> Emulator2StoreOpenOut:
+    """在一台**已在线**的设备上打开模拟器自带的游戏中心。
+
+    雷电纯净模式会把游戏中心从桌面藏掉，这是它唯一的图形入口。
+    拉不起来返回 ``ok=false`` 和一句说明，不算接口错误；只有设备号解析不出来才是 500。
+    """
+    try:
+        result = await service.open_store(payload.emulatorId, payload.slot)
+    except Exception as e:
+        return Emulator2StoreOpenOut(**_error(e))
+    return Emulator2StoreOpenOut(**result)
 
 
 @router.post(

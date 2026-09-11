@@ -82,6 +82,8 @@ export type { Emulator2SettingsIn } from './models/Emulator2SettingsIn';
 export type { Emulator2SettingsOut } from './models/Emulator2SettingsOut';
 export type { Emulator2SlotAssignment } from './models/Emulator2SlotAssignment';
 export type { Emulator2StableModeIn } from './models/Emulator2StableModeIn';
+export type { Emulator2StoreOpenIn } from './models/Emulator2StoreOpenIn';
+export type { Emulator2StoreOpenOut } from './models/Emulator2StoreOpenOut';
 export type { EmulatorConfig } from './models/EmulatorConfig';
 export type { EmulatorConfig_Info } from './models/EmulatorConfig_Info';
 export type { EmulatorConfigIndexItem } from './models/EmulatorConfigIndexItem';

@@ -2044,6 +2044,7 @@ export default {
     start: 'Start',
     stop: 'Stop',
     hide: 'Hide window',
+    openStore: 'Open game center',
     settings: 'Settings',
     settingsTitle: 'Instance settings',
     settingsHint:
@@ -2124,6 +2125,7 @@ export default {
       creating: 'Creating',
       deleting: 'Deleting',
       operating: 'Working',
+      openingStore: 'Opening',
     },
     configGuard: 'Config guard',
     guardTip:
@@ -2158,6 +2160,8 @@ export default {
       batchPartial: '{ok} succeeded, {fail} failed',
       batchFailed: 'Batch settings failed',
       operateFailed: 'The device operation failed',
+      storeOpened: 'Game center opened',
+      storeOpenFailed: 'Failed to open the game center',
       createOk: 'Instance created as device #{slot}',
       createFailed: 'Failed to create the instance',
       deleteOk: 'Instance deleted',

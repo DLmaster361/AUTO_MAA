@@ -298,6 +298,8 @@ def test_index_rotation_retries_next_candidate_and_records_the_winner(
     assert _index_arg(calls[0]["command"]) == "https://mirror-a.invalid/simple"
     assert _index_arg(calls[1]["command"]) == "https://mirror-b.invalid/simple"
     assert result == {"source": "https://mirror-b.invalid/simple", "attempt": 2}
+    # 用户级 / 项目级 uv.toml 不得参与池的解析（与 Runtime 增补 2 C20 同口径）。
+    assert all("--no-config" in call["command"] for call in calls)
 
 
 def test_index_rotation_raises_the_last_error_after_every_candidate_fails(
@@ -459,6 +461,7 @@ def test_python_distribution_mirror_rotation_switches_env_between_attempts(
     assert calls[1]["env"]["UV_PYTHON_INSTALL_MIRROR"] == "https://py-mirror-b.invalid"
     # uv 的镜像只认环境变量，重试之间命令行本身不变。
     assert calls[0]["command"] == calls[1]["command"]
+    assert "--no-config" in calls[0]["command"]
 
 
 def test_python_distribution_mirror_rotation_raises_after_every_candidate_fails(

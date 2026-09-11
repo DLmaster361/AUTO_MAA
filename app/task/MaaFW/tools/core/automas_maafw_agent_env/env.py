@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Callable
 
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
+from ..automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 from ..automas_maafw_runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
@@ -516,14 +519,8 @@ def _project_interface_hash(project_path: Path) -> str:
 
 
 def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env.pop("VIRTUAL_ENV", None)
-    env.pop("UV_PROJECT_ENVIRONMENT", None)
-    env.pop("PYTHONHOME", None)
-    env.pop("PYTHONUSERBASE", None)
-    env.pop("PIP_TARGET", None)
-    env.pop("PIP_PREFIX", None)
-    env.pop("PIP_USER", None)
+    # 剔除名单与运行池 / worker 共用；隔离 venv 里的 pip 只认项目根这一条 PYTHONPATH。
+    env = strip_host_python_environment()
     env["PYTHONPATH"] = str(project_path)
     return env
 

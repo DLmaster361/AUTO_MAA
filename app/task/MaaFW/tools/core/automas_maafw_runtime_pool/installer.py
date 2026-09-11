@@ -18,6 +18,7 @@ from typing import Any
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from .host_environment import strip_host_python_environment
 
 logger = logging.getLogger("automas.maafw.runtime_pool.installer")
 
@@ -725,6 +726,7 @@ def _create_environment_with_uv(
             bootstrap,
             "--no-python-downloads",
             "--no-project",
+            "--no-config",
             "--cache-dir",
             str(uv_cache_dir),
             "--link-mode",
@@ -890,6 +892,7 @@ def _find_pool_managed_python(
                 "--managed-python",
                 "--no-project",
                 "--no-python-downloads",
+                "--no-config",
                 "--resolve-links",
                 "--cache-dir",
                 str(cache_dir),
@@ -967,6 +970,7 @@ def _install_pool_managed_python(
         str(python_root),
         "--no-bin",
         "--no-registry",
+        "--no-config",
         "--cache-dir",
         str(cache_dir),
         "--no-progress",
@@ -1279,6 +1283,9 @@ def _install_requirements_with_uv(
             "install",
             "--python",
             str(python_executable),
+            # 用户级 / 项目级 uv.toml（额外 [[index]]、offline、exclude-newer …）
+            # 不得参与池的解析，索引与镜像只由本文件的候选逻辑决定。
+            "--no-config",
             "--cache-dir",
             str(cache_dir),
             "--link-mode",
@@ -1585,20 +1592,8 @@ def _run_with_source_rotation(
 
 
 def _clean_process_environment() -> dict[str, str]:
-    env = os.environ.copy()
-    for name in (
-        # 启动链路（Runtime → uv run → 后端）注入的 venv 指向，交给 uv/pip
-        # 前必须剔除，否则外部 uv 会把项目环境解析到 MAS 的 runtime venv 上
-        "VIRTUAL_ENV",
-        "UV_PROJECT_ENVIRONMENT",
-        "PYTHONHOME",
-        "PYTHONUSERBASE",
-        "PYTHONPATH",
-        "PIP_TARGET",
-        "PIP_PREFIX",
-        "PIP_USER",
-    ):
-        env.pop(name, None)
+    # 剔除名单与 worker / agent 各处共用（host_environment 模块），这里只补自己的要求。
+    env = strip_host_python_environment()
     env["PYTHONNOUSERSITE"] = "1"
     return env
 
@@ -1694,6 +1689,7 @@ def _resolved_requirements_with_uv(
                 "freeze",
                 "--python",
                 str(python_executable),
+                "--no-config",
                 "--cache-dir",
                 str(cache_dir),
             ],

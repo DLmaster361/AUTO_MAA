@@ -61,6 +61,9 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     pin_agent_maafw_requirement,
     project_maafw_runtime_path,
 )
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 
 try:
     from .models import MaaFWDeviceConfig
@@ -1920,23 +1923,16 @@ class MaaFWRunner:
         再显式设置当前项目所需的 PYTHONPATH；PATH 前置 agent Python 目录、
         Scripts 目录、项目根目录与项目必要 dll 目录。
         """
-        env = os.environ.copy()
+        # 先按共用名单剔除 worker 自己与宿主的 Python 变量，再叠加项目 interface 声明的
+        # 环境：项目给自己 agent 设的值要保留。worker 自己需要 PYTHONSAFEPATH（见
+        # build_runner_environment），但不能透传给项目 agent：agent 以 `python ./agent/main.py`
+        # 启动，靠脚本目录进 sys.path[0] 才能 import 同级模块，官方模板就是这么写的，
+        # 继承过去会当场 ModuleNotFoundError——它随 PYTHON* 前缀一起被剔除。
+        env = strip_host_python_environment()
         env.update(self.plan.piEnv)
 
         project_path = Path(self.plan.path)
 
-        # 清理 AUTO-MAS 自身环境变量，防止 agent 串到 MAS .venv
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("UV_PROJECT_ENVIRONMENT", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONUSERBASE", None)
-        env.pop("PIP_TARGET", None)
-        env.pop("PIP_PREFIX", None)
-        env.pop("PIP_USER", None)
-        # worker 自己需要 PYTHONSAFEPATH（见 build_runner_environment），但不能透传给
-        # 项目 agent：agent 以 `python ./agent/main.py` 启动，靠脚本目录进 sys.path[0]
-        # 才能 import 同级模块，官方模板就是这么写的，继承过去会当场 ModuleNotFoundError。
-        env.pop("PYTHONSAFEPATH", None)
         # 不继承 MAS 的 PYTHONPATH，显式设置为当前项目根目录
         python_path_items: list[str] = []
         if getattr(agent_plan, "runtimeKind", None) == "isolated_venv":
@@ -2272,16 +2268,8 @@ class MaaFWRunner:
 
         与 _build_agent_env 不同的是，此方法不依赖 agent_plan，用于 pip 检测阶段。
         """
-        env = os.environ.copy()
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("UV_PROJECT_ENVIRONMENT", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONUSERBASE", None)
-        env.pop("PIP_TARGET", None)
-        env.pop("PIP_PREFIX", None)
-        env.pop("PIP_USER", None)
-        # 与 _build_agent_env 同理：agent 侧不能带 PYTHONSAFEPATH
-        env.pop("PYTHONSAFEPATH", None)
+        # 与 _build_agent_env 同一份剔除名单（含 agent 侧不能带的 PYTHONSAFEPATH）。
+        env = strip_host_python_environment()
         env["PYTHONPATH"] = str(project_path)
         return env
 

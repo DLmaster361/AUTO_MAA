@@ -1589,7 +1589,7 @@ export default {
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入脚本页面查看详细配置，请保证当前没有其他同名脚本在运行！',
     configRestoreDetailConfirm:
-      '即将打开脚本页面查看配置，请确保查看期间未运行任何同名脚本，否则可能产生配置覆盖。',
+      '即将打开脚本页面查看配置，将会临时覆盖当前配置，请确保查看期间不要运行任何同名脚本，否则可能产生配置冲突，若出现意外，可使用配置恢复功能恢复。',
     configRestoreConfirmOk: '确认',
     configRestoreAction: '一键恢复',
     configRestoreSuccess: '配置已恢复',
@@ -1609,7 +1609,7 @@ export default {
     oknteSessionTimeoutWarn: 'OK-NTE 设置会话即将超时，30 秒后自动保存',
     oknteViewingTitle: '正在查看 OK-NTE 配置',
     oknteViewingDesc: 'ok-nte 界面显示的是所选备份的内容，仅供查看。',
-    oknteViewingDesc2: '查看不会改动本页配置；看完后点击「关闭查看」结束。',
+    oknteViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     oknteViewClose: '关闭查看',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: '配置模式',
@@ -1638,7 +1638,7 @@ export default {
     zzzodSessionTimeoutWarn: 'ZZZ-OD 设置会话即将超时，30 秒后自动保存',
     zzzodViewingTitle: '正在查看 ZZZ-OD 配置',
     zzzodViewingDesc: '一条龙界面显示的是所选备份的内容，仅供查看。',
-    zzzodViewingDesc2: '查看不会改动本页配置；看完后点击「关闭查看」结束。',
+    zzzodViewingDesc2: '查看期间将临时切换配置；查看完成后请点击「关闭查看」结束。',
     zzzodViewClose: '关闭查看',
     zzzodSettingsSaved: 'ZZZ-OD 设置已保存',
     zzzodSettingsSaveFailed: '保存 ZZZ-OD 设置失败',

@@ -19,7 +19,7 @@
 """OK-NTE 配置备份恢复原语的最小回归测试。
 
 用临时目录模拟 MAS 用户 ConfigFile 与 ok-nte 原生配置（Folder/File 两种
-模式），验证双池归档的指纹去重、恢复闭环（含恢复前强制存底）、运行前
+模式），验证两池归档的指纹去重、恢复闭环（含恢复前强制存底）、运行前
 归档的缺目录容错与备份预览摘要的纯逻辑。
 """
 
@@ -30,8 +30,8 @@ import pytest
 
 from app.task.OkNte.tools.backup_archive import (
     archive_mas_backup,
+    archive_mas_runtime_backup,
     archive_native_backup,
-    archive_runtime_backups,
     build_backup_file_summary,
     collect_config_files,
     list_mas_backups,
@@ -136,20 +136,23 @@ def test_native_backup_folder_and_file_mode(
 def test_runtime_backups_skip_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """运行前双池归档：mas/native 任一缺失都静默跳过，绝不抛错。"""
+    """运行前归档：mas 目录 / 原生配置任一缺失都静默跳过，绝不抛错。"""
 
     monkeypatch.chdir(tmp_path)
     missing_native = tmp_path / "no-config-path"
-    # mas 目录与原生配置都不存在：不抛错、不产生归档
-    archive_runtime_backups("s-0003", "u-0003", None, "Folder")
+    # mas 目录不存在：不抛错、不产生归档
+    archive_mas_runtime_backup("s-0003", "u-0003")
     assert list_mas_backups("s-0003", "u-0003") == []
+
+    # 原生配置缺失：native 归档（manager.prepare 调用）同样跳过
+    assert archive_native_backup(missing_native, "Folder") is None
     assert list_native_backups(missing_native) == []
 
-    # mas 存在、原生缺失：只归档 mas
+    # mas 存在：正常归档（native 仍缺失，互不影响）
     mas_dir = tmp_path / "data" / "s-0003" / "u-0003" / "ConfigFile"
     mas_dir.mkdir(parents=True)
     (mas_dir / "a.json").write_text("{}", encoding="utf-8")
-    archive_runtime_backups("s-0003", "u-0003", None, "Folder")
+    archive_mas_runtime_backup("s-0003", "u-0003")
     assert len(list_mas_backups("s-0003", "u-0003")) == 1
     assert list_native_backups(missing_native) == []
 

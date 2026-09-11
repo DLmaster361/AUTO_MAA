@@ -126,6 +126,12 @@ def onedragon_backup_root(root: str | Path) -> Path:
 
     ``key`` 是物理安装根的指纹（:func:`config_root_key`）——同一份安装目录
     无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
+
+    旧布局（beta.4 及更早的脚本级池 ``data/{script_id}/ZzzOdBackups/onedragon/``）
+    **刻意不兼容**：不做兼容读取、也不自动搬迁。那批备份出自问题期的备份/
+    恢复链路（快照未物化账号与任务编排，恢复会清空本页配置），内容语义
+    不完整，接进新池只会让问题备份重新可恢复；确需找回时由维护者用
+    ``.dev/migrate_backup_layout.py``（不入库）按指纹手动搬家。
     """
 
     return project_backup_root() / "onedragon" / config_root_key(root)

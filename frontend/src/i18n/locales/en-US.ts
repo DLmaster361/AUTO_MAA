@@ -1680,7 +1680,7 @@ export default {
     configRestoreDetailHint:
       'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
     configRestoreDetailConfirm:
-      'The script view page will open to review the config. Make sure no script with the same name is running during viewing; otherwise the config may be overwritten.',
+      'The script view page will open and temporarily overwrite the current config. Make sure no script with the same name is running during viewing; otherwise conflicts may occur. If anything unexpected happens, you can restore via Config restore.',
     configRestoreConfirmOk: 'Confirm',
     configRestoreAction: 'Restore',
     configRestoreSuccess: 'Config restored',
@@ -1702,7 +1702,7 @@ export default {
     oknteViewingTitle: 'Viewing OK-NTE config',
     oknteViewingDesc: 'The ok-nte window shows the selected backup, for viewing only.',
     oknteViewingDesc2:
-      'Viewing does not change the fields on this page; click "Close viewer" when done.',
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
     oknteViewClose: 'Close viewer',
     // 预览字段展示标题（通用组件用；value 为后端枚举值，label 走词表）
     configRestorePreviewMode: 'Config mode',
@@ -1734,7 +1734,7 @@ export default {
     zzzodViewingTitle: 'Viewing ZZZ-OD config',
     zzzodViewingDesc: 'The OneDragon window shows the selected backup, for viewing only.',
     zzzodViewingDesc2:
-      'Viewing does not change the fields on this page; click "Close viewer" when done.',
+      'Viewing temporarily switches the config; click "Close viewer" when done.',
     zzzodViewClose: 'Close viewer',
     zzzodSettingsSaved: 'ZZZ-OD settings saved',
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',

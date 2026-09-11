@@ -35,6 +35,7 @@ from app.utils.constants import TASK_MODE_ZH
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -172,6 +173,16 @@ class OkNteManager(TaskExecuteBase):
                     )
                 elif self.script_config.get("Script", "ConfigPathMode") == "File":
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+
+            # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
+            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——set_oknte 里按用户/重试归档会把上一轮下发的
+            # MAS 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
+            with suppress(Exception):
+                archive_native_backup(
+                    self.script_config_path,
+                    self.script_config.get("Script", "ConfigPathMode"),
+                )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (

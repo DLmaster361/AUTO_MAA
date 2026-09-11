@@ -20,9 +20,13 @@
 
 备份时机（MAS「动手前」，此时 ok-nte 尚未被触碰）：
 
+- 任务 / 配置会话启动（manager ``prepare``）：``native`` 归档脚本原生配置
+  当前状态（Folder 整目录 / File 单文件）——原生配置物理上跨用户共享，
+  只在任务级归档一次；``set_oknte`` 里按用户/重试归档会把上一轮下发的
+  MAS 配置误当原生内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_oknte``）：
-  ``mas`` 归档 MAS 用户 ConfigFile（下发源，运行回写与会话保存会覆盖它），
-  ``native`` 归档脚本原生配置当前状态（Folder 整目录 / File 单文件）；
+  ``mas`` 归档 MAS 用户 ConfigFile（下发源，运行回写与会话保存会覆盖它，
+  按用户各归各的）；
 - 编辑界面进入 / 退出（前端 ensure）：``mas`` 池夹住动态表单的编辑会话包络。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
@@ -230,24 +234,17 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
     logger.info(f"ok-nte 原生配置已恢复备份 {ts}")
 
 
-def archive_runtime_backups(
-    script_id: str,
-    user_id: str,
-    config_path: Path | None,
-    mode: str,
-) -> None:
-    """运行 / 配置会话下发前的双池归档（mas 下发源 + native 原生现状）。
+def archive_mas_runtime_backup(script_id: str, user_id: str) -> None:
+    """运行 / 配置会话下发前归档 MAS 用户 ConfigFile（下发源）。
 
-    两个池各自独立归档、独立容错：任一池失败只记日志，不阻断另一池，
-    也绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
-    指纹去重：内容无变化自动跳过。
+    运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
+    绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
+    native 池与此处无关：原生配置跨用户共享，由 manager ``prepare`` 在
+    任务级一次性归档（见 :func:`archive_native_backup`）。
     """
 
     with suppress(Exception):
         archive_mas_backup(script_id, user_id, mas_config_dir(script_id, user_id))
-    if config_path is not None:
-        with suppress(Exception):
-            archive_native_backup(config_path, mode)
 
 
 # ══════════════════ 备份预览摘要 ══════════════════

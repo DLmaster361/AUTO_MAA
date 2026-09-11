@@ -1755,6 +1755,7 @@ class AppConfig(GlobalConfig):
             MAS_USER_INFO_FILE,
             collect_mas_user_info,
             get_mas_backup_dir,
+            get_onedragon_backup_dir,
             instance_dir,
             materialize_user_fields,
             normalize_app_group_entries,
@@ -1763,11 +1764,42 @@ class AppConfig(GlobalConfig):
             restore_mas_backup,
             restore_onedragon_backup,
         )
+        from app.utils.config_archive import dir_files
         from app.utils.io import read_file
 
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
 
         if target == "onedragon":
+            # 恢复守卫：备份内的原生实例 idx 若已被任一 MAS 用户绑定为配置槽
+            # （任何脚本、含本用户——恢复会整目录替换槽目录），中止并点名，
+            # 避免把绑定槽内容覆盖成原生实例；原生注册表不在此列，恢复本就
+            # 是把原生世界拉回该时点（恢复前已强制存底）
+            backup_dir = get_onedragon_backup_dir(root, ts)
+            if backup_dir is None:
+                raise ValueError(f"备份不存在: {ts}")
+            backup_idxs = {
+                int(rel.split("/", 1)[0])
+                for rel in dir_files(backup_dir)
+                if "/" in rel and rel.split("/", 1)[0].isdigit()
+            }
+            for bound_script in self.ScriptConfig.values():
+                if not isinstance(bound_script, ZzzOdConfig):
+                    continue
+                for bound_uid, bound_cfg in bound_script.UserData.items():
+                    bound_slot = int(bound_cfg.get("Info", "SlotIdx") or -1)
+                    if bound_slot not in backup_idxs:
+                        continue
+                    if bound_uid == uid:
+                        who = "本用户"
+                    else:
+                        who = (
+                            f"脚本「{str(bound_script.get('Info', 'Name') or '未知脚本')}」"
+                            f"的用户「{str(bound_cfg.get('Info', 'Name') or '未知用户')}」"
+                        )
+                    raise ValueError(
+                        f"备份含原生实例 {bound_slot:02d}，已被{who}绑定为配置槽，"
+                        "恢复会覆盖其内容，已中止"
+                    )
             restore_onedragon_backup(root, ts)
             logger.info(f"ZZZ-OD 用户 {uid} 已把备份 {ts} 恢复到一条龙原生配置")
             return -1

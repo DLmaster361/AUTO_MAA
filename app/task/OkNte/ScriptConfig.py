@@ -29,7 +29,7 @@ from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
 
-from .tools.backup_archive import archive_runtime_backups
+from .tools.backup_archive import archive_mas_runtime_backup
 
 logger = get_logger("OK-NTE 脚本设置")
 
@@ -109,13 +109,11 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"开始配置 OK-NTE GUI: 设置脚本 {self.cur_user_item.user_id}")
         await self._kill_oknte_process()
 
-        # 下发前双池归档（mas 下发源 + native 原生现状；指纹去重，失败不阻断会话）：
-        # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录
-        archive_runtime_backups(
-            self.script_info.script_id,
-            self.cur_user_item.user_id,
-            self.script_config_path,
-            self.script_config.get("Script", "ConfigPathMode"),
+        # 下发前归档 MAS 用户配置（下发源；指纹去重，失败不阻断会话）——
+        # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录。
+        # native 池由 manager.prepare 在任务级一次性归档，此处不重复
+        archive_mas_runtime_backup(
+            self.script_info.script_id, self.cur_user_item.user_id
         )
 
         # 查看会话的脚本级入口：原生目录即所选备份，跳过下发

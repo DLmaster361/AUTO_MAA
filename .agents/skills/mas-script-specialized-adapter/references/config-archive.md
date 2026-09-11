@@ -150,17 +150,18 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
             src.replace(config_path.parent / rel)   # 写回同目录同名文件
     # 3) 恢复后语义（如有）放这里：字段回填 / 重建视图 / 清残留（原语不管）
 
-def archive_runtime_backups(script_id, user_id, config_path, mode) -> None:
-    """运行/会话下发前的双池归档；两池独立 suppress，绝不抛出。"""
-    with suppress(Exception):  # noqa: SIM117 -- ok
-        archive_mas_backup(script_id, user_id, mas_config_dir(script_id, user_id))
+def archive_mas_runtime_backup(script_id, user_id) -> None:
+    """运行/会话下发前归档 mas 下发源；失败只记日志，绝不抛出。"""
     with suppress(Exception):
-        archive_native_backup(config_path, mode)
+        archive_mas_backup(script_id, user_id, mas_config_dir(script_id, user_id))
 ```
 
-挂点：`ScriptConfigTask.set_<script>` 最前面（kill 进程之后、任何覆盖动作之前）
-调 `archive_runtime_backups(...)`。前端 `onMounted / onUnmounted` 走
-`/backup/ensure`（见读档文档 §2）。
+挂点分两处：`manager.prepare`（任务级、任何下发之前）调 `archive_native_backup(...)`
+**一次**——原生配置物理上跨用户共享，只在任务级归档一次代表「本轮动手前的原生
+状态」，放到按用户/重试的 `set_<script>` 里会把上一轮下发的 MAS 配置误当原生
+内容挤进保留池；`ScriptConfigTask.set_<script>` 最前面（kill 进程之后、任何
+覆盖动作之前）调 `archive_mas_runtime_backup(...)` 归档按用户的 mas 下发源。
+前端 `onMounted / onUnmounted` 走 `/backup/ensure`（见读档文档 §2）。
 
 ### 4.2 ZzzOd（整目录 / 文件集两视角）
 

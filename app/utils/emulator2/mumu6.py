@@ -21,7 +21,7 @@
 """Emulator 2.0 的 MuMu 6 后端。
 
 继承旧 ``MumuManager``，启动 / 关闭 / 状态 / 隐藏全部原样复用；这里只补四件事：
-读写四项设置、新建实例、删除实例、按全局「屏蔽广告」开关处理广告（见 :mod:`.adblock`）。
+读写四项设置、新建实例、删除实例、按旧版全局开关应用「大雷主人模式」（见 :mod:`.master_mode`）。
 
 **和雷电走的是完全不同的通道。** 雷电没有可用的命令行（没有帧率参数、CPU 内存只收有限
 档位、而且根本不能读），只能直接改实例配置文件；MuMu 的 ``MuMuManager setting`` 读写都
@@ -49,17 +49,17 @@ from app.models.emulator import DeviceInfo, DeviceRef
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.mumu import MumuManager
 
-from .adblock import (
+from .applaunch import AppLaunchMixin
+from .master_mode import (
     MUMU_LAUNCHER_PACKAGE,
     MUMU_SH_HELPER_IMAGE,
     MUMU_SH_TIMEOUT,
     apply_splash_placeholders,
-    is_block_ad_enabled,
+    is_master_mode_enabled,
     mumu_component_applied,
     mumu_component_shell,
     mumu_splash_placeholder_paths,
 )
-from .applaunch import AppLaunchMixin
 from .settings import (
     FieldValue,
     InstanceSettings,
@@ -181,34 +181,34 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
         )
 
     async def prepare_launch(self, idx: str) -> None:
-        """启动前按全局「屏蔽广告」开关处理 Windows 侧的开屏广告与小程序弹窗缓存。
+        """启动前按旧版全局开关处理「大雷主人模式」的宿主缓存。
 
         旧配置靠 ``EMULATOR_SPLASH_ADS_PATH_BOOK`` 在管理器构造时做同一件事，
         表里没有 ``emulator2``，所以这里自己做。只记警告，不拦启动。
         """
         apply_splash_placeholders(
-            mumu_splash_placeholder_paths(), is_block_ad_enabled()
+            mumu_splash_placeholder_paths(), is_master_mode_enabled()
         )
 
     async def after_boot(self, idx: str, info: DeviceInfo) -> None:
-        """在线之后按全局「屏蔽广告」开关禁用 / 恢复商店的五个广告组件。
+        """在线之后按旧版全局开关应用 / 恢复「大雷主人模式」的桌面组件。
 
         组件状态跨重启保留，所以每次都设是幂等的：开着 ``pm disable``、关着 ``pm enable``。
         禁用之后桌面已经画好的 widget 不会自己消失，要重启一次桌面才看得到；恢复时不动桌面，
-        广告下次自然回来。任何一步失败只记警告。
+        桌面内容下次自然刷新。任何一步失败只记警告。
         """
-        block = is_block_ad_enabled()
-        output = await self._root_shell(idx, mumu_component_shell(block))
+        enabled = is_master_mode_enabled()
+        output = await self._root_shell(idx, mumu_component_shell(enabled))
         if output is None:
             return
-        if not mumu_component_applied(output, block):
+        if not mumu_component_applied(output, enabled):
             logger.warning(
-                f"MuMu 实例 {idx} 的广告组件没有全部{'禁用' if block else '恢复'}: "
+                f"MuMu 实例 {idx} 的「大雷主人模式」组件没有全部{'禁用' if enabled else '恢复'}: "
                 f"{output.strip()}"
             )
             return
-        logger.info(f"MuMu 实例 {idx} 的广告组件已{'禁用' if block else '恢复'}")
-        if block:
+        logger.info(f"MuMu 实例 {idx} 的「大雷主人模式」组件已{'禁用' if enabled else '恢复'}")
+        if enabled:
             await self._restart_launcher(idx)
 
     async def _root_shell(self, idx: str, command: str) -> str | None:

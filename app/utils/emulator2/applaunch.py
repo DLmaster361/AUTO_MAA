@@ -380,14 +380,14 @@ class AppLaunchMixin(DeviceBase):
         return None
 
     async def prepare_launch(self, idx: str) -> None:
-        """启动模拟器之前的一步。默认什么都不做，两家后端各自覆盖（雷电在这里设纯净模式）。
+        """启动模拟器之前的一步。默认什么都不做，两家后端各自覆盖（雷电在这里应用「大雷主人模式」）。
 
         这一步失败不该拦住模拟器启动：覆盖时自己记警告；万一漏了抛出来，
         :meth:`open` 也只记一条警告继续往下走。
         """
 
     async def after_boot(self, idx: str, info: DeviceInfo) -> None:
-        """模拟器在线之后、拉应用之前的一步。默认什么都不做（MuMu 在这里禁广告组件）。
+        """模拟器在线之后、拉应用之前的一步。默认什么都不做（MuMu 在这里应用「大雷主人模式」）。
 
         约束同 :meth:`prepare_launch`。
         """
@@ -456,7 +456,7 @@ class AppLaunchMixin(DeviceBase):
     async def open_store(self, idx: str) -> AppLaunchResult:
         """打开这家模拟器自带的游戏中心 / 应用商店。
 
-        给界面上的「打开游戏中心」按钮用：雷电开了纯净模式之后 launcher 会把游戏中心
+        给界面上的「打开游戏中心」按钮用：雷电开启「大雷主人模式」之后 launcher 会把游戏中心
         从桌面和应用列表里过滤掉（包没禁、``am start`` 照常），用户没有别的入口。
         没有商店的后端直接返回 ``no-store``，不去碰设备。
         """

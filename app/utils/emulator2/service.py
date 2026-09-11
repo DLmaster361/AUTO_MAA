@@ -405,7 +405,7 @@ _STORE_OPEN_MESSAGES: dict[str, str] = {
 async def open_store(emulator_id: str, slot: str) -> dict:
     """打开某台设备所属模拟器的游戏中心。
 
-    雷电开了纯净模式之后 launcher 会把游戏中心从桌面和应用列表里过滤掉，
+    雷电开启「大雷主人模式」之后 launcher 会把游戏中心从桌面和应用列表里过滤掉，
     用户在模拟器里没有入口；这个接口就是给界面上那个按钮用的。
 
     拉不起来是「这次没成」，返回 ``ok=False`` 加一句能照做的话，不抛异常——

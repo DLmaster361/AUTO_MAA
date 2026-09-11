@@ -18,27 +18,13 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""Emulator 2.0 的「屏蔽广告」：两家各自实测有效的那几步，纯逻辑部分放这里。
+"""Emulator 2.0 的「大雷主人模式」。
 
-全局开关是 ``Config.get("Function", "IfBlockAd")``，两家后端在启动流程里读它，
-开着就做、关着就还原。所有步骤都**只记警告不抛异常**：广告去不掉不该让模拟器启动失败。
-
-雷电 14
-    官方纯净模式 ``ldconsole globalsetting --cleanmode 1``。它是**整个安装全局**的，
-    宿主在 **VM 冷启动**时把它作为系统属性 ``phone.cleanmode`` 推进客户机，launcher 据此
-    不再构建顶栏搜索条、底部推广栏和首屏推广，并把游戏中心图标从桌面过滤掉（包没禁，
-    界面上的「打开游戏中心」按钮照常能拉起）。实例跑着的时候翻开关没有反应，所以只在
-    启动前设置一次。早先「纯净模式无效」的结论是当时没冷启动 VM，见去广告实验记录。
-
-MuMu 6
-    安卓端四类广告（顶栏搜索条、全屏弹窗、两块桌面 widget）都由商店包 ``com.mumu.store``
-    的组件承载或触发，用 ``MuMuManager sh``（uid=0 的 root 通道，**不需要**打开
-    ``root_permission``）``pm disable`` 五个组件即可，商店本身保留、跨重启保留、``pm enable``
-    可逆。其中 ``LoginServerReceiver`` 是 launcher 查会员状态的应答方，禁掉之后 launcher
-    收不到回复、按「会员」处理而藏起顶栏和弹窗。对组件必须用 ``pm disable``：
-    ``pm disable-user`` 对组件会静默返回 ``new state: default``，等于没做。
-    Windows 侧开屏广告与小程序弹窗落在 ``%APPDATA%\\Netease\\MuMuPlayer\\data`` 下两个目录，
-    删目录、建同名空文件占位即可（与旧配置的 ``EMULATOR_SPLASH_ADS_PATH_BOOK`` 同一手法）。
+沿用全局 ``Function.IfBlockAd`` 开关，启动时应用或恢复设置；失败只记警告。
+雷电使用安装级 ``globalsetting --cleanmode``，VM 冷启动后生效，游戏中心仍可打开。
+MuMu 处理宿主缓存及五个桌面组件，关闭时撤销占位并恢复组件；组件状态跨重启保留。
+``MuMuManager sh`` 不要求开启 ``root_permission``；组件必须用 ``pm disable``，
+``pm disable-user`` 会静默返回 default，不能代替。
 """
 
 import os
@@ -47,11 +33,11 @@ from pathlib import Path
 
 from app.utils import get_logger
 
-logger = get_logger("Emulator2 屏蔽广告")
+logger = get_logger("Emulator2 大雷主人模式")
 
-#: MuMu 6 商店包名与要禁用的五个组件（四个桌面广告 widget 的 provider + 会员状态应答器）。
+#: MuMu 6 商店包名与模式管理的五个桌面组件。
 MUMU_STORE_PACKAGE = "com.mumu.store"
-MUMU_AD_COMPONENTS: tuple[str, ...] = (
+MUMU_MODE_COMPONENTS: tuple[str, ...] = (
     "com.mumu.store.widget.appWidgetProvider.AdBannerWidgetProvider",
     "com.mumu.store.widget.appWidgetProvider.DailyDiscoveryWidgetProvider",
     "com.mumu.store.widget.appWidgetProvider.HotActivityWidgetProvider",
@@ -70,59 +56,59 @@ MUMU_SH_TIMEOUT = 20.0
 MUMU_SH_HELPER_IMAGE = "NemuShell.exe"
 
 
-def is_block_ad_enabled() -> bool:
-    """读全局「屏蔽广告」开关。读不到按关处理，并记一条警告。"""
+def is_master_mode_enabled() -> bool:
+    """从旧版全局开关读取「大雷主人模式」状态，读取失败按关闭处理。"""
     try:
         from app.core import Config
 
         return bool(Config.get("Function", "IfBlockAd"))
     except Exception as e:  # noqa: BLE001 - 配置层的问题不该拖垮启动
-        logger.warning(f"读取「屏蔽广告」开关失败，按关闭处理: {e}")
+        logger.warning(f"读取「大雷主人模式」配置失败，按关闭处理: {e}")
         return False
 
 
 # ---- 雷电 ----------------------------------------------------------------
 
 
-def ldplayer_clean_mode_args(block: bool) -> tuple[str, ...]:
+def ldplayer_clean_mode_args(enabled: bool) -> tuple[str, ...]:
     """``ldconsole globalsetting --cleanmode 1|0`` 的参数。"""
-    return ("globalsetting", "--cleanmode", "1" if block else "0")
+    return ("globalsetting", "--cleanmode", "1" if enabled else "0")
 
 
 # ---- MuMu：安卓端 ----------------------------------------------------------
 
 
-def mumu_component_shell(block: bool) -> str:
+def mumu_component_shell(enabled: bool) -> str:
     """一条 ``sh -c`` 里把五个组件一起禁用 / 启用。
 
     合成一条是为了只起一次 ``NemuShell.exe``：它连不上就无限重试，起五次就有五次机会卡住。
     """
-    verb = "pm disable --user 0" if block else "pm enable"
+    verb = "pm disable --user 0" if enabled else "pm enable"
     return "; ".join(
-        f"{verb} {MUMU_STORE_PACKAGE}/{component}" for component in MUMU_AD_COMPONENTS
+        f"{verb} {MUMU_STORE_PACKAGE}/{component}" for component in MUMU_MODE_COMPONENTS
     )
 
 
-def mumu_component_applied(output: str, block: bool) -> bool:
+def mumu_component_applied(output: str, enabled: bool) -> bool:
     """从 ``pm disable`` / ``pm enable`` 的合并输出判断五条是否都落了。
 
     ``pm`` 每条成功都会打 ``new state: disabled``（或 ``enabled``）；少一条就是有组件没处理到。
     """
-    wanted = "new state: disabled" if block else "new state: enabled"
-    return output.count(wanted) >= len(MUMU_AD_COMPONENTS)
+    wanted = "new state: disabled" if enabled else "new state: enabled"
+    return output.count(wanted) >= len(MUMU_MODE_COMPONENTS)
 
 
 # ---- MuMu：Windows 侧占位 --------------------------------------------------
 
 
 def mumu_splash_placeholder_paths(appdata: Path | None = None) -> list[Path]:
-    """MuMu 6 在 Windows 侧缓存开屏广告与小程序弹窗的两个目录。"""
+    """MuMu 6 在 Windows 侧需要处理的两个启动缓存目录。"""
     base = appdata if appdata is not None else Path(os.getenv("APPDATA") or "")
     data = base / "Netease" / "MuMuPlayer" / "data"
     return [data / "startupImage", data / "ProgramAds"]
 
 
-def apply_splash_placeholders(paths: list[Path], block: bool) -> None:
+def apply_splash_placeholders(paths: list[Path], enabled: bool) -> None:
     """占位或撤销占位。
 
     开着：目录整个删掉、原地放一个同名空文件，MuMu 就写不进缓存图；实测它启动时不会把文件
@@ -131,7 +117,7 @@ def apply_splash_placeholders(paths: list[Path], block: bool) -> None:
     """
     for path in paths:
         try:
-            if block:
+            if enabled:
                 if path.is_dir():
                     shutil.rmtree(path)
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,4 +125,4 @@ def apply_splash_placeholders(paths: list[Path], block: bool) -> None:
             elif path.is_file():
                 path.unlink()
         except OSError as e:
-            logger.warning(f"处理开屏广告占位失败 {path}: {e}")
+            logger.warning(f"处理「大雷主人模式」缓存占位失败 {path}: {e}")

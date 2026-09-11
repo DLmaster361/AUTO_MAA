@@ -175,9 +175,19 @@ class LogMonitor:
                 continue
 
             if not if_mtime_checked:
-                file_mtime_date = date.fromtimestamp(current_path.stat().st_mtime)
+                try:
+                    mtime_stat = current_path.stat()
+                except (FileNotFoundError, PermissionError) as e:
+                    # exists() 与 stat() 之间文件可能被被监控脚本删掉或替换
+                    # （线上 ZZZ-OD 的 .log/log.txt 撞上过），这段不在下方读取
+                    # 分支的 try 里，异常会让整个监控任务带着异常静默死亡、之后
+                    # 再无回调。与读取分支同样按访问错误重试
+                    logger.warning(f"文件访问错误: {e}")
+                    await asyncio.sleep(1)
+                    continue
+                file_mtime_date = date.fromtimestamp(mtime_stat.st_mtime)
                 if file_mtime_date == date.today():
-                    log_stat = current_path.stat()
+                    log_stat = mtime_stat
                     if_mtime_checked = True
                 else:
                     if warned_mtime_date != file_mtime_date:

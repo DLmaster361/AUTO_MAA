@@ -446,6 +446,20 @@ export interface ElectronAPI {
       runtimeMode?: RuntimeInitMode
       /** 当前阶段没有可靠总量，应展示持续活动状态而不是精确百分比。 */
       indeterminate?: boolean
+      /** 产生本条进度的 Runtime stage 原文（`network.probe` / `uv.download` …）；旧链路不产生。 */
+      runtimeStage?: string
+      /** 产生本条进度的 Runtime progress.status 原文；旧链路不产生。 */
+      runtimeStatus?: string
+      /** 当前条目：正在下载的文件名，或测速时的源 key。 */
+      item?: string
+      /** 当前字节来自哪个源的 key。 */
+      source?: string
+      /** 最近 1 秒窗口的吞吐（字节/秒）。 */
+      bytesPerSecond?: number
+      /** 已下载字节数。 */
+      current?: number
+      /** 总字节数。 */
+      total?: number
     }) => void
   ) => void
   removeInitializationProgressListener?: () => void

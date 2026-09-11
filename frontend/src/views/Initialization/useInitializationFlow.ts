@@ -3,12 +3,14 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { getBackendVersion } from '@/composables/useVersionService'
+import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import { decideFailureActions, filterRuntimeMirrors } from '@/utils/initializationDecision'
 import {
   getInitializationStageKey,
   getInitializationStageStatus,
   initializationStages,
 } from './initializationPresentation'
+import { EMPTY_NETWORK_ACTIVITY, reduceNetworkActivity } from './networkActivity'
 import type {
   ElectronMirrorSource,
   InstallStageResult,
@@ -24,6 +26,7 @@ import type {
   FailureNoticeKind,
 } from '@/utils/initializationDecision'
 import type { InitializationStepKey, InitializationStepStatus } from './initializationPresentation'
+import type { NetworkActivity, NetworkActivityPayload } from './networkActivity'
 
 export function useInitializationFlow() {
   const { t } = useI18n()
@@ -50,7 +53,7 @@ export function useInitializationFlow() {
     doctorRunning: boolean
   }
 
-  interface ProgressPayload {
+  interface ProgressPayload extends NetworkActivityPayload {
     stage?: string
     progress?: number
     message?: string
@@ -96,6 +99,8 @@ export function useInitializationFlow() {
 
   const currentStepIndex = ref(0)
   const runtimeMode = ref<RuntimeInitMode>('off')
+  /** Runtime 报上来的测速结果与当前下载文件，只在 Runtime 链路有内容；页面级，不分段。 */
+  const networkActivity = ref<NetworkActivity>(EMPTY_NETWORK_ACTIVITY)
   const runtimeMirrorKeys = ref<Record<string, string[]>>({})
   const runtimeFallbackLogPath = ref('')
   const flowKind = ref<'first-run' | 'update' | 'startup'>('first-run')
@@ -163,6 +168,50 @@ export function useInitializationFlow() {
     currentState.value.progressIndeterminate ? undefined : currentState.value.progress
   )
 
+  /**
+   * 进度条下面的网络细节，最多两行：测速时是「各源实测」+「最终顺序」，下载时是
+   * 「文件名」+「已下载 / 总量 · 速度 · 来源」。旧链路与旧版 Runtime 没有这些字段时为空。
+   *
+   * Runtime 链路下始终交给 LaunchStatus 一个数组（哪怕为空），让它把两行的位置留出来，
+   * 细节出现和消失时步骤条不会上下跳。
+   */
+  const statusDetails = computed<string[] | undefined>(() => {
+    if (runtimeMode.value === 'off') return undefined
+    if (currentState.value.status !== 'processing') return []
+
+    const { probe, transfer } = networkActivity.value
+    if (transfer) {
+      const parts: string[] = []
+      if (transfer.total !== undefined && transfer.total > 0) {
+        parts.push(`${formatBytes(transfer.current ?? 0)} / ${formatBytes(transfer.total)}`)
+      } else if (transfer.current !== undefined) {
+        parts.push(formatBytes(transfer.current))
+      }
+      if (transfer.bytesPerSecond !== undefined) parts.push(formatSpeed(transfer.bytesPerSecond))
+      if (transfer.source) parts.push(t('launch.transferSource', { source: transfer.source }))
+      return parts.length > 0 ? [transfer.item, parts.join(' · ')] : [transfer.item]
+    }
+
+    if (probe) {
+      const lines: string[] = []
+      if (probe.entries.length > 0) {
+        lines.push(
+          probe.entries
+            .map(entry =>
+              entry.bytesPerSecond > 0
+                ? `${entry.source} ${formatSpeed(entry.bytesPerSecond)}`
+                : t('launch.probeUnavailable', { source: entry.source })
+            )
+            .join(' · ')
+        )
+      }
+      if (probe.summary) lines.push(probe.summary)
+      return lines
+    }
+
+    return []
+  })
+
   const failureProps = computed(() => {
     const step = currentStep.value
     const state = currentState.value
@@ -204,6 +253,13 @@ export function useInitializationFlow() {
         raw.status === 'failed'
           ? raw.status
           : undefined,
+      runtimeStage: typeof raw.runtimeStage === 'string' ? raw.runtimeStage : undefined,
+      runtimeStatus: typeof raw.runtimeStatus === 'string' ? raw.runtimeStatus : undefined,
+      item: typeof raw.item === 'string' ? raw.item : undefined,
+      source: typeof raw.source === 'string' ? raw.source : undefined,
+      bytesPerSecond: typeof raw.bytesPerSecond === 'number' ? raw.bytesPerSecond : undefined,
+      current: typeof raw.current === 'number' ? raw.current : undefined,
+      total: typeof raw.total === 'number' ? raw.total : undefined,
     }
   }
 
@@ -212,6 +268,7 @@ export function useInitializationFlow() {
     const progress = readProgressPayload(value)
     const previousStatus = state.status
     const previousMessage = state.message
+    networkActivity.value = reduceNetworkActivity(networkActivity.value, progress)
 
     if (progress.status === 'completed' || (progress.progress ?? 0) >= 100) {
       state.status = 'success'
@@ -352,6 +409,7 @@ export function useInitializationFlow() {
     state.message = ''
     state.progress = 0
     state.progressIndeterminate = true
+    networkActivity.value = EMPTY_NETWORK_ACTIVITY
     let failure: RuntimeFailureFields = {}
 
     try {
@@ -712,6 +770,7 @@ export function useInitializationFlow() {
     hasFailed,
     isBackendStep,
     launchSteps,
+    statusDetails,
     statusHint,
     statusProgress,
     statusTitle,

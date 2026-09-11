@@ -2449,6 +2449,8 @@ export default {
     firstRunEstimate: '首次准备通常要几分钟，可以先去做别的',
     slowHint: '比平时慢一些，正在等待后端响应',
     viewLog: '查看日志',
+    transferSource: '来源 {source}',
+    probeUnavailable: '{source} 不可用',
   },
   init: {
     failure: {

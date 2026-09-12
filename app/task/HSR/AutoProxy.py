@@ -757,12 +757,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
-        try:
-            only_when_changed = self.script_config.get(
-                "Game", "RedeemCodesOnlyWhenChanged"
-            )
-        except (AttributeError, KeyError, TypeError):
-            only_when_changed = True
+        only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
         if only_when_changed is False:
             return True, None
         try:
@@ -1376,27 +1371,30 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         return failures
                     continue
                 except Exception as e:  # noqa: BLE001
+                    # 非 HSRRetryableTaskError 的异常是配置或代码错误, 补跑也不会
+                    # 变好, 记录堆栈后按当前用户失败处理, 不进入补跑循环
                     item.last_error = str(e)
-                    failures.append(item)
+                    logger.opt(exception=True).warning(
+                        f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
+                        f"{item.last_error}"
+                    )
                     self._append_log(
                         f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
                     )
-                    if item.module_key == "StartGame":
-                        remaining = self._remaining_items_after(
-                            items,
-                            phases=phases,
-                            phase_index=phase_index,
-                            phase_items=phase_items,
-                            item_index=item_index,
-                            failures=failures,
-                            reason=HSR_ABORT_REASON_LOGIN_FAILED,
+                    if item.module_key != "StartGame":
+                        self._record_module_result(
+                            user_id=item.user_id,
+                            user_name=item.user_name,
+                            module_key=item.module_key,
+                            module_name=item.module_name,
+                            script=item.script,
+                            status="failed",
+                            reason=item.last_error,
                         )
-                        failures.extend(remaining)
-                        return failures
-                    continue
+                    raise
 
-                if bool(getattr(result, "success", True)):
+                if bool(getattr(result, "success", False)):
                     if item.on_success is not None:
                         item.on_success(result)
                     # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定

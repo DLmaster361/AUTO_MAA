@@ -166,7 +166,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_start_time = datetime.now()
         self.log_start_at = time.monotonic()
 
-        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
 
         arguments_list = []
@@ -192,7 +191,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_exe_path = path_list[0] if len(path_list) > 0 else self.script_path
         self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
-        self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
 
         self.script_target_process_info = (
             ProcessInfo(
@@ -412,10 +410,11 @@ class AutoProxyTask(TaskExecuteBase):
             if_get_file = False
             target_suffix: int | None = None  # None = 未锁定
             deadline = time.monotonic() + 60
+            if self.log_use_prefix:
+                prefix_fmt = self.log_format[: -len(_PREFIX_SENTINEL)]
+                pattern = _format_to_prefix_regex(prefix_fmt)
             while time.monotonic() < deadline:
                 if self.log_use_prefix:
-                    prefix_fmt = self.log_format[: -len(_PREFIX_SENTINEL)]
-                    pattern = _format_to_prefix_regex(prefix_fmt)
                     today = t.date()
 
                     current_suffix = 0
@@ -471,8 +470,9 @@ class AutoProxyTask(TaskExecuteBase):
                     if if_get_file:
                         break
             else:
+                # 日志路径是确定性配置错误, 重试只会重复「起游戏 → 等 60 秒 → 杀进程」
                 await self.handle_pre_script_error("未找到日志文件")
-                continue
+                break
 
             await self.general_log_monitor.start_monitor_file(
                 self._resolve_log_file_path, self.log_start_time

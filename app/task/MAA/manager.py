@@ -157,6 +157,10 @@ class MaaManager(TaskExecuteBase):
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
 
+        # 活动关卡信息整个任务只刷新一次, 各用户注入配置时直接用缓存
+        if self.task_info.mode == "AutoProxy":
+            await Config.get_stage(refresh=True)
+
     async def main_task(self):
 
         self.check_result = await self.check()

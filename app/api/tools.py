@@ -47,7 +47,6 @@ from app.models.schema import (
     CommunityActivityTaskOut,
     GameSignAccountCreateOut,
     GameSignAccountDeleteIn,
-    GameSignAccountGetIn,
     GameSignAccountGroupConfig,
     GameSignAccountReorderIn,
     GameSignAccountsListOut,
@@ -141,7 +140,6 @@ def _get_community_account_field(account: object, field: str, default=None):
         return default
 
 
-_get_game_sign_field = _get_community_account_field
 
 
 @router.post(
@@ -408,35 +406,6 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
             data=GameSignAccountGroupConfig(**{}),
         )
     return GameSignAccountCreateOut(accountId=str(uid), data=data)
-
-
-@router.post(
-    "/sign/account/get",
-    tags=["GameSign"],
-    summary="获取游戏社区账号组详情",
-    response_model=GameSignAccountCreateOut,
-    status_code=200,
-)
-async def get_game_sign_account(
-    account: GameSignAccountGetIn = Body(...),
-) -> GameSignAccountCreateOut:
-    """获取游戏社区账号组详情"""
-
-    try:
-        raw = await Config.get_game_sign_account(account.accountId)
-        # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
-        flat = raw.get("GameSignAccount", raw)
-        account_data = GameSignAccountGroupConfig(**flat)
-    except Exception as e:
-        _log_community_api_error("获取游戏社区账号组详情失败", e)
-        return GameSignAccountCreateOut(
-            code=500,
-            status="error",
-            message="获取游戏社区账号组详情失败，请稍后重试",
-            accountId=account.accountId,
-            data=GameSignAccountGroupConfig(**{}),
-        )
-    return GameSignAccountCreateOut(accountId=account.accountId, data=account_data)
 
 
 @router.post(

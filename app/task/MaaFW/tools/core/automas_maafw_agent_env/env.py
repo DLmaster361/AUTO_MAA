@@ -351,6 +351,8 @@ def _ensure_isolated_venv(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                # 引导解释器同样不能被宿主 PYTHONHOME / PYTHONPATH 带偏。
+                env=strip_host_python_environment(),
             )
         except subprocess.TimeoutExpired as exc:
             raise MaaFWAgentEnvError(
@@ -379,12 +381,13 @@ def _create_venv_with_uv(venv_path: Path, log: Callable[[str], None]) -> None:
     log(f"[Python环境] 引导 Python 均缺少 venv 模块，改用 uv 创建: {venv_path}")
     try:
         result = subprocess.run(
-            [uv_exe, "venv", "--seed", str(venv_path)],
+            [uv_exe, "venv", "--seed", "--no-config", str(venv_path)],
             capture_output=True,
             timeout=UV_VENV_TIMEOUT,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=strip_host_python_environment(),
         )
     except subprocess.TimeoutExpired as exc:
         raise MaaFWAgentEnvError(
@@ -516,14 +519,8 @@ def _project_interface_hash(project_path: Path) -> str:
 
 
 def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env.pop("VIRTUAL_ENV", None)
-    env.pop("UV_PROJECT_ENVIRONMENT", None)
-    env.pop("PYTHONHOME", None)
-    env.pop("PYTHONUSERBASE", None)
-    env.pop("PIP_TARGET", None)
-    env.pop("PIP_PREFIX", None)
-    env.pop("PIP_USER", None)
+    # 剔除名单与运行池 / worker 共用；隔离 venv 里的 pip 只认项目根这一条 PYTHONPATH。
+    env = strip_host_python_environment()
     env["PYTHONPATH"] = str(project_path)
     return env
 
@@ -759,6 +756,8 @@ def _python_supports_venv(python: str) -> bool:
             capture_output=True,
             timeout=VENV_PROBE_TIMEOUT,
             text=True,
+            # 宿主 PYTHONHOME 会让解释器起不来、PYTHONWARNINGS=error 会让探测误判成「不可用」。
+            env=strip_host_python_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return False

@@ -9,6 +9,15 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { ADBScreenshotIn } from './models/ADBScreenshotIn';
 export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
+export type { BAAHConfig } from './models/BAAHConfig';
+export type { BAAHConfig_Emulator } from './models/BAAHConfig_Emulator';
+export type { BAAHConfig_Info } from './models/BAAHConfig_Info';
+export type { BAAHConfig_Run } from './models/BAAHConfig_Run';
+export type { BAAHConfig_Script } from './models/BAAHConfig_Script';
+export type { BAAHUserConfig } from './models/BAAHUserConfig';
+export type { BAAHUserConfig_Data } from './models/BAAHUserConfig_Data';
+export type { BAAHUserConfig_Info } from './models/BAAHUserConfig_Info';
+export type { BAAHUserConfig_Notify } from './models/BAAHUserConfig_Notify';
 export type { BackendHealthOut } from './models/BackendHealthOut';
 export type { BetterGIConfig } from './models/BetterGIConfig';
 export type { BetterGIConfig_Game } from './models/BetterGIConfig_Game';
@@ -36,6 +45,7 @@ export type { BetterGIUserConfig_OneDragon } from './models/BetterGIUserConfig_O
 export type { BetterGIUserConfig_Switch } from './models/BetterGIUserConfig_Switch';
 export type { BetterGIUserConfig_Task } from './models/BetterGIUserConfig_Task';
 export type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from './models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
+export type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from './models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 export type { CheckImageAllIn } from './models/CheckImageAllIn';
 export type { CheckImageAnyIn } from './models/CheckImageAnyIn';
 export type { CheckImageIn } from './models/CheckImageIn';

@@ -346,6 +346,7 @@ export default {
     item: 'アイテム',
     extractFieldsFromWindow: '開始／終了の正規表現で囲んだ範囲からフィールドを抽出します',
     targetStock: '目標在庫',
+    stock: '在庫',
     customBaseLayout: 'カスタム基地',
     resource: 'リソース',
     preset: 'プリセット',
@@ -2765,6 +2766,7 @@ export default {
       OkNte: 'ok-nte',
       HSR: 'HSR',
       BetterGI: 'BetterGI',
+      BAAH: 'BAAH',
       General: '汎用',
     },
     typeDesc: {
@@ -2777,6 +2779,7 @@ export default {
       OkNte: 'Neverness to Everness（OK-NTE）の自動化。-t/-e でタスクを起動',
       HSR: '崩壊：スターレイル — 三月なのか / SRA の 2 種類に対応',
       BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
+      BAAH: 'ブルーアーカイブのデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
     },
     mask: {
@@ -2885,6 +2888,7 @@ export default {
         OkNte: 'Neverness to Everness（OK-NTE）の自動化',
         HSR: '三月なのか / SRA の 2 種類に対応',
         BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
+        BAAH: 'ブルーアーカイブのデイリータスク自動化と複数アカウント管理',
       },
     },
     toast: {

@@ -4564,6 +4564,7 @@ class GlobalConfig(ConfigBase):
                 HSRConfig,
                 BetterGIConfig,
                 ZzzOdConfig,
+                BAAHConfig,
             ]
         )
         ## 队列配置列表
@@ -4577,6 +4578,7 @@ class GlobalConfig(ConfigBase):
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
@@ -4664,6 +4666,132 @@ class GlobalConfig(ConfigBase):
         return json.dumps(all_stage_data, ensure_ascii=False)
 
 
+class BAAHUserConfig(ConfigBase):
+    """BAAH 用户配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
+        self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成 BAAH 用户标签列表"""
+        tags = []
+
+        # 任务代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self, "任务"))
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class BAAHConfig(ConfigBase):
+    """BAAH 配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 BAAH 脚本")
+
+        ## Script ----------------------------------------------------------
+        ## BAAH 主程序路径；程序目录、配置目录与日志目录都从它派生
+        self.Script_BAAHPath = ConfigItem("Script", "BAAHPath", "", FileValidator())
+        ## 是否由本软件托管运行所需的关键配置项
+        self.Script_IfManageConfig = ConfigItem(
+            "Script", "IfManageConfig", True, BoolValidator()
+        )
+        ## 是否在任务报告中展示 BAAH 的任务节点详情
+        self.Script_PushLogEnabled = ConfigItem(
+            "Script", "PushLogEnabled", True, BoolValidator()
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 运行次数限制
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
+        )
+        ## 运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
+        )
+
+        ## Emulator --------------------------------------------------------
+        ## 模拟器 ID
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器索引
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
+        ## 结束后是否关闭模拟器
+        self.Emulator_CloseOnFinish = ConfigItem(
+            "Emulator", "CloseOnFinish", True, BoolValidator()
+        )
+
+        self.UserData = MultipleConfig([BAAHUserConfig])
+
+        super().__init__()
+
+
 CLASS_BOOK = {
     "MAA": MaaConfig,
     "SRC": SrcConfig,
@@ -4676,6 +4804,7 @@ CLASS_BOOK = {
     "HSR": HSRConfig,
     "BetterGI": BetterGIConfig,
     "ZzzOd": ZzzOdConfig,
+    "BAAH": BAAHConfig,
 }
 """配置类映射表"""
 

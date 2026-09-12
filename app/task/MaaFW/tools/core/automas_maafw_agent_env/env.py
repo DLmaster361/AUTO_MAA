@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Callable
 
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
+from ..automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 from ..automas_maafw_runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,

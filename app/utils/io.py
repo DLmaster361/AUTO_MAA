@@ -39,6 +39,9 @@ from .tools import decode_bytes
 
 logger = get_logger("路径迁移")
 
+# YAML 解析器拒绝的控制字符(除 \t \n \r): 映射为 None 即 translate 时丢弃
+_INVALID_YAML_CHARS = dict.fromkeys([*range(0x20), 0x7F])
+
 # 格式后缀 -> (dump: (dict, encoding)->bytes, load: bytes->dict)
 # 若要扩展格式, 直接改此表
 _CODECS: dict[str, tuple[Any, Any]] = {
@@ -70,6 +73,14 @@ _CODECS: dict[str, tuple[Any, Any]] = {
             d, allow_unicode=True, sort_keys=False
         ).encode(encoding),
         lambda data: yaml.safe_load(decode_bytes(data)),
+    ),
+    ".sanitized.yaml": (
+        lambda d, encoding: yaml.safe_dump(
+            d, allow_unicode=True, sort_keys=False
+        ).encode(encoding),
+        # 容错读: 非原子写落盘的文件可能留下 NUL 填充, YAML 解析器遇到直接抛
+        # ReaderError; 只取已知字段的调用方不应因此整个失败
+        lambda data: yaml.safe_load(decode_bytes(data).translate(_INVALID_YAML_CHARS)),
     ),
 }
 

@@ -4023,7 +4023,9 @@ class EmulatorDeleteIn(BaseModel):
 
 class EmulatorOperateIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-    operate: Literal["open", "close", "show"] = Field(..., description="操作类型")
+    operate: Literal["open", "close", "show", "hide"] = Field(
+        ..., description="操作类型"
+    )
     index: str = Field(..., description="模拟器索引")
 
 
@@ -4102,6 +4104,10 @@ class Emulator2SearchOut(OutBase):
 
 class Emulator2DevicesIn(BaseModel):
     emulatorId: str = Field(..., description="配置ID")
+    withSettings: bool = Field(
+        default=True,
+        description="是否连四项设置与稳定模式一起读; 状态轮询传 false, 只取在线状态与 ADB 地址",
+    )
 
 
 class Emulator2PathAddIn(BaseModel):
@@ -4555,6 +4561,21 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+
+
+class WSEmulatorOperationData(BaseModel):
+    """模拟器操作结束通知 (type=emulator.operation.finished, id=EmulatorManager)
+
+    启动 / 关闭是后台任务, 接口一调用就返回; 界面靠这条消息知道那一次操作什么时候真正结束。
+    """
+
+    emulatorId: str = Field(..., description="模拟器配置 ID")
+    index: str = Field(..., description="设备索引 (Emulator 2.0 下是设备号)")
+    operate: Literal["open", "close", "show", "hide"] = Field(
+        ..., description="操作类型"
+    )
+    ok: bool = Field(..., description="是否成功")
+    message: str = Field(default="", description="失败原因; 成功时为空")
 
 
 class WSTaskUserInfoData(BaseModel):

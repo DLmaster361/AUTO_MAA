@@ -37,7 +37,9 @@ from app.task.BAAH.tools.config_manager import (
     MANAGED_USER_VALUES,
     apply_managed_config,
     latest_log_file,
+    read_json,
     resolve_config_name,
+    resolve_log_time_range,
     resolve_user_config_path,
     restore_managed_config,
 )
@@ -202,6 +204,57 @@ class TestManagedConfigRoundTrip:
         assert "国服2.json" in failures[0]
 
 
+class TestReadJson:
+    """配置读取的容错边界
+
+    只有「文件不存在」能当作空配置：把读取失败或内容损坏当成空，托管流程
+    就会拿这个空对象去比对与恢复，运行结束后等于把用户的配置清空。
+    """
+
+    def test_missing_file_is_empty_dict(self, tmp_path: Path) -> None:
+        assert read_json(tmp_path / "不存在.json") == {}
+
+    def test_corrupted_content_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "损坏.json"
+        path.write_text("{ 这不是 JSON", encoding="utf-8")
+
+        with pytest.raises(ValueError):
+            read_json(path)
+
+    def test_non_object_top_level_raises(self, tmp_path: Path) -> None:
+        path = tmp_path / "数组.json"
+        path.write_text("[1, 2, 3]", encoding="utf-8")
+
+        with pytest.raises(ValueError):
+            read_json(path)
+
+    def test_read_failure_propagates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """读取被拒绝时必须抛出，不能退化成空配置"""
+
+        path = tmp_path / "被占用.json"
+        path.write_text('{"KEEP": 1}', encoding="utf-8")
+
+        real_read_text = Path.read_text
+
+        def boom(self: Path, *args: object, **kwargs: object) -> str:
+            if self == path:
+                raise PermissionError("模拟被其他程序占用")
+            return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "read_text", boom)
+
+        with pytest.raises(PermissionError):
+            read_json(path)
+
+    def test_bom_is_tolerated(self, tmp_path: Path) -> None:
+        path = tmp_path / "带BOM.json"
+        path.write_bytes('{"KEEP": 1}'.encode("utf-8-sig"))
+
+        assert read_json(path) == {"KEEP": 1}
+
+
 class TestLatestLogFile:
     """日志文件定位"""
 
@@ -231,40 +284,85 @@ class TestLatestLogFile:
 class TestLogTimestampRange:
     """日志时间戳切片
 
-    ``BAAH_LOG_TIME_RANGE`` 是 LogMonitor 对整行做的**字符切片**，不是按分隔符
-    分词后的字段下标。切片写错会让每一行的时间戳都解析失败，LogMonitor 会因此
-    丢弃全部日志行：任务照常运行，但界面收不到任何日志，也永远判不出成功标记。
+    区间由 LogMonitor 直接对整行做字符切片（``line[start:end]``），且必须按首行
+    的实际排版推算：版本号位数会随版本变化，写死的区间一旦对不上，每一行都会解析
+    失败并被静默丢弃 —— 任务照常跑，却一行日志都采集不到，也永远判不出成功标记。
     """
 
     # 真实日志行（BAAH 2.4.13 实测输出）
     REAL_LINE = "2.4.13 - 24:19 - INFO : 执行任务EnterGame"
+    # 版本号多一位的假想行：写死区间会在这里失配
+    LONGER_VERSION_LINE = "2.4.100 - 24:19 - INFO : 执行任务EnterGame"
 
-    def test_slices_timestamp_from_real_line(self) -> None:
-        from app.task.BAAH.AutoProxy import (
-            BAAH_LOG_TIME_FORMAT,
-            BAAH_LOG_TIME_RANGE,
-        )
+    @staticmethod
+    def _write_log(tmp_path: Path, line: str) -> Path:
+        log_path = tmp_path / "log_2026-09-12-17-24-19.txt"
+        log_path.write_text(line + "\n", encoding="utf-8")
+        return log_path
 
-        start, end = BAAH_LOG_TIME_RANGE
-        raw = self.REAL_LINE[start:end]
+    def test_slices_timestamp_from_real_line(self, tmp_path: Path) -> None:
+        from app.task.BAAH.AutoProxy import BAAH_LOG_TIME_FORMAT
 
-        assert raw == "24:19"
+        log_path = self._write_log(tmp_path, self.REAL_LINE)
+        time_range = resolve_log_time_range(log_path, BAAH_LOG_TIME_FORMAT)
 
-        parsed = datetime.strptime(raw, BAAH_LOG_TIME_FORMAT)
+        assert time_range is not None
+        start, end = time_range
+        assert self.REAL_LINE[start:end] == "24:19"
+
+        parsed = datetime.strptime("24:19", BAAH_LOG_TIME_FORMAT)
         assert (parsed.minute, parsed.second) == (24, 19)
 
-    def test_logmonitor_start_filter_accepts_line(self) -> None:
+    def test_follows_longer_version_numbers(self, tmp_path: Path) -> None:
+        """上游换成长版本号后仍要切到时间戳，不能沿用固定区间"""
+
+        from app.task.BAAH.AutoProxy import BAAH_LOG_TIME_FORMAT
+
+        log_path = self._write_log(tmp_path, self.LONGER_VERSION_LINE)
+        time_range = resolve_log_time_range(log_path, BAAH_LOG_TIME_FORMAT)
+
+        assert time_range is not None
+        start, end = time_range
+        assert self.LONGER_VERSION_LINE[start:end] == "24:19"
+
+    def test_skips_leading_blank_lines(self, tmp_path: Path) -> None:
+        from app.task.BAAH.AutoProxy import BAAH_LOG_TIME_FORMAT
+
+        log_path = tmp_path / "log.txt"
+        log_path.write_text("\n\n" + self.REAL_LINE + "\n", encoding="utf-8")
+
+        time_range = resolve_log_time_range(log_path, BAAH_LOG_TIME_FORMAT)
+
+        assert time_range is not None
+        start, end = time_range
+        assert self.REAL_LINE[start:end] == "24:19"
+
+    def test_returns_none_without_separator(self, tmp_path: Path) -> None:
+        from app.task.BAAH.AutoProxy import BAAH_LOG_TIME_FORMAT
+
+        log_path = self._write_log(tmp_path, "这一行没有分隔符")
+
+        assert resolve_log_time_range(log_path, BAAH_LOG_TIME_FORMAT) is None
+
+    def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
+        from app.task.BAAH.AutoProxy import BAAH_LOG_TIME_FORMAT
+
+        missing = tmp_path / "不存在.txt"
+
+        assert resolve_log_time_range(missing, BAAH_LOG_TIME_FORMAT) is None
+
+    def test_logmonitor_start_filter_accepts_line(self, tmp_path: Path) -> None:
         """模拟 LogMonitor 的起始过滤：真实日志行必须能被判为「晚于启动时刻」"""
 
-        from app.task.BAAH.AutoProxy import (
-            BAAH_LOG_TIME_FORMAT,
-            BAAH_LOG_TIME_RANGE,
-        )
+        from app.task.BAAH.AutoProxy import BAAH_LOG_TIME_FORMAT
         from app.utils.LogMonitor import strptime as monitor_strptime
 
-        start, end = BAAH_LOG_TIME_RANGE
-        log_start_time = datetime(2026, 9, 12, 17, 24, 16)
+        log_path = self._write_log(tmp_path, self.REAL_LINE)
+        time_range = resolve_log_time_range(log_path, BAAH_LOG_TIME_FORMAT)
+        assert time_range is not None
+        start, end = time_range
 
+        log_start_time = datetime(2026, 9, 12, 17, 24, 16)
         parsed = monitor_strptime(
             self.REAL_LINE[start:end],
             BAAH_LOG_TIME_FORMAT,

@@ -7,9 +7,5 @@ export type BAAHConfig_Info = {
      * 脚本名称
      */
     Name?: (string | null);
-    /**
-     * 脚本根目录
-     */
-    RootPath?: (string | null);
 };
 

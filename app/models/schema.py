@@ -2148,18 +2148,18 @@ class ZzzOdConfig(BaseModel):
 
 class BAAHConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
-    RootPath: Optional[str] = Field(default=None, description="脚本根目录")
 
 
 class BAAHConfig_Script(BaseModel):
-    BAAHPath: Optional[str] = Field(default=None, description="BAAH 主程序路径")
-    ConfigDir: Optional[str] = Field(default=None, description="BAAH 配置目录")
-    LogDir: Optional[str] = Field(default=None, description="BAAH 日志目录")
+    BAAHPath: Optional[str] = Field(
+        default=None,
+        description="BAAH 主程序路径；程序目录、配置目录与日志目录均由此派生",
+    )
     IfManageConfig: Optional[bool] = Field(
         default=None, description="是否托管 BAAH 运行所需的关键配置"
     )
     PushLogEnabled: Optional[bool] = Field(
-        default=None, description="是否在任务报告中展示 BAAH 的任务节点详情"
+        default=None, description="是否在任务报告中保留 BAAH 的运行日志"
     )
 
 

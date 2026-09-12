@@ -19,27 +19,29 @@
 #   Contact: DLmaster_361@163.com
 
 from .config_manager import (
+    CONFIG_DIR_NAME,
+    LOG_DIR_RELATIVE,
     SOFTWARE_CONFIG_RELATIVE,
     ManagedConfigBackup,
     apply_managed_config,
     latest_log_file,
-    resolve_config_dir,
     resolve_config_name,
-    resolve_log_dir,
+    resolve_log_time_range,
     resolve_user_config_path,
     restore_managed_config,
 )
 from .notify import push_notification
 
 __all__ = [
+    "CONFIG_DIR_NAME",
+    "LOG_DIR_RELATIVE",
     "SOFTWARE_CONFIG_RELATIVE",
     "ManagedConfigBackup",
     "apply_managed_config",
     "latest_log_file",
     "push_notification",
-    "resolve_config_dir",
     "resolve_config_name",
-    "resolve_log_dir",
+    "resolve_log_time_range",
     "resolve_user_config_path",
     "restore_managed_config",
 ]

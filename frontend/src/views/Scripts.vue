@@ -340,6 +340,12 @@
                 alt="ZZZ-OD"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'BAAH'"
+                src="@/assets/baah.png"
+                alt="BAAH"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">

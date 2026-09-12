@@ -4686,16 +4686,10 @@ class BAAHConfig(ConfigBase):
         ## Info ------------------------------------------------------------
         ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 BAAH 脚本")
-        ## BAAH 程序目录
-        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FolderValidator())
 
         ## Script ----------------------------------------------------------
-        ## BAAH 主程序路径
+        ## BAAH 主程序路径；程序目录、配置目录与日志目录都从它派生
         self.Script_BAAHPath = ConfigItem("Script", "BAAHPath", "", FileValidator())
-        ## BAAH 配置目录（留空时按程序目录下的 BAAH_CONFIGS 处理）
-        self.Script_ConfigDir = ConfigItem("Script", "ConfigDir", "", FolderValidator())
-        ## BAAH 日志目录（留空时按程序目录下的 DATA/LOGS 处理）
-        self.Script_LogDir = ConfigItem("Script", "LogDir", "", FolderValidator())
         ## 是否由本软件托管运行所需的关键配置项
         self.Script_IfManageConfig = ConfigItem(
             "Script", "IfManageConfig", True, BoolValidator()

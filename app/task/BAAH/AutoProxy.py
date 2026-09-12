@@ -46,13 +46,15 @@ from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
 
 from .tools import (
+    CONFIG_DIR_NAME,
+    LOG_DIR_RELATIVE,
     SOFTWARE_CONFIG_RELATIVE,
     ManagedConfigBackup,
     apply_managed_config,
     latest_log_file,
-    resolve_config_dir,
+    push_notification,
     resolve_config_name,
-    resolve_log_dir,
+    resolve_log_time_range,
     resolve_user_config_path,
     restore_managed_config,
 )
@@ -61,11 +63,11 @@ logger = get_logger("BAAH 自动代理")
 
 ## BAAH 日志行格式为「{版本} - {分:秒} - {级别} : {消息}」，例如：
 ##   2.4.13 - 24:19 - INFO : 执行任务EnterGame
-## ⚠️ 该区间是 LogMonitor 直接对这一整行做的**字符切片**（line[start:end]），
-## 不是按分隔符分词后的字段下标。版本号占 6 个字符、其后是「 - 」共 3 个字符，
-## 因此时间戳「24:19」落在 [9, 14)。
-## ⚠️ 若 BAAH 版本号位数变化（如 2.4.13 → 2.4.130），此区间会失配，须同步调整。
-BAAH_LOG_TIME_RANGE = (9, 14)
+## 时间戳的字符切片**按首行实际排版推算**（``resolve_log_time_range``）：
+## 版本号位数会随版本变化（2.4.13 / 2.4.100），写死区间会让每一行都解析失败，
+## 被 LogMonitor 静默丢弃，表现为「日志文件找到了却一行都采集不到」。
+## 同时，该区间是 LogMonitor 对整行做的**字符切片**（line[start:end]），
+## 不是按分隔符分词后的字段下标。
 
 ## BAAH 只输出「分:秒」，不带日期与小时
 BAAH_LOG_TIME_FORMAT = "%M:%S"
@@ -116,28 +118,27 @@ class AutoProxyTask(TaskExecuteBase):
         self.push_log_enabled = True
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
+        ## 本用户的开始时刻，用于统计信息通知
+        self.user_start_time = datetime.now()
 
         self._resolve_paths()
 
     def _resolve_paths(self) -> None:
-        """解析 BAAH 程序目录、配置目录与日志目录"""
+        """解析 BAAH 程序目录、配置目录与日志目录。
 
-        self.root_path = Path(self.script_config.get("Info", "RootPath"))
-        self.config_dir = resolve_config_dir(
-            self.root_path, self.script_config.get("Script", "ConfigDir")
-        )
-        self.log_dir = resolve_log_dir(
-            self.root_path, self.script_config.get("Script", "LogDir")
-        )
+        BAAH 启动时会 chdir 到 exe 所在目录，其配置目录与日志目录都是相对该目录的
+        固定位置，因此全部由 ``BAAHPath`` 派生，不再单独提供输入项：填错只会让托管
+        项写进 BAAH 根本不读的文件，或每次都等满 60 秒「未找到日志文件」。
+        """
+
         self.baah_path = Path(self.script_config.get("Script", "BAAHPath"))
+        self.root_path = self.baah_path.parent
+        self.config_dir = self.root_path / CONFIG_DIR_NAME
+        self.log_dir = self.root_path / LOG_DIR_RELATIVE
         self.software_config_path = self.root_path / SOFTWARE_CONFIG_RELATIVE
 
     async def check(self) -> str:
         """校验 BAAH 运行所需的路径与用户配置"""
-
-        if not self.root_path.is_dir():
-            self.cur_user_item.status = "异常"
-            return "未找到 BAAH 程序目录, 请检查脚本配置中的程序目录设置！"
 
         if not self.baah_path.is_file():
             self.cur_user_item.status = "异常"
@@ -173,11 +174,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.success_log = compile_log_signs(BAAH_SUCCESS_LOG, "Split")
         self.error_log = compile_log_signs(BAAH_ERROR_LOG, "Split")
 
-        self.log_monitor = LogMonitor(
-            BAAH_LOG_TIME_RANGE,
-            BAAH_LOG_TIME_FORMAT,
-            self.check_log,
-        )
+        ## 日志监控器不在这里构造：它把构造时刻当作补齐 %M:%S 缺失小时的基准，
+        ## 而冷启模拟器与等待日志文件可能跨过整点，提前构造会把首行算成上一个
+        ## 小时而整段丢弃。等定位到日志文件之后再构造（见 _run_launched）。
+        self.log_monitor = None
 
         ## 配置托管总开关：关闭时照常启动 BAAH，但不改动它的任何配置文件
         self.if_manage_config = bool(
@@ -195,6 +195,15 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def main_task(self):
         """自动代理模式主逻辑"""
+
+        self.user_start_time = datetime.now()
+
+        ## 每日重置：跨天后代理次数归零，用户标签里的「任务」状态才会重新变成
+        ## 「未代理」（通用脚本同一套口径）
+        curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        if self.cur_user_config.get("Data", "LastProxyDate") != curdate:
+            await self.cur_user_config.set("Data", "LastProxyDate", curdate)
+            await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -342,7 +351,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _run_launched(self) -> None:
         """启动 BAAH 进程并等待日志给出结果"""
 
-        if self.process_manager is None or self.log_monitor is None:
+        if self.process_manager is None:
             raise RuntimeError("自动代理任务尚未完成初始化")
 
         config_name = self.user_config_path.name
@@ -383,6 +392,19 @@ class AutoProxyTask(TaskExecuteBase):
         ## 定位成功后立刻改写状态：日志监控要等 BAAH 写出首批日志行才会回调，
         ## 不改写的话界面会继续停在「正在等待日志文件生成」，看起来像没进展
         self.script_info.log = f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
+
+        ## 时间戳区间按首行实际排版推算；监控器也在这里才构造，让它补齐 %M:%S
+        ## 缺失小时所用的基准落在日志真正出现之后，跨整点时不会把首行算成上个小时
+        time_range = resolve_log_time_range(log_path, BAAH_LOG_TIME_FORMAT)
+        if time_range is None:
+            await self.handle_pre_script_error("无法从 BAAH 日志首行识别时间戳位置")
+            return
+
+        self.log_monitor = LogMonitor(
+            time_range,
+            BAAH_LOG_TIME_FORMAT,
+            self.check_log,
+        )
 
         await self.log_monitor.start_monitor_file(
             self._resolve_log_file_path, self.log_start_time
@@ -509,6 +531,54 @@ class AutoProxyTask(TaskExecuteBase):
                     log_item.content = ["未开启日志推送, 本次未保留日志内容"]
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+        if self.run_book:
+            ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
+            ## 不更新的话用户标签会一直停在「任务：未代理」、剩余天数也不减
+            if (
+                self.cur_user_config.get("Data", "ProxyTimes") == 0
+                and self.cur_user_config.get("Info", "RemainedDay") != -1
+            ):
+                await self.cur_user_config.set(
+                    "Info",
+                    "RemainedDay",
+                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                )
+            await self.cur_user_config.set(
+                "Data",
+                "ProxyTimes",
+                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+            )
+
+        await self._push_statistic()
+
+    async def _push_statistic(self) -> None:
+        """推送本用户的统计信息通知。
+
+        渠道由该用户的 ``Notify`` 配置决定（邮件 / Server 酱 / 自定义 Webhook），
+        未开启通知时整条链路直接返回，不发任何内容。
+        """
+
+        statistics = {
+            "user_info": self.cur_user_item.name,
+            "start_time": self.user_start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_result": (
+                "代理任务全部完成" if self.run_book else self.cur_user_item.status
+            ),
+        }
+        success_symbol = "√" if self.run_book else "X"
+        title = (
+            f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
+            f"{self.cur_user_item.name} 的自动代理统计报告"
+        )
+
+        try:
+            await push_notification(
+                "统计信息", title, statistics, self.cur_user_config
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"推送统计信息时出现异常: {e}")
 
     async def on_crash(self, e: Exception):
         """任务异常时的清理"""

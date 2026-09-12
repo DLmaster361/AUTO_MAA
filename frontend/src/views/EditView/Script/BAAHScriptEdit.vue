@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="@/assets/AUTO-MAS.ico" alt="BAAH" class="breadcrumb-logo" />
+            <img src="@/assets/baah.png" alt="BAAH" class="breadcrumb-logo" />
             {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
@@ -37,7 +37,7 @@
             <h3>{{ t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="24">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
@@ -54,38 +54,6 @@
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
                 />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="rootPath" :rules="rules.rootPath">
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahRootPath') }}
-                    <a-tooltip :title="t('edit.baahRootPathHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.rootPath"
-                    :placeholder="t('edit.baahRootPathPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
               </a-form-item>
             </a-col>
           </a-row>
@@ -169,90 +137,6 @@
                   <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
                   <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahConfigDir') }}
-                    <a-tooltip :title="t('edit.baahConfigDirHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.configDir"
-                    :placeholder="t('edit.baahConfigDirPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectConfigDir"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                  <a-button
-                    v-if="formData.configDir"
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="clearConfigDir"
-                  >
-                    {{ t('edit.clear') }}
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahLogDir') }}
-                    <a-tooltip :title="t('edit.baahLogDirHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.logDir"
-                    :placeholder="t('edit.baahLogDirPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectLogDir"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                  <a-button
-                    v-if="formData.logDir"
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="clearLogDir"
-                  >
-                    {{ t('edit.clear') }}
-                  </a-button>
-                </a-input-group>
               </a-form-item>
             </a-col>
           </a-row>
@@ -444,13 +328,10 @@ const isInitializing = ref(true)
 
 interface BAAHInfoForm {
   Name: string
-  RootPath: string
 }
 
 interface BAAHScriptForm {
   BAAHPath: string
-  ConfigDir: string
-  LogDir: string
   IfManageConfig: boolean
   PushLogEnabled: boolean
 }
@@ -476,12 +357,9 @@ interface BAAHScriptConfigForm {
 const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
   Info: {
     Name: '',
-    RootPath: '',
   },
   Script: {
     BAAHPath: '',
-    ConfigDir: '',
-    LogDir: '',
     IfManageConfig: true,
     PushLogEnabled: true,
   },
@@ -506,35 +384,16 @@ const formData = reactive({
   set name(value: string) {
     baahConfig.Info.Name = value
   },
-  get rootPath() {
-    return baahConfig.Info.RootPath
-  },
-  set rootPath(value: string) {
-    baahConfig.Info.RootPath = value
-  },
   get baahPath() {
     return baahConfig.Script.BAAHPath
   },
   set baahPath(value: string) {
     baahConfig.Script.BAAHPath = value
   },
-  get configDir() {
-    return baahConfig.Script.ConfigDir
-  },
-  set configDir(value: string) {
-    baahConfig.Script.ConfigDir = value
-  },
-  get logDir() {
-    return baahConfig.Script.LogDir
-  },
-  set logDir(value: string) {
-    baahConfig.Script.LogDir = value
-  },
 })
 
 const rules = computed(() => ({
   name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  rootPath: [{ required: true, message: t('edit.baahRootPathRequired'), trigger: 'blur' }],
 }))
 
 // 统一使用正斜杠落盘，与后端 FolderValidator/FileValidator 的取值保持一致
@@ -594,15 +453,6 @@ const loadScript = async () => {
 
 const handleCancel = () => router.push('/scripts')
 
-// 程序目录：用于定位 BAAH；配置/日志目录留空时按它下面的默认位置处理
-const selectRootPath = async () => {
-  const picked = await window.electronAPI?.selectFolder()
-  if (!picked) return
-  const normalized = normalizePath(picked)
-  baahConfig.Info.RootPath = normalized
-  await handleChange('Info', 'RootPath', normalized)
-}
-
 const selectBaahPath = async () => {
   const paths = await window.electronAPI?.selectFile([
     { name: 'BAAH.exe', extensions: ['exe'] },
@@ -613,33 +463,6 @@ const selectBaahPath = async () => {
   const normalized = normalizePath(path)
   baahConfig.Script.BAAHPath = normalized
   await handleChange('Script', 'BAAHPath', normalized)
-}
-
-const selectConfigDir = async () => {
-  const picked = await window.electronAPI?.selectFolder()
-  if (!picked) return
-  const normalized = normalizePath(picked)
-  baahConfig.Script.ConfigDir = normalized
-  await handleChange('Script', 'ConfigDir', normalized)
-}
-
-const selectLogDir = async () => {
-  const picked = await window.electronAPI?.selectFolder()
-  if (!picked) return
-  const normalized = normalizePath(picked)
-  baahConfig.Script.LogDir = normalized
-  await handleChange('Script', 'LogDir', normalized)
-}
-
-// 清空 = 回到程序目录下的默认位置（BAAH_CONFIGS / DATA/LOGS）
-const clearConfigDir = async () => {
-  baahConfig.Script.ConfigDir = ''
-  await handleChange('Script', 'ConfigDir', '')
-}
-
-const clearLogDir = async () => {
-  baahConfig.Script.LogDir = ''
-  await handleChange('Script', 'LogDir', '')
 }
 
 // 模拟器相关方法

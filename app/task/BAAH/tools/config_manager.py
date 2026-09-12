@@ -31,6 +31,7 @@ BAAH 的用户配置是 ``BAAH_CONFIGS/<名字>.json`` 的**扁平 JSON**（没�
 import json
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,9 @@ MANAGED_USER_VALUES: dict[str, Any] = {
     ## 模拟器由本软件拉起，不允许 BAAH 再自行启动：它的启动路径按实例编号走，
     ## 配置与实际目标稍有出入就会拉起另一个实例，且冷启动耗时会吃掉它的等待窗口
     "TARGET_EMULATOR_PATH": "",
+    ## 监听 TARGET_PORT 的进程就是本软件刚拉起的模拟器，BAAH 的"清理残留"会把它
+    ## taskkill 掉；此时 TARGET_EMULATOR_PATH 已置空，BAAH 也拉不回来
+    "KILL_PORT_IF_EXIST": False,
     ## ADB 目标改由 MAS 按所绑定的模拟器槽位推算，不再依赖 BAAH 侧手填
     "ADB_DIRECT_USE_SERIAL_NUMBER": False,
     ## 脚本运行报错后自动重新运行脚本的次数
@@ -102,27 +106,35 @@ class ManagedConfigBackup:
 def read_json(path: Path) -> dict[str, Any]:
     """读取 JSON 配置。
 
-    容忍带 BOM 的文件；文件不存在、为空或内容损坏时返回空字典，
-    与 BAAH 自身"读不出来就全用默认值"的行为保持一致。
+    只有「文件不存在」才按空配置处理。其余情况——读取被拒绝、内容损坏、
+    顶层不是对象——一律抛出：把它们当成空配置，托管流程就会拿这个空对象
+    去比对与恢复，运行结束后等于把用户的配置文件清空。
 
     Args:
         path: 配置文件路径。
 
     Returns:
-        dict[str, Any]: 解析出的配置内容。
+        dict[str, Any]: 解析出的配置内容；文件不存在时为空字典。
+
+    Raises:
+        OSError: 文件存在但读不出来（被占用、权限不足等）。
+        ValueError: 内容不是合法 JSON，或顶层不是对象。
     """
 
     try:
-        content: Any = json.loads(path.read_text(encoding="utf-8-sig"))
+        text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         return {}
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
-        logger.warning(f"读取 BAAH 配置失败, 按空配置处理: {path} ({e})")
-        return {}
+    except UnicodeDecodeError as e:
+        raise ValueError(f"BAAH 配置不是 UTF-8 文本: {path} ({e})") from e
+
+    try:
+        content: Any = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"BAAH 配置内容损坏, 无法解析: {path} ({e})") from e
 
     if not isinstance(content, dict):
-        logger.warning(f"BAAH 配置不是键值对象, 按空配置处理: {path}")
-        return {}
+        raise ValueError(f"BAAH 配置顶层不是键值对象: {path}")
 
     return content
 
@@ -183,38 +195,6 @@ def resolve_user_config_path(config_dir: Path, config_name: str) -> Path:
     """
 
     return config_dir / f"{resolve_config_name(config_name)}.json"
-
-
-def resolve_config_dir(root_path: Path, configured: str) -> Path:
-    """解析 BAAH 配置目录，留空时回落到程序目录下的默认位置。
-
-    Args:
-        root_path: BAAH 程序目录。
-        configured: 配置中填写的配置目录。
-
-    Returns:
-        Path: 配置目录路径。
-    """
-
-    if configured.strip():
-        return Path(configured)
-    return root_path / CONFIG_DIR_NAME
-
-
-def resolve_log_dir(root_path: Path, configured: str) -> Path:
-    """解析 BAAH 日志目录，留空时回落到程序目录下的默认位置。
-
-    Args:
-        root_path: BAAH 程序目录。
-        configured: 配置中填写的日志目录。
-
-    Returns:
-        Path: 日志目录路径。
-    """
-
-    if configured.strip():
-        return Path(configured)
-    return root_path / LOG_DIR_RELATIVE
 
 
 def apply_managed_config(
@@ -379,3 +359,50 @@ def latest_log_file(log_dir: Path, not_before: float) -> Path | None:
         return None
 
     return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def resolve_log_time_range(
+    log_path: Path, time_format: str
+) -> tuple[int, int] | None:
+    """按日志首行的实际排版推算时间戳的字符切片区间。
+
+    BAAH 的行格式是「{版本} - {分:秒} - {级别} : {消息}」，例如
+    ``2.4.13 - 24:19 - INFO : 执行任务EnterGame``。版本号的位数会随版本变化
+    （``2.4.13`` 是 6 位，``2.4.100`` 是 7 位），所以区间**不能写死**：写死的
+    区间一旦对不上，``LogMonitor`` 会把每一行都判为解析失败并静默丢弃，
+    表现成「日志文件找到了却一行都采集不到」，最终每次都判任务失败。
+
+    做法是按首行第一个 `` - `` 的位置定位，这正是版本号与时间戳之间的分隔符。
+
+    Args:
+        log_path: 本次运行的日志文件路径。
+        time_format: 时间戳格式，用于推算区间长度（``%M:%S`` 为 5 个字符）。
+
+    Returns:
+        tuple[int, int] | None: ``(start, end)`` 切片区间；首行读不到或不含
+        分隔符时返回 None。
+    """
+
+    try:
+        with log_path.open("r", encoding="utf-8-sig", errors="replace") as f:
+            first_line = ""
+            for raw in f:
+                if raw.strip():
+                    first_line = raw.rstrip("\r\n")
+                    break
+    except OSError as e:
+        logger.warning(f"读取 BAAH 日志首行失败: {log_path} ({e})")
+        return None
+
+    if not first_line:
+        return None
+
+    separator_at = first_line.find(" - ")
+    if separator_at < 0:
+        logger.warning(f"BAAH 日志首行没有分隔符, 无法定位时间戳: {first_line[:80]}")
+        return None
+
+    start = separator_at + len(" - ")
+    ## 长度按格式自身推算，避免把 MM:SS 的 5 个字符写死在这里
+    length = len(datetime.now().strftime(time_format))
+    return (start, start + length)

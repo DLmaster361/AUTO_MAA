@@ -1558,17 +1558,8 @@ export default {
     // BAAH 专项
     baahScriptConfiguration: 'BAAH 脚本配置',
     baahScriptNameHint: '用于区分不同的 BAAH 脚本实例',
-    baahRootPath: 'BAAH 程序目录',
-    baahRootPathHint: '用于定位 BAAH 程序；下方「配置目录」「日志目录」留空时，会按此目录下的默认位置处理',
-    baahRootPathPlaceholder: '请选择 BAAH 程序所在目录',
-    baahRootPathRequired: '请选择 BAAH 程序目录',
-    baahScriptPathHint: 'BAAH 主程序（BAAH.exe）的完整路径',
-    baahConfigDir: 'BAAH 配置目录',
-    baahConfigDirHint: '存放 BAAH 配置文件的目录；留空时按程序目录下的 BAAH_CONFIGS 处理',
-    baahConfigDirPlaceholder: '留空则使用程序目录下的 BAAH_CONFIGS',
-    baahLogDir: 'BAAH 日志目录',
-    baahLogDirHint: '存放 BAAH 日志的目录；留空时按程序目录下的 DATA/LOGS 处理',
-    baahLogDirPlaceholder: '留空则使用程序目录下的 DATA/LOGS',
+    baahScriptPathHint:
+      'BAAH 主程序（BAAH.exe）的完整路径；程序目录、配置目录与日志目录都由它所在的目录派生，无需另行选择',
     baahManageConfig: '托管关键配置项',
     baahManageConfigHint:
       '开启后，本软件会在运行前自动写入 BAAH 运行所需的设置（运行结束自动退出、打开日志落盘），运行结束后恢复你的原值',

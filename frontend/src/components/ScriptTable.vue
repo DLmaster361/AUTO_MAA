@@ -87,6 +87,12 @@
                     alt="ZZZ-OD"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'BAAH'"
+                    src="@/assets/baah.png"
+                    alt="BAAH"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -410,7 +416,8 @@
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
                             script.type === 'MaaFW' ||
-                            script.type === 'ZzzOd'
+                            script.type === 'ZzzOd' ||
+                            script.type === 'BAAH'
                           "
                           class="user-info-tags"
                         >

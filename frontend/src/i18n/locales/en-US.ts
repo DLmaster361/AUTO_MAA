@@ -1647,20 +1647,8 @@ export default {
     // BAAH dedicated adapter
     baahScriptConfiguration: 'BAAH script settings',
     baahScriptNameHint: 'Distinguishes this BAAH script instance from others',
-    baahRootPath: 'BAAH program directory',
-    baahRootPathHint:
-      'Locates the BAAH program; when the config and log directories below are left empty, their defaults under this directory are used',
-    baahRootPathPlaceholder: 'Pick the BAAH program directory',
-    baahRootPathRequired: 'Pick the BAAH program directory',
-    baahScriptPathHint: 'Full path of the BAAH main program (BAAH.exe)',
-    baahConfigDir: 'BAAH config directory',
-    baahConfigDirHint:
-      'Directory holding the BAAH config files; empty means BAAH_CONFIGS under the program directory',
-    baahConfigDirPlaceholder: 'Empty uses BAAH_CONFIGS under the program directory',
-    baahLogDir: 'BAAH log directory',
-    baahLogDirHint:
-      'Directory holding the BAAH logs; empty means DATA/LOGS under the program directory',
-    baahLogDirPlaceholder: 'Empty uses DATA/LOGS under the program directory',
+    baahScriptPathHint:
+      'Full path of the BAAH main program (BAAH.exe); the program directory and its config and log directories are all derived from it',
     baahManageConfig: 'Manage key settings',
     baahManageConfigHint:
       'When on, this app writes the settings BAAH needs before the run (exit when finished, write logs to disk) and restores your original values afterwards',

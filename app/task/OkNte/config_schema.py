@@ -38,6 +38,10 @@ from time import sleep
 from typing import Any
 from xml.etree import ElementTree
 
+from app.utils import get_logger
+
+logger = get_logger("OK-NTE 配置 Schema")
+
 # ─── OK-NTE 翻译文件自动加载 ─────────────────────────────────────────────────
 
 _OKNTE_CONFIG_WRITE_LOCK = Lock()
@@ -58,8 +62,8 @@ def _parse_po_file(po_path: Path) -> dict[str, str]:
             msgstr = match.group(2)
             if msgid and msgstr:
                 labels[msgid] = msgstr
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
     return labels
 
 
@@ -98,8 +102,8 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
         for orig, trans in zip(orig_strings, trans_strings):
             if orig and trans:
                 labels[orig] = trans
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path} ({e})")
     return labels
 
 
@@ -119,8 +123,8 @@ def _parse_ts_file(ts_path: Path) -> dict[str, str]:
                 and translation.attrib.get("type") != "unfinished"
             ):
                 labels[source.text] = translation.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 ok-script 翻译文件失败，选项将显示英文: {ts_path} ({e})")
     return labels
 
 

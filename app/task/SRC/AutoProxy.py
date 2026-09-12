@@ -249,10 +249,6 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"运行脚本任务: {self.src_exe_path}")
             self.wait_event.clear()
             t = datetime.now()
-            validate_src_installation(
-                self.src_root_path,
-                self.src_installation_id,
-            )
             await self.src_process_manager.open_process(
                 self.src_exe_path,
                 null_stream_to_pipe=True,
@@ -329,12 +325,15 @@ class AutoProxyTask(TaskExecuteBase):
                 if not cleanup_success:
                     await self._handle_process_cleanup_failure()
 
-                await Notify.push_plyer(
-                    "用户自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
-                )
+                try:
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"{self.cur_user_item.name}的自动代理出现异常",
+                        3,
+                    )
+                except Exception:
+                    pass
                 if not cleanup_success:
                     return
 
@@ -392,12 +391,15 @@ class AutoProxyTask(TaskExecuteBase):
         if not cleanup_success:
             await self._handle_process_cleanup_failure()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
-        )
+        try:
+            await Notify.push_plyer(
+                "用户自动代理出现异常！",
+                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                f"{self.cur_user_item.name}的自动代理出现异常",
+                3,
+            )
+        except Exception:
+            pass
         return cleanup_success
 
     async def kill_managed_process(self) -> bool:

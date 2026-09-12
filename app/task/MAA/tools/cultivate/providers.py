@@ -150,10 +150,9 @@ class LocalInventoryProvider:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        inventory, sync_time = parse_depot_payload(payload)
-        if not inventory:
-            return None
-        return inventory, sync_time
+        # 合法但为空的库存原样返回：空映射是"仓库确实没有"（新号、刚清空），
+        # None 是"还没识别过"，上游据此区分是否提示重新识别
+        return parse_depot_payload(payload)
 
 
 # 池的定义（选哪些实现、什么顺序）属组合根职责，见 service.py。

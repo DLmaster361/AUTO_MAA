@@ -27,6 +27,7 @@ from app.task.MAA.tools.cultivate.providers import (
 )
 from app.task.MAA.tools.cultivate.service import (
     get_certifying_chain,
+    get_inventory_chain,
     get_progression_chain,
 )
 from app.task.MAA.tools.cultivate.types import (
@@ -242,6 +243,68 @@ def test_has_material_gap() -> None:
     assert not has_material_gap(targets, snapshots, full_stock, data, TODAY)
 
 
+def test_has_material_gap_respects_higher_tier_stock() -> None:
+    """已持有的高阶材料能抵扣目标，材料备齐不再误报缺口（评论 2 回归）。
+
+    回归：旧口径把高阶需求折算成原料后只比原料库存，用户手里已备齐的
+    30115/30013 完全不参与抵扣，"材料全齐仍判缺口、库存保持被反复触发"。
+    """
+
+    data = build_dataset()
+    # char_1 已精一：需求只有精二档 30115×1 + 30013×3
+    targets = [OperatorTarget("char_1", (Goal("elite", "", 2, "in_progress"),))]
+    snapshots = build_snapshots()
+    assert not has_material_gap(
+        targets, snapshots, {"30115": 1, "30013": 3}, data, TODAY
+    )
+    # 原料库存沿合成链恰好够：30115←30013×5←30012×25、30013×3←30012×15
+    assert not has_material_gap(targets, snapshots, {"30012": 40}, data, TODAY)
+    # 差一个就不够：必须刷 → 有缺口
+    assert has_material_gap(targets, snapshots, {"30012": 39}, data, TODAY)
+
+
+def test_has_material_gap_does_not_double_count_shared_stock() -> None:
+    """多需求争用同一份库存时不重复抵扣（守住递归消耗口径）。
+
+    需求 30013×10 与 30115×2（合成需 30013×10）、库存 30013×10：够其一
+    不够其二，必有缺口。"先抵扣再折算再比库存"会把这份库存算两遍而
+    漏判，递归消耗则在第一份需求扣完后按剩余库存判定。
+    """
+
+    from dataclasses import replace
+
+    data = replace(
+        build_dataset(),
+        demands={
+            "char_1": (
+                DemandEntry("elite", "", 1, {"30013": 10}),
+                DemandEntry("elite", "", 2, {"30115": 2}),
+            ),
+        },
+    )
+    targets = [OperatorTarget("char_1", (Goal("elite", "", 2, "in_progress"),))]
+    snapshots = {"char_1": ProgressionSnapshot("local", 1, Progression(0, 1, {}, {}))}
+    assert has_material_gap(targets, snapshots, {"30013": 10}, data, TODAY)
+    # 30013×20 恰好两份需求都够（10 直用 + 30115×2 合成）→ 无缺口。
+    # 旧口径把全部需求折到 30012 再比库存（本库存在 30013 上）必误报；
+    # "先抵扣再折算再比库存"也会把折算目标错比原料库存而误报。
+    assert not has_material_gap(targets, snapshots, {"30013": 20}, data, TODAY)
+
+
+def test_apply_achievements_gap_refresh_respects_stock() -> None:
+    """缺口刷新按库存抵扣：材料备齐的目标回到 not_started 而非反复刷取。"""
+
+    data = build_dataset()
+    targets = [OperatorTarget("char_1", (Goal("elite", "", 2, "in_progress"),))]
+    snapshots = build_snapshots()  # char_1 已精一：需求 30115×1 + 30013×3
+    refreshed = apply_achievements(
+        targets, [], snapshots, {"30115": 1, "30013": 3}, data, TODAY
+    )
+    assert refreshed[0].goals[0].state == "not_started"
+    refreshed = apply_achievements(targets, [], snapshots, {}, data, TODAY)
+    assert refreshed[0].goals[0].state == "in_progress"
+
+
 def test_judge_and_apply_achievements() -> None:
     targets = [
         OperatorTarget("char_1", (Goal("elite", "", 2, "in_progress"),)),
@@ -335,6 +398,35 @@ def test_parse_oper_box_and_depot_payload() -> None:
     )
     assert inventory == {"30012": 12}
     assert sync_time == 1780000000
+
+
+def test_local_inventory_empty_file_is_valid_stock(tmp_path) -> None:
+    """合法但为空的 DepotData 返回空库存，不误报为数据缺失。
+
+    上游据此区分"仓库确实没有"与"还没识别过"：前者显示全零库存，
+    后者才提示用户去 MAA 执行仓库识别。
+    """
+
+    from app.task.MAA.tools.cultivate.providers import resolve_inventory
+
+    (tmp_path / "DepotData.json").write_text(
+        '{"done": true, "data": {}, "syncTime": 1780000000}', encoding="utf-8"
+    )
+    result = resolve_inventory(
+        ProviderContext(maa_data_dir=tmp_path), get_inventory_chain()
+    )
+    assert result == ({}, 1780000000)
+
+
+def test_local_inventory_missing_file_is_absent(tmp_path) -> None:
+    """文件缺失仍返回 None：数据缺失语义不受空库存修复影响。"""
+
+    from app.task.MAA.tools.cultivate.providers import resolve_inventory
+
+    assert (
+        resolve_inventory(ProviderContext(maa_data_dir=tmp_path), get_inventory_chain())
+        is None
+    )
 
 
 def test_resolve_progression_falls_back_to_default(tmp_path) -> None:
@@ -599,3 +691,75 @@ def test_fixed_source_stage_preserves_snapshot_roundtrip() -> None:
     data = replace(build_dataset(), fixed_source_stages={"4006": "st_chip"})
     restored = dataset_from_json(dataset_to_json(data))
     assert restored.fixed_source_stages == {"4006": "st_chip"}
+
+
+def test_fixed_source_items_farmable_in_full_pipeline() -> None:
+    """龙门币/采购凭证等固定产出材料经完整管线产出资源关条目。
+
+    回归：synthesize 曾只认掉落统计与配方，固定产出材料在折算阶段就被
+    归入"不可获取"（真实需求数据里龙门币出现在全部模组档位，单个模组
+    三级就要 15 万），recommend_stages 的 fixed_source_stages 兜底因此
+    永远执行不到。资源关产出只按资源关处理，不参与掉落与合成折算。
+    """
+
+    from dataclasses import replace
+
+    data = replace(
+        build_dataset(),
+        demands={
+            "char_1": (DemandEntry("module", "mod_1", 1, {"4001": 40000, "4006": 2}),),
+        },
+        material_class={"4001": "farmable", "4006": "farmable"},
+        fixed_source_stages={"4001": "st_main", "4006": "st_chip"},
+    )
+    targets = [OperatorTarget("char_1", (Goal("module", "mod_1", 1, "not_started"),))]
+    snapshots = {"char_1": ProgressionSnapshot("local", 1, Progression(0, 1, {}, {}))}
+    plan = build_plan(targets=targets, snapshots=snapshots, data=data, today=TODAY)
+
+    entries = {(entry.item_id, entry.stage_code) for entry in plan.entries}
+    assert ("4001", "1-7") in entries
+    assert ("4006", "PR-B-1") in entries
+    assert all(
+        unobtainable.item_id not in ("4001", "4006")
+        for unobtainable in plan.unobtainable
+    )
+
+
+def test_fixed_source_item_without_item_value_still_farmable() -> None:
+    """固定产出材料缺物品价值数据时仍按资源关处理。
+
+    路由只依赖 fixed_source_stages 映射，不依赖掉落统计或物品价值——
+    价值缺失不能把材料打回"不可获取"。
+    """
+
+    from dataclasses import replace
+
+    data = replace(
+        build_dataset(),
+        material_class={"4006": "farmable"},
+        fixed_source_stages={"4006": "st_chip"},
+    )
+    farm, unobtainable = synthesize([Requirement("4006", 6, ())], data, TODAY)
+    assert [(requirement.item_id, requirement.amount) for requirement in farm] == [
+        ("4006", 6)
+    ]
+    assert unobtainable == []
+
+
+def test_fixed_source_stage_blacklisted_counts_unobtainable() -> None:
+    """固定产出关被黑名单排除时材料归入不可获取（没有其他获取途径）。"""
+
+    from dataclasses import replace
+
+    data = replace(
+        build_dataset(),
+        material_class={"4006": "farmable"},
+        fixed_source_stages={"4006": "st_chip"},
+    )
+    farm, unobtainable = synthesize(
+        [Requirement("4006", 6, ())], data, TODAY, frozenset({"PR-B-1"})
+    )
+    assert farm == []
+    assert [
+        (requirement.item_id, requirement.amount) for requirement in unobtainable
+    ] == [("4006", 6)]

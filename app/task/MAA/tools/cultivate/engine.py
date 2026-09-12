@@ -128,6 +128,19 @@ def _build_recipe_map(data: CultivateDataSet) -> dict[str, Recipe]:
     return {recipe.result_item_id: recipe for recipe in data.recipes}
 
 
+def _stage_unusable(
+    stage_id: str, data: CultivateDataSet, blacklist: frozenset[str]
+) -> bool:
+    """关卡是否结构性不可用（缺失/无关卡代码/被黑名单排除）。
+
+    只做与时间、星期无关的结构判定：固定产出资源关有固定开放日，按当天
+    过滤会让用户在不开放的日子拿不到该材料，开放时间由 MAA 执行时判断。
+    """
+
+    meta = data.stages.get(stage_id)
+    return meta is None or not meta.stage_code or meta.stage_code in blacklist
+
+
 def _direct_cost(
     item_id: str,
     data: CultivateDataSet,
@@ -228,7 +241,11 @@ def synthesize(
 ) -> tuple[list[Requirement], list[Requirement]]:
     """把需求折算到可刷取材料（金色 T5 等按合成路径展开到原料）。
 
-    不可获取类（模组凭证/龙门币等）原样返回，供 UI 单列"需另行获取"，
+    资源关固定产出材料（龙门币 ← CE-6、采购凭证 ← AP-5 等）只按资源关
+    处理：无掉落统计、无配方，直接进入刷取需求，钉到对应资源关，固定
+    产出关被黑名单排除时才归入不可获取。
+
+    不可获取类（模组凭证等）原样返回，供 UI 单列"需另行获取"，
     绝不进刷取条目。路径选择为 P1 基础版：每理智成本择优，不计现有库存
     对路径选择的影响（完整口径 P3 对齐）；库存缺口由 MAA 执行时现算，
     因此条目数量取路径总量（保有量目标语义）而非扣减后的差额。
@@ -261,6 +278,24 @@ def synthesize(
                 unobtainable_totals.get(item_id, 0) + requirement.amount
             )
             sources_by_item.setdefault(item_id, requirement.sources)
+            continue
+        # 资源关固定产出（龙门币 ← CE-6、采购凭证 ← AP-5 等）：只按资源关
+        # 处理，不参与掉落统计与合成折算。不在此过滤开放日，开放时间由
+        # MAA 执行时自行判断（与 recommend_stages 口径一致）。
+        fixed_stage_id = data.fixed_source_stages.get(item_id)
+        if fixed_stage_id is not None:
+            if _stage_unusable(fixed_stage_id, data, blacklist):
+                unobtainable_totals[item_id] = (
+                    unobtainable_totals.get(item_id, 0) + requirement.amount
+                )
+                sources_by_item.setdefault(item_id, requirement.sources)
+            else:
+                farm_totals[item_id] = (
+                    farm_totals.get(item_id, 0.0) + requirement.amount
+                )
+                sources_by_item[item_id] = (
+                    sources_by_item.get(item_id, ()) + requirement.sources
+                )
             continue
         # 结构可行性（不看今天）：决定该材料是"可刷/可合成"还是"不可获取"
         structural = _best_path(item_id, data, recipe_map, structural_memo)
@@ -368,23 +403,24 @@ def recommend_stages(
                 best_cost = meta.ap_cost
                 best_stage = meta.stage_code
 
-        # 资源关固定产出（采购凭证 ← AP-5 等）：无掉落统计，直接给出对应关。
-        # 期望次数/理智不可算（产出恒定但单次产量未知），保持 0.0 中性值，
-        # 由 MAA 按保有量目标执行时现算。
+        # 资源关固定产出（龙门币 ← CE-6、采购凭证 ← AP-5 等）：无掉落统计，
+        # 直接给出对应关。期望次数/理智不可算（产出恒定但单次产量未知），
+        # 保持 0.0 中性值，由 MAA 按保有量目标执行时现算。
         #
         # 不做星期过滤：资源关有固定开放日，若在此按当天过滤，用户在不开放
         # 的日子选该材料就拿不到任何关卡、无法保存计划。MAA 执行时会自行
         # 判断开放时间并安排到开放日刷取，计划层不该替它做这个决定。
         if best_stage is None:
             fixed_stage_id = data.fixed_source_stages.get(requirement.item_id)
-            meta = data.stages.get(fixed_stage_id) if fixed_stage_id else None
-            if meta is None or not meta.stage_code or meta.stage_code in blacklist:
+            if fixed_stage_id is None or _stage_unusable(
+                fixed_stage_id, data, blacklist
+            ):
                 continue
             entries.append(
                 FarmEntry(
                     item_id=requirement.item_id,
                     amount=requirement.amount,
-                    stage_code=meta.stage_code,
+                    stage_code=data.stages[fixed_stage_id].stage_code,
                     sources=requirement.sources,
                 )
             )
@@ -456,6 +492,61 @@ def build_plan(
     )
 
 
+def _unmet_by_stock(
+    requirements: list[Requirement],
+    inventory: Mapping[str, int],
+    data: CultivateDataSet,
+) -> list[Requirement]:
+    """按库存递归抵扣后的未满足需求（原始需求粒度，保留来源档案）。
+
+    抵扣沿合成链进行：先扣本体库存，不足的再逐级扣原料库存（等价于
+    立即合成消耗）。用户已持有的高阶材料与中间材料因此都能抵扣目标，
+    不会出现"材料全齐仍判缺口"。贪心按需求顺序消耗、不求解最优分配：
+    缺口判定只取布尔结果，且真实配方都是可刷材料的逐级合成，逐项贪心
+    与最优分配在此口径下结论一致。
+    """
+
+    recipe_map = _build_recipe_map(data)
+    stock = dict(inventory)
+
+    def consume(item_id: str, amount: int, depth: int) -> int:
+        """从库存消耗 amount 个 item（本体直用，不足沿配方合成）。
+
+        返回仍缺的数量。数量精度对布尔判定无关：原料不足时消耗现有
+        部分后按本体剩余计缺口——无论之后直刷本体还是补刷原料，都
+        存在需要刷取的缺口。
+        """
+
+        if depth > _MAX_PATH_DEPTH:
+            return amount
+        use = min(amount, stock.get(item_id, 0))
+        if use:
+            stock[item_id] -= use
+        unmet = amount - use
+        if unmet <= 0:
+            return 0
+        recipe = recipe_map.get(item_id)
+        if recipe is None:
+            return unmet
+        for ingredient_id, count in recipe.ingredients.items():
+            if consume(ingredient_id, count * unmet, depth + 1) > 0:
+                return unmet
+        return 0
+
+    unmet_requirements: list[Requirement] = []
+    for requirement in requirements:
+        remaining = consume(requirement.item_id, requirement.amount, 0)
+        if remaining > 0:
+            unmet_requirements.append(
+                Requirement(
+                    item_id=requirement.item_id,
+                    amount=remaining,
+                    sources=requirement.sources,
+                )
+            )
+    return unmet_requirements
+
+
 def has_material_gap(
     targets: list[OperatorTarget] | tuple[OperatorTarget, ...],
     snapshots: Mapping[str, ProgressionSnapshot],
@@ -464,17 +555,20 @@ def has_material_gap(
     today: date,
     blacklist: frozenset[str] = frozenset(),
 ) -> bool:
-    """注入时接管判定第三步：任一材料今天可刷且库存低于保有量目标。
+    """注入时接管判定第三步：存在今日可刷、且库存（含沿配方立即合成）
+    满足不了的材料缺口。
 
-    走选关过滤（时间窗/星期/黑名单，与 build_plan 同口径），因此"当前
-    无开放关"的材料不计入缺口——它们即使缺也刷不了，不应抑制库存保持。
-    不可获取类（模组凭证等）靠用户游戏内获取，同样不计入。
+    库存先沿合成链递归抵扣原始需求（本体直用 → 原料合成，见
+    _unmet_by_stock），仍缺的才走选关过滤（时间窗/星期/黑名单，与
+    build_plan 同口径）。因此"当前无开放关"的材料不计入缺口——它们
+    即使缺也刷不了，不应抑制库存保持；不可获取类（模组凭证等）靠用户
+    游戏内获取，同样不计入。
     """
 
     requirements = aggregate(build_requirements(targets, snapshots, data.demands))
-    farm, _ = synthesize(requirements, data, today, blacklist)
-    entries = recommend_stages(farm, data, today, blacklist)
-    return any(entry.amount > inventory.get(entry.item_id, 0) for entry in entries)
+    unmet = _unmet_by_stock(requirements, inventory, data)
+    farm, _ = synthesize(unmet, data, today, blacklist)
+    return bool(recommend_stages(farm, data, today, blacklist))
 
 
 def judge_achievements(
@@ -538,11 +632,13 @@ def apply_achievements(
     )
     if should_refresh:
         requirements = aggregate(build_requirements(targets, snapshots, data.demands))
-        farm, _ = synthesize(requirements, data, today)
+        # 库存递归抵扣后再折算：已有高阶材料库存能抵掉目标，材料备齐的
+        # 目标回到 not_started 而不是被反复刷取（与 has_material_gap 同口径）
+        unmet = _unmet_by_stock(requirements, inventory, data)
+        farm, _ = synthesize(unmet, data, today)
         for requirement in farm:
-            if requirement.amount > inventory.get(requirement.item_id, 0):
-                for ref in requirement.sources:
-                    gap_index.add((ref.operator_id, ref.goal_index))
+            for ref in requirement.sources:
+                gap_index.add((ref.operator_id, ref.goal_index))
 
     removed_achievements = {
         (achievement.operator_id, achievement.goal_index)

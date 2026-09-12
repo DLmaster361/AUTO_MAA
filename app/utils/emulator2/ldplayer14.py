@@ -194,12 +194,14 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
 
     async def _recover_vbox_service(self, idx: str, reason: str) -> None:
         """关掉僵尸窗口并重启 VBox 服务。有别的虚拟机在跑时拒绝，改为报错。"""
+        # 进程级探测分不清这几个虚拟机是谁的：list2 的 VBox pid 在启动早期也可能是 -1，
+        # 数进去的可能正是本实例自己还没就绪的虚拟机。所以这里只陈述事实，不断言归属。
         running = live_vm_pids()
         if running:
             raise RuntimeError(
                 f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
-                f"但还有 {len(running)} 台实例的虚拟机在运行，重启该服务会把它们一起关掉。"
-                f"请先关闭其他雷电实例再重试，或{_REPAIR_HINT}"
+                f"但整机仍有 {len(running)} 个雷电虚拟机进程在运行（可能包括本实例尚未就绪的），"
+                f"重启该服务会把它们一起关掉。请关闭所有雷电实例后再重试，或{_REPAIR_HINT}"
             )
 
         logger.warning(
@@ -215,7 +217,12 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             ) from e
 
     async def _quit_zombie_instance(self, idx: str) -> None:
-        """让只剩窗口的实例下线：先走 ``quit``，等不到就结束播放器进程。"""
+        """让只剩窗口的实例下线：先走 ``quit``，等不到就结束播放器进程。
+
+        必须等到 list2 真的变成关机再返回：父类启动流程先查状态，只要那行还是
+        「已启动」它就不 launch、直接当在线返回，自愈就成了空转。两手都没让它下线
+        时抛错，而不是让后面报一句会误导的「重启后仍起不来」。
+        """
         try:
             await ProcessRunner.run_process(
                 self.emulator_path,
@@ -238,21 +245,30 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         try:
             device = (await self.get_device_info(idx))[idx]
         except Exception as e:  # noqa: BLE001 - 取不到 pid 就没法再兜底
-            logger.warning(f"雷电实例 {idx} 仍未下线且取不到进程信息: {e}")
-            return
-        if device.pid <= 0:
-            return
-        try:
-            proc = psutil.Process(device.pid)
-            proc.kill()
-            await asyncio.to_thread(proc.wait, 10)
-            logger.warning(
-                f"雷电实例 {idx} 对 quit 无响应，已结束播放器进程 {device.pid}"
-            )
-        except psutil.NoSuchProcess:
-            return
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"结束雷电实例 {idx} 的播放器进程 {device.pid} 失败: {e}")
+            raise RuntimeError(
+                f"雷电实例 {idx} 对 quit 无响应，且取不到进程信息: {e}"
+            ) from e
+        if device.pid > 0:
+            try:
+                proc = psutil.Process(device.pid)
+                proc.kill()
+                await asyncio.to_thread(proc.wait, 10)
+                logger.warning(
+                    f"雷电实例 {idx} 对 quit 无响应，已结束播放器进程 {device.pid}"
+                )
+            except psutil.NoSuchProcess:
+                pass
+            except Exception as e:  # noqa: BLE001 - 下面按 list2 复核, 这里只记原因
+                logger.warning(
+                    f"结束雷电实例 {idx} 的播放器进程 {device.pid} 失败: {e}"
+                )
+
+        deadline = time.monotonic() + _ZOMBIE_QUIT_TIMEOUT
+        while time.monotonic() < deadline:
+            if await self.getStatus(idx) == DeviceStatus.OFFLINE:
+                return
+            await asyncio.sleep(0.5)
+        raise RuntimeError(f"雷电实例 {idx} 的窗口关不掉，无法自愈，{_REPAIR_HINT}")
 
     async def vendor_launch_app(self, idx: str, package_name: str) -> object:
         """``ldconsole runapp``。

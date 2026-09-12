@@ -124,6 +124,7 @@ async def restart_vbox_service() -> bool:
     if survivors:
         raise RuntimeError(f"{VBOX_SERVICE_PROCESS} 结束后仍未退出: {survivors}")
     logger.warning(
-        f"已重启 {VBOX_SERVICE_PROCESS}（结束 pid {[p.pid for p in targets]}）"
+        f"已结束 {VBOX_SERVICE_PROCESS}（pid {[p.pid for p in targets]}），"
+        "下一次启动实例时由雷电重新拉起"
     )
     return True

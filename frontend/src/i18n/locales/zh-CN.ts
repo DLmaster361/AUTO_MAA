@@ -2409,6 +2409,7 @@ export default {
       wutheringwaves: '鸣潮活动信息',
       nte: '异环活动信息',
       reverse1999: '重返未来：1999活动信息',
+      bluearchive: '碧蓝档案活动信息',
       arknights: '明日方舟活动信息',
     },
     empty: {
@@ -2453,6 +2454,20 @@ export default {
       nextVersionSoon: '即将进入下个版本',
       versionTime: '版本时间：',
       endedAt: '结束于 {time}',
+    },
+    bluearchive: {
+      serverLabel: '服务器',
+      server: {
+        jp: '日服',
+        global: '国际服',
+        cn: '国服',
+      },
+      versionName: '{server}活动',
+      unavailable: '{server}活动数据暂不可用',
+      noActivity: '暂无活动',
+      stale: '缓存数据',
+      staleMessage: '正在使用上次成功获取的活动数据',
+      source: 'Kivo 古书馆',
     },
     command: {
       aria: '调度快速启动',

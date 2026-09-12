@@ -17,6 +17,7 @@ export const defaultHomeModuleOrder: HomeModuleKey[] = [
   'wutheringwaves',
   'nte',
   'reverse1999',
+  'bluearchive',
   'arknights',
 ]
 

@@ -184,5 +184,56 @@ class MaaEndPlanKeyValidatorTest(unittest.TestCase):
         )
 
 
+class EssenceMenuPlanKeyTest(unittest.TestCase):
+    """基质刷取模式（MaaEnd 2.28）在计划键中的归一与往返"""
+
+    def test_menu_and_target_weapons_round_trip(self) -> None:
+        key = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": "",
+            "AutoEssenceMenu": "Target",
+            "AutoEssenceTargetWeapons": ["wpn_sword_2", "wpn_bow_1"],
+        }
+        self.assertEqual(validate_maaend_plan_key(key), key)
+        self.assertEqual(normalize_maaend_plan_key(key), key)
+
+    def test_legacy_essence_key_keeps_the_old_shape(self) -> None:
+        # 历史键不写入新字段，避免旧计划表键形状漂移
+        legacy = {"SanityTaskType": "Essence", "AutoEssenceSpecifiedLocation": "VFTheHub"}
+        self.assertEqual(normalize_maaend_plan_key(dict(legacy)), legacy)
+        self.assertEqual(validate_maaend_plan_key(dict(legacy)), legacy)
+
+    def test_target_weapons_without_menu_are_kept(self) -> None:
+        key = normalize_maaend_plan_key(
+            {"SanityTaskType": "Essence", "AutoEssenceTargetWeapons": ["wpn_sword_2"]}
+        )
+        self.assertEqual(key["AutoEssenceTargetWeapons"], ["wpn_sword_2"])
+        self.assertNotIn("AutoEssenceMenu", key)
+
+    def test_unknown_menu_degrades_to_target_when_weapons_are_set(self) -> None:
+        key = normalize_maaend_plan_key(
+            {
+                "SanityTaskType": "Essence",
+                "AutoEssenceMenu": "非法模式",
+                "AutoEssenceTargetWeapons": ["wpn_sword_2", 1, None],
+            }
+        )
+        self.assertEqual(key["AutoEssenceMenu"], "Target")
+        self.assertEqual(key["AutoEssenceTargetWeapons"], ["wpn_sword_2"])
+
+    def test_unknown_menu_degrades_to_location_without_weapons(self) -> None:
+        key = normalize_maaend_plan_key(
+            {"SanityTaskType": "Essence", "AutoEssenceMenu": "非法模式"}
+        )
+        self.assertEqual(key["AutoEssenceMenu"], "Location")
+        self.assertNotIn("AutoEssenceTargetWeapons", key)
+
+    def test_invalid_menu_raises_on_strict_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_maaend_plan_key(
+                {"SanityTaskType": "Essence", "AutoEssenceMenu": "非法模式"}
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

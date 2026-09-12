@@ -329,6 +329,9 @@ MAAEND_SANITY_TASK_TYPES = (
 )
 """MaaEnd理智任务类型列表"""
 
+MAAEND_AUTO_ESSENCE_MENUS = ("Random", "Location", "Target")
+"""MaaEnd 基质刷取模式（随机、地点、目标）"""
+
 MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
     "WeaponProgression": ("WeaponEXP", "WeaponTune"),
@@ -407,6 +410,9 @@ MAAEND_SANITY_TASK_DEFAULTS = {
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
     "AutoEssenceSpecifiedLocation": "",
+    # Location 保持原有“指定地点”语义；Target 由用户显式切换。
+    "AutoEssenceMenu": "Location",
+    "AutoEssenceTargetWeapons": [],
 }
 """MaaEnd理智任务字段默认值"""
 
@@ -417,6 +423,8 @@ MAAEND_SANITY_TASK_FIELDS = (
     "CrisisDrills",
     "RewardsSetOption",
     "AutoEssenceSpecifiedLocation",
+    "AutoEssenceMenu",
+    "AutoEssenceTargetWeapons",
 )
 """MaaEnd理智任务字段列表"""
 

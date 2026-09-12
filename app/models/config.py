@@ -35,6 +35,7 @@ from app.utils.constants import (
     MAAEND_AUTO_COLLECT_MODES,
     MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
     MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_AUTO_ESSENCE_MENUS,
     MAAEND_DELIVERY_COMMISSION_SOURCES,
     MAAEND_DELIVERY_TASK,
     MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
@@ -71,6 +72,7 @@ from .ConfigBase import (
     MultipleUIDValidator,
     OptionsValidator,
     RangeValidator,
+    StringListValidator,
     StringValidator,
     TypedMultipleUIDValidator,
     URLValidator,
@@ -130,6 +132,20 @@ def init_maaend_task_config(config) -> None:
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
         StringValidator(),
+    )
+    ## 基质刷取模式（兼容 MaaEnd 2.28+ 的 Random/Location/Target）
+    config.Task_AutoEssenceMenu = ConfigItem(
+        "Task",
+        "AutoEssenceMenu",
+        MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceMenu"],
+        OptionsValidator(list(MAAEND_AUTO_ESSENCE_MENUS)),
+    )
+    ## 基质目标武器 ID（选项由 MaaEnd 安装目录动态提供）
+    config.Task_AutoEssenceTargetWeapons = ConfigItem(
+        "Task",
+        "AutoEssenceTargetWeapons",
+        list(MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceTargetWeapons"]),
+        StringListValidator(),
     )
 
     ## 抢委托送货最低接取价格（万）
@@ -211,16 +227,25 @@ def _normalize_maaend_sanity_task_type(task_data: object) -> None:
         return
 
     sanity_task_type = task_data.get("SanityTaskType")
-    if sanity_task_type in MAAEND_SANITY_TASK_TYPES:
-        return
-
     if sanity_task_type == "ProtocolSpace":
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
         if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
 
+    if task_data.get("SanityTaskType") not in MAAEND_SANITY_TASK_TYPES:
+        return
 
-def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
+    # 2.28+ 将基质模式拆为 AutoEssenceMenu；旧用户配置只有地点字段。
+    menu = task_data.get("AutoEssenceMenu")
+    if menu not in MAAEND_AUTO_ESSENCE_MENUS:
+        target_weapons = task_data.get("AutoEssenceTargetWeapons")
+        if isinstance(target_weapons, list) and target_weapons:
+            task_data["AutoEssenceMenu"] = "Target"
+        elif isinstance(task_data.get("AutoEssenceSpecifiedLocation"), str):
+            task_data["AutoEssenceMenu"] = "Location"
+
+
+def normalize_maaend_plan_key(raw_key: object) -> dict[str, Any]:
     """将固定配置或旧计划表日期槽位转换为 MaaEnd key。"""
 
     if isinstance(raw_key, dict) and "Key" in raw_key:
@@ -241,6 +266,25 @@ def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
             if isinstance(location, str)
             else "",
         }
+        if "AutoEssenceMenu" in data:
+            menu = data["AutoEssenceMenu"]
+            target_weapons = data.get("AutoEssenceTargetWeapons")
+            candidate["AutoEssenceMenu"] = (
+                menu
+                if menu in MAAEND_AUTO_ESSENCE_MENUS
+                else (
+                    "Target"
+                    if isinstance(target_weapons, list) and target_weapons
+                    else "Location"
+                )
+            )
+        if "AutoEssenceTargetWeapons" in data:
+            target_weapons = data["AutoEssenceTargetWeapons"]
+            candidate["AutoEssenceTargetWeapons"] = (
+                [item for item in target_weapons if isinstance(item, str)]
+                if isinstance(target_weapons, list)
+                else []
+            )
     else:
         if sanity_task_type not in MAAEND_SANITY_TASK_TYPES[:-1]:
             sanity_task_type = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
@@ -266,14 +310,46 @@ def normalize_maaend_plan_key(raw_key: object) -> dict[str, str]:
     try:
         key = schema_model.MaaEndPlanConfig_Item(Key=candidate).Key
     except ValueError:
-        key = schema_model.MaaEndProtocolSpacePlanKey()
+        # Essence 的新字段来自动态资源；字段漂移或旧值损坏时仍保留基质任务，
+        # 不应因为模式值无法识别而退回协议空间。
+        key = (
+            schema_model.MaaEndAutoEssencePlanKey()
+            if sanity_task_type == "Essence"
+            else schema_model.MaaEndProtocolSpacePlanKey()
+        )
+    if isinstance(key, schema_model.MaaEndAutoEssencePlanKey):
+        # 保留历史 key 的稳定形状：新字段只在调用方明确提供时写入。
+        result: dict[str, Any] = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": key.AutoEssenceSpecifiedLocation,
+        }
+        if key.AutoEssenceMenu is not None and "AutoEssenceMenu" in candidate:
+            result["AutoEssenceMenu"] = key.AutoEssenceMenu
+        if key.AutoEssenceTargetWeapons and "AutoEssenceTargetWeapons" in candidate:
+            result["AutoEssenceTargetWeapons"] = list(key.AutoEssenceTargetWeapons)
+        return result
     return key.model_dump()
 
 
-def validate_maaend_plan_key(raw_key: object) -> dict[str, str]:
+def validate_maaend_plan_key(raw_key: object) -> dict[str, Any]:
     """严格校验并返回规范化的 MaaEnd key。"""
 
     key = schema_model.MaaEndPlanConfig_Item(Key=raw_key).Key
+    if isinstance(key, schema_model.MaaEndAutoEssencePlanKey):
+        data = raw_key.get("Key", raw_key) if isinstance(raw_key, dict) else {}
+        result: dict[str, Any] = {
+            "SanityTaskType": "Essence",
+            "AutoEssenceSpecifiedLocation": key.AutoEssenceSpecifiedLocation,
+        }
+        if isinstance(data, dict) and "AutoEssenceMenu" in data:
+            result["AutoEssenceMenu"] = key.AutoEssenceMenu
+        if (
+            isinstance(data, dict)
+            and "AutoEssenceTargetWeapons" in data
+            and key.AutoEssenceTargetWeapons
+        ):
+            result["AutoEssenceTargetWeapons"] = list(key.AutoEssenceTargetWeapons)
+        return result
     return key.model_dump()
 
 
@@ -286,7 +362,7 @@ class MaaEndPlanKeyValidator(ValidatorBase):
         except ValueError:
             return False
 
-    def correct(self, value: Any) -> dict[str, str]:
+    def correct(self, value: Any) -> dict[str, Any]:
         return normalize_maaend_plan_key(value)
 
 
@@ -1194,11 +1270,12 @@ class MaaEndUserConfig(ConfigBase):
         await super().load(data)
 
     def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
-        """缓存 MaaEnd 基质刷取地点资源。"""
+        """缓存 MaaEnd 动态资源的展示文本。"""
 
         self._maaend_essence_location_labels = {
             str(item["value"]): str(item["label"])
-            for item in resource["essenceLocations"]
+            for item in resource.get("essenceLocations", [])
+            if isinstance(item, dict) and item.get("value") is not None
         }
 
     def _get_maaend_location_label(self, value: str) -> str:
@@ -1206,7 +1283,7 @@ class MaaEndUserConfig(ConfigBase):
             return ""
         return self._maaend_essence_location_labels.get(value, value)
 
-    def get_effective_sanity_task_key(self) -> tuple[dict[str, str], str]:
+    def get_effective_sanity_task_key(self) -> tuple[dict[str, Any], str]:
         """获取当前生效的完整 MaaEnd key。"""
 
         mode = self.get("Info", "SanityMode")
@@ -1253,16 +1330,25 @@ class MaaEndUserConfig(ConfigBase):
                 }
             )
 
-            detail_key = (
-                task_key["AutoEssenceSpecifiedLocation"]
-                if sanity_task_type == "Essence"
-                else task_key[sanity_task_type]
-            )
-            detail_label = (
-                self._get_maaend_location_label(detail_key)
-                if sanity_task_type == "Essence"
-                else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
-            )
+            if sanity_task_type == "Essence" and task_key.get("AutoEssenceMenu") == "Target":
+                target_weapons = task_key.get("AutoEssenceTargetWeapons", [])
+                detail_key = "Target"
+                detail_label = (
+                    "目标武器（未限制）"
+                    if not target_weapons
+                    else f"目标武器（{len(target_weapons)} 件）"
+                )
+            else:
+                detail_key = (
+                    task_key["AutoEssenceSpecifiedLocation"]
+                    if sanity_task_type == "Essence"
+                    else task_key[sanity_task_type]
+                )
+                detail_label = (
+                    self._get_maaend_location_label(detail_key)
+                    if sanity_task_type == "Essence"
+                    else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
+                )
             tags.append(
                 {
                     "text": f"详细任务：{detail_label}",

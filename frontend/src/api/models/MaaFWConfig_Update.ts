@@ -14,7 +14,7 @@ export type MaaFWConfig_Update = {
     /**
      * 项目更新包下载源：Mirror 酱（需自行填写 CDK）/ GitHub
      */
-    Source?: ('MirrorChyan' | 'GitHub' | null);
+    Source?: ('GitHub' | 'MirrorChyan' | null);
     /**
      * 项目更新渠道：稳定版 / 测试版
      */

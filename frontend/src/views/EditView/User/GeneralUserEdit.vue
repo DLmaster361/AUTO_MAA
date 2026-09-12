@@ -207,6 +207,7 @@ import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import {
   WS_TASK_COMPLETED,
@@ -233,7 +234,8 @@ const { subscribe, unsubscribe } = useWebSocket()
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -322,36 +324,37 @@ watch(
 
 // 即时保存单个字段变更
 const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || !userId) return
 
-  isSaving.value = true
-  try {
-    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-    const parts = key.split('.')
-    let userData: Record<string, any> = {}
-    let current = userData
+  await enqueue(async () => {
+    try {
+      // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+      const parts = key.split('.')
+      let userData: Record<string, any> = {}
+      let current = userData
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
+      for (let i = 0; i < parts.length - 1; i++) {
+        current[parts[i]] = {}
+        current = current[parts[i]]
+      }
+      current[parts[parts.length - 1]] = value
+
+      // 特殊处理：userName 需要同步到 Info.Name
+      if (key === 'userName') {
+        userData = { Info: { Name: value } }
+      }
+
+      await updateUser(scriptId, userId, userData)
+      logger.info(`用户配置已保存: ${key}`)
+      // 任务前后脚本路径会被后端规范化（相对转绝对、解析 .lnk 等），保存后回读该字段
+      if (key === 'Info.ScriptBeforeTask' || key === 'Info.ScriptAfterTask') {
+        await refreshNormalizedUserField(key)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-    current[parts[parts.length - 1]] = value
-
-    // 特殊处理：userName 需要同步到 Info.Name
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
-    }
-
-    await updateUser(scriptId, userId, userData)
-    // 刷新数据
-    await loadUserData()
-    logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -383,29 +386,6 @@ const handleConfigModeChange = async (value: boolean | string) => {
     logger.info(`配置来源已切换为: ${value ? '用户独立配置' : '脚本直控配置'}`)
   } finally {
     configModeSaving.value = false
-  }
-}
-
-// 保存完整用户数据（仅用于特殊批量操作）
-const _saveFullUserData = async () => {
-  if (isInitializing.value || isSaving.value || !userId) return
-
-  isSaving.value = true
-  try {
-    formData.Info.Name = formData.userName
-    const userData = {
-      Info: { ...formData.Info },
-      Notify: { ...formData.Notify },
-      Data: { ...formData.Data },
-    }
-
-    await updateUser(scriptId, userId, userData)
-    logger.info('用户配置已保存')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
   }
 }
 
@@ -464,6 +444,16 @@ const createUserImmediately = async () => {
 }
 
 // 加载用户数据
+const refreshNormalizedUserField = async (key: string) => {
+  const userResponse = await getUsers(scriptId, userId)
+  const userData = userResponse?.code === 200 ? (userResponse.data[userId] as any) : undefined
+  const [group, field] = key.split('.')
+  const normalized = userData?.[group]?.[field]
+  if (normalized !== undefined) {
+    ;(formData as Record<string, any>)[group][field] = normalized
+  }
+}
+
 const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)

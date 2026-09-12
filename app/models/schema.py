@@ -671,11 +671,23 @@ class ZzzOdBackupPreviewOut(OutBase):
     )
 
 
+class MaaEndEssenceTargetGroup(BaseModel):
+    value: str = Field(..., description="武器类型标识")
+    label: str = Field(..., description="武器类型展示名")
+    options: List[ComboBoxItem] = Field(..., description="该类型可选武器")
+
+
 class MaaEndOptionsOut(OutBase):
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
     essenceLocations: List[ComboBoxItem] = Field(
         ..., description="MaaEnd 基质刷取地点选项"
+    )
+    essenceMenus: List[ComboBoxItem] = Field(
+        ..., description="MaaEnd 基质刷取模式选项"
+    )
+    essenceTargetWeaponGroups: List[MaaEndEssenceTargetGroup] = Field(
+        ..., description="MaaEnd 基质目标武器分组"
     )
 
 
@@ -756,13 +768,9 @@ class ToolsConfig_GameSign(BaseModel):
     Enabled: bool | None = Field(default=None, description="是否启用游戏社区")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
     ActivityEnabled: bool | None = Field(default=None, description="是否启用日常便笺")
-    WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
-    WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
     RunOnStartup: bool | None = Field(default=None, description="启动时运行")
-    ScheduledRun: bool | None = Field(default=None, description="定时运行")
     AutoStart: bool | None = Field(default=None, description="是否立即开始")
     LastSignDate: str | None = Field(default=None, description="上次签到日期")
-    ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
     Status: str | None = Field(default=None, description="签到状态标签")
     Result: str | None = Field(default=None, description="签到结果 JSON")
 
@@ -800,12 +808,6 @@ class GameSignAccountCreateOut(OutBase):
     data: GameSignAccountGroupConfig = Field(
         default_factory=GameSignAccountGroupConfig, description="账号组配置"
     )
-
-
-class GameSignAccountGetIn(BaseModel):
-    """游戏社区账号组查询请求"""
-
-    accountId: str = Field(..., description="账号组 UUID")
 
 
 class GameSignAccountInstanceOut(BaseModel):
@@ -1285,6 +1287,7 @@ class ScriptIndexItem(BaseModel):
         "HSRConfig",
         "BetterGIConfig",
         "ZzzOdConfig",
+        "BAAHConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1302,6 +1305,7 @@ class UserIndexItem(BaseModel):
         "HSRUserConfig",
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
+        "BAAHUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1383,6 +1387,7 @@ class MaaUserConfig_Task(BaseModel):
     IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
+    IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
@@ -1657,30 +1662,6 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     Password: Optional[str] = Field(default=None, description="密码")
 
 
-class OneDragonPlanStep(BaseModel):
-    """一条龙执行计划中的单个步骤（执行层实例）。"""
-
-    uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
-    kind: Literal["builtin", "js", "pathing", "scriptgroup", "custom"] = Field(
-        ..., description="步骤来源类型"
-    )
-    name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
-    enabled: bool = Field(default=True, description="是否启用该步骤")
-    settings: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="该步骤的 per-任务执行层参数（camelCase 键，按 kind 白名单校验）",
-    )
-
-
-class OneDragonPlan(BaseModel):
-    """一条龙执行计划（Plan），替代/并列于可视化队列 Queue。"""
-
-    version: int = Field(default=1, description="Plan 结构版本")
-    steps: List[OneDragonPlanStep] = Field(
-        default_factory=list, description="有序步骤列表"
-    )
-
-
 class BetterGIUserConfig_OneDragon(BaseModel):
     """BetterGI 一条龙配置"""
 
@@ -1856,6 +1837,43 @@ class ZzzOdUserConfig(BaseModel):
     )
     Data: Optional[ZzzOdUserConfig_Data] = Field(default=None, description="用户数据")
     Notify: Optional[ZzzOdUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
+class BAAHUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class BAAHUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+
+
+class BAAHUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件通知")
+    ToAddress: Optional[str] = Field(default=None, description="邮件接收地址")
+    IfServerChan: Optional[bool] = Field(
+        default=None, description="是否使用Server酱推送"
+    )
+    ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
+
+
+class BAAHUserConfig(BaseModel):
+    Info: Optional[BAAHUserConfig_Info] = Field(default=None, description="用户信息")
+    Data: Optional[BAAHUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[BAAHUserConfig_Notify] = Field(
         default=None, description="单独通知"
     )
 
@@ -2110,6 +2128,45 @@ class ZzzOdConfig(BaseModel):
     Run: Optional[ZzzOdConfig_Run] = Field(default=None, description="运行配置")
 
 
+class BAAHConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="脚本名称")
+
+
+class BAAHConfig_Script(BaseModel):
+    BAAHPath: Optional[str] = Field(
+        default=None,
+        description="BAAH 主程序路径；程序目录、配置目录与日志目录均由此派生",
+    )
+    IfManageConfig: Optional[bool] = Field(
+        default=None, description="是否托管 BAAH 运行所需的关键配置"
+    )
+    PushLogEnabled: Optional[bool] = Field(
+        default=None, description="是否在任务报告中保留 BAAH 的运行日志"
+    )
+
+
+class BAAHConfig_Run(BaseModel):
+    RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制")
+
+
+class BAAHConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器ID")
+    Index: Optional[str] = Field(default=None, description="模拟器多开实例索引")
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭模拟器"
+    )
+
+
+class BAAHConfig(BaseModel):
+    Info: Optional[BAAHConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[BAAHConfig_Script] = Field(default=None, description="脚本配置")
+    Run: Optional[BAAHConfig_Run] = Field(default=None, description="运行配置")
+    Emulator: Optional[BAAHConfig_Emulator] = Field(
+        default=None, description="模拟器配置"
+    )
+
+
 class MaaEndUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
@@ -2188,6 +2245,12 @@ class MaaEndUserConfig_Task(BaseModel):
     )
     AutoEssenceSpecifiedLocation: Optional[str] = Field(
         default=None, description="基质刷取指定地点"
+    )
+    AutoEssenceMenu: Optional[Literal["Random", "Location", "Target"]] = Field(
+        default=None, description="基质刷取模式"
+    )
+    AutoEssenceTargetWeapons: Optional[list[str]] = Field(
+        default=None, description="基质目标武器 ID 列表"
     )
     IfSanity: Optional[bool] = Field(default=None, description="理智任务")
     IfAutoUseSpMedication: Optional[bool] = Field(
@@ -3713,6 +3776,12 @@ class MaaEndAutoEssencePlanKey(BaseModel):
     AutoEssenceSpecifiedLocation: str = Field(
         default="", description="基质刷取指定地点"
     )
+    AutoEssenceMenu: Optional[Literal["Random", "Location", "Target"]] = Field(
+        default=None, description="基质刷取模式"
+    )
+    AutoEssenceTargetWeapons: list[str] = Field(
+        default_factory=list, description="基质目标武器 ID 列表"
+    )
 
 
 MaaEndPlanKey = Annotated[
@@ -3794,9 +3863,10 @@ class ScriptCreateIn(BaseModel):
         "HSR",
         "BetterGI",
         "ZzzOd",
+        "BAAH",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -3817,6 +3887,7 @@ class ScriptCreateOut(OutBase):
         HSRConfig,
         BetterGIConfig,
         ZzzOdConfig,
+        BAAHConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -3842,6 +3913,7 @@ class ScriptGetOut(OutBase):
             HSRConfig,
             BetterGIConfig,
             ZzzOdConfig,
+            BAAHConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -3860,6 +3932,7 @@ class ScriptUpdateIn(BaseModel):
         HSRConfig,
         BetterGIConfig,
         ZzzOdConfig,
+        BAAHConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -3869,11 +3942,6 @@ class ScriptDeleteIn(BaseModel):
 
 class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
-
-
-class ScriptFileIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    jsonFile: str = Field(..., description="配置文件路径")
 
 
 class ScriptUrlIn(BaseModel):
@@ -3920,6 +3988,7 @@ class UserGetOut(OutBase):
             HSRUserConfig,
             BetterGIUserConfig,
             ZzzOdUserConfig,
+            BAAHUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -3938,6 +4007,7 @@ class UserCreateOut(OutBase):
         HSRUserConfig,
         BetterGIUserConfig,
         ZzzOdUserConfig,
+        BAAHUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -3955,6 +4025,7 @@ class UserUpdateIn(UserInBase):
         HSRUserConfig,
         BetterGIUserConfig,
         ZzzOdUserConfig,
+        BAAHUserConfig,
     ] = Field(..., description="用户更新数据")
 
 
@@ -3996,10 +4067,6 @@ class EmulatorUpdateIn(BaseModel):
 
 class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-
-
-class EmulatorReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="模拟器 ID列表, 按新顺序排列")
 
 
 class EmulatorOperateIn(BaseModel):
@@ -4204,18 +4271,6 @@ class Emulator2SettingField(BaseModel):
     )
 
 
-class Emulator2SettingsIn(BaseModel):
-    emulatorId: str = Field(..., description="模拟器配置ID")
-    slot: str = Field(..., description="设备号")
-
-
-class Emulator2SettingsOut(OutBase):
-    slot: str = Field(default="", description="设备号")
-    settings: Dict[str, Emulator2SettingField] = Field(
-        default_factory=dict, description="四项设置的当前值与状态"
-    )
-
-
 class Emulator2SettingsApplyIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器配置ID")
     slot: str = Field(..., description="设备号")
@@ -4348,10 +4403,6 @@ class WebhookDeleteIn(WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
 
 
-class WebhookReorderIn(WebhookInBase):
-    indexList: List[str] = Field(..., description="Webhook ID列表, 按新顺序排列")
-
-
 class WebhookTestIn(WebhookInBase):
     data: Webhook = Field(..., description="Webhook配置数据")
 
@@ -4418,10 +4469,6 @@ class QueueUpdateIn(BaseModel):
 
 class QueueDeleteIn(BaseModel):
     queueId: str = Field(..., description="队列ID")
-
-
-class QueueReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="按新顺序排列的调度队列UID列表")
 
 
 class QueueSetInBase(BaseModel):
@@ -4600,9 +4647,11 @@ class WSTaskInfoUpdatedData(BaseModel):
 
 
 class WSTaskLogUpdatedData(BaseModel):
-    """任务当前日志 (type=task.log.updated)。"""
+    """任务日志更新 (type=task.log.updated), 按序号增量推送。"""
 
-    log: str = Field(default="", description="当前脚本日志")
+    log: str = Field(default="", description="append 为真时是新增片段, 否则是完整日志")
+    seq: int = Field(default=0, description="推送序号, 每个任务独立, 从 1 起单调递增")
+    append: bool = Field(default=False, description="是否追加到已有日志, 否则整体替换")
 
 
 class WSTaskScriptIdentityData(BaseModel):
@@ -4633,7 +4682,8 @@ class TaskRuntimeSnapshotItem(BaseModel):
     cycleNextList: List[WSTaskCyclePreviewData] = Field(
         default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
     )
-    log: str = Field(default="", description="当前脚本日志")
+    log: str = Field(default="", description="已推送的脚本日志, 与下一条增量推送衔接")
+    logSeq: int = Field(default=0, description="已推送日志对应的推送序号")
 
 
 class TaskRuntimeSnapshot(BaseModel):

@@ -4,9 +4,9 @@ import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 export type ConfigMode = 'template' | 'custom'
 export type CreateStepKey = 'type' | 'config'
-export type ScriptTypeGroup = 'all' | 'specialized' | 'general'
+type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
-export interface ScriptTypeOption {
+interface ScriptTypeOption {
   value: ScriptType
   titleKey: string
   descriptionKey: string
@@ -16,12 +16,12 @@ export interface ScriptTypeOption {
   icon: string
 }
 
-export interface CreateStep {
+interface CreateStep {
   key: CreateStepKey
   titleKey: string
 }
 
-export interface CreateRequestState {
+interface CreateRequestState {
   type: ScriptType
   configMode: ConfigMode
   template: WebConfigTemplate | null
@@ -121,6 +121,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: SCRIPT_LOGOS.ZzzOd,
   },
+  {
+    value: 'BAAH',
+    titleKey: 'scripts.type.BAAH',
+    descriptionKey: 'scripts.create.typeDesc.BAAH',
+    keywords: ['baah', '碧蓝档案', '蔚蓝档案', 'bluearchive', '爱丽丝助手'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.BAAH,
+  },
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
@@ -170,6 +178,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   HSR: 'hsr',
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
+  BAAH: 'baah',
   General: 'general',
 }
 

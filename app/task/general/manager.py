@@ -91,6 +91,12 @@ class GeneralManager(TaskExecuteBase):
             "Script", "ConfigPath"
         ):
             return "未填写配置路径, 请检查脚本配置中的配置路径设置！"
+        # 日志路径未填时每轮尝试都会白等 60 秒日志文件再失败, 属于确定性配置错误,
+        # 在任务开始前拦下; 目录不存在不在这里拦, 有的脚本首次运行才创建日志目录
+        if not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Script", "LogPath"
+        ):
+            return "未填写日志路径, 请检查脚本配置中的日志路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Game", "Enabled"
         ):

@@ -3,11 +3,12 @@ name: mas-script-specialized-adapter
 description: >-
   Review, add, or refactor AUTO-MAS specialized script adapters by upstream
   architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, ok-script
-  adapters such as Okww and OkNte, and multi-engine adapters such as HSR. Use when
-  lowering user setup friction, deciding whether MAS should fill a script
-  capability gap, or changing ScriptType registration, task lifecycle, config
-  ownership, ScriptConfig sessions, Electron integration, frontend edit
-  surfaces, and verification.
+  adapters such as Okww and OkNte, multi-engine adapters such as HSR, and the
+  one-dragon line such as BetterGI. Use when lowering user setup friction,
+  judging whether a change stays inside the black-box boundary (barrier first,
+  then capability ownership), or changing ScriptType registration, task
+  lifecycle, config ownership, ScriptConfig sessions, Electron integration,
+  frontend edit surfaces, and verification.
 ---
 
 # 专项适配
@@ -18,23 +19,35 @@ description: >-
 
 专项适配不是把外部脚本字段逐项搬进 MAS，而是围绕用户完成任务的最短路径做产品化承接。每次适配先回答两件事：
 
-1. **降低用户使用门槛**：优先消除安装导入、路径选择、首次配置和高频任务编排中的手工步骤。不要把上游原始配置面板原样搬进来当作完成。
-2. **必要时由 MAS 补位**：脚本原生能力完整稳定时优先调用脚本；脚本无法提供而 MAS 能可靠编排的能力，才在适配层补足。补位只负责用户价值和调度编排，不复制脚本引擎，也不重复暴露脚本已有的权威设置。
+1. **降低用户使用门槛**：优先消除安装导入、路径选择、首次配置和高频任务编排中的手工步骤，减少需要用户调整的选项。不要把上游原始配置面板原样搬进来当作完成。
+2. **必要时由 MAS 补位**：缺口确属 MAS 领域（账号、调度、计划、通知、统计、模拟器、跨脚本编排）、且上游没有任何等效入口时，才在适配层补足；不复制脚本引擎，也不重复暴露脚本已有的权威设置。
 
-**若一个改动既没减少用户手动步骤，也没补足明确的脚本能力缺口，先停下来重新确认范围。**
+**推进顺序固定：先降门槛，再补缺位。** 立项前必须答出该改动消除了用户当前哪一步手工操作；答不出、或只是把上游配置面板搬进来，一律先重新确认范围。判定细则见 [黑箱边界·推进顺序](references/blackbox-boundary.md)。
 
-能力 owner 判定（决定代码放哪、谁是事实来源）：
+### 黑箱红线（必须提示）
 
-| owner | 判定 | 实施规则 |
+上游脚本视为黑箱。先判**能力归属**，再决定能否实现：
+
+- **上游领域**（游戏内操作、脚本任务的执行与成败、脚本配置语义）：上游已有入口必须复用；上游没有时**先评估向上游提 PR**——上游不受理（作者认为不需要而适配层判断必要）或审核、发布周期过长时，可临时补位，但须标注「临时补位 + 上游实现后移除」。上游补齐后按存量越界处理（改为复用并移除）。
+- **MAS 领域**（账号与用户管理、多脚本/多实例调度、计划表、通知、统计、模拟器生命周期、跨脚本编排）：可自行实现，但不得读取或反推上游内部状态。**「补位」只在 MAS 领域成立。**
+- **上游私有格式**（配置内部字段、计划/队列/运行记录、资源文件）：只允许透传读写，值经手、语义不过手；不在其上建映射表、平行模型或自造判定信号，上游执行的任务成败必须取自上游结果面。
+
+判定问题：这件事是不是脚本该干的活？操作对象是游戏本体还是上游程序/模拟器？写读的是上游字段还是适配层新造模型？上游执行的任务成败是否取自上游结果面？判据、能力归属表、时效与例外见 [黑箱边界](references/blackbox-boundary.md)。
+
+**加载本 Skill 后必须先自检**：命中时输出结论「这可能违背了 MAS 的开发规范」、命中条目、`file:line` 证据与替代方案；提示不阻断工作。
+
+代码落点（决定代码放哪、谁是事实来源）：
+
+| 落点 | 情形 | 实施规则 |
 | --- | --- | --- |
-| 脚本原生 | 已有稳定入口、配置、结果判定 | 复用脚本能力；脚本配置是唯一事实来源 |
-| MAS 适配层 | 脚本有能力但入口分散或难安全调用 | 最小封装（路径发现、默认值、配置会话、原子写回）；不建平行配置模型 |
-| MAS 补位 | 脚本明确无法提供，MAS 能依稳定数据可靠完成 | 在 manager / AutoProxy / 计划层实现，必须有输入、失败提示、回退、清理 |
-| 暂不支持 | 需猜上游内部状态或无法稳定验证 | 显式提示限制，**不加运行时不消费的字段** |
+| 复用 | 上游已有稳定入口、配置、结果判定 | 直接调用上游入口；上游配置是唯一事实来源 |
+| 最小封装 | 上游有能力，但入口分散或难安全调用 | 路径发现、默认值、配置会话、原子写回；不建平行配置模型 |
+| MAS 领域实现 | 缺口属 MAS 领域，且上游无任何等效入口 | 在 manager / AutoProxy / 计划层实现；须有输入、失败提示、回退、清理，不读取也不反推上游内部状态 |
+| 明确不支持 | 属上游领域而上游无入口，或需猜上游内部状态才能实现 | 显式提示限制；**不加运行时不消费的字段** |
 
 ## 开工顺序
 
-0. 列出用户当前的手工步骤与脚本明确缺失的能力，标注 owner。
+0. 列出用户当前的手工步骤与脚本明确缺失的能力，标注 owner；先按[黑箱红线](references/blackbox-boundary.md)判定能力归属（上游领域 / MAS 领域 / 上游私有格式），命中时输出规范提示与替代方案——提示不阻断开工。
 1. 读上游仓库/发行版：CLI、`--help`、进程、日志、配置目录、配置 UI。
 2. 按 [架构线判据](references/script-frontend-architectures.md) 归类，**让用户确认架构线**后再动手。
 3. 读 [代码规范](references/adapter-code-norms.md)（必遵守）+ 对应案例：
@@ -44,7 +57,8 @@ description: >-
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md) ·
-   [ZzzOd](references/examples-zzzod.md)
+   [ZzzOd](references/examples-zzzod.md) ·
+   [BAAH](references/examples-baah.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
@@ -75,7 +89,7 @@ description: >-
 4. 配置会话的启动、WebSocket 状态、停止、超时、卸载、异常六条路径：确保任务结束、进程退出、锁释放、配置写回。
 5. `final_task` / `on_crash` 的原子配置恢复、用户状态落盘、独立进程清理。
 6. 按 `tests/AGENTS.md` 本地编写并运行最小专项测试验证改动；提交时功能/bug 边界测试不提交，**测试缺口写进结果，不编造验证结果**。
-7. 反查产品边界：没重复实现脚本已有能力，没把 MAS 补位伪装成脚本原生字段，没为"字段齐全"加无价值入口。
+7. 反查产品边界：没把「脚本该干的活」拿到 MAS 实现，没把 MAS 补位伪装成脚本原生字段，没在上游私有格式上建 MAS 语义层，没为"字段齐全"加无价值入口；MAS 领域实现不读取、不反推上游内部状态。命中[黑箱红线](references/blackbox-boundary.md)时按其提示要求输出结论与 `file:line` 证据；提示不阻断。
 8. 含 `log_box` 采集的专项，反查「采集→报告」闭环：确认采集结果已进入最终报告正文且保留各用户节点归属（多账号时按用户交错），并核对用户级开关关闭的用户确实无节点；只采集不注入 → 报告无节点（ok-nte 曾漏）。注入端点现场反查，不照抄固定路径。
 
 ## 配置来源模式：按专项确认，不存在统一三态

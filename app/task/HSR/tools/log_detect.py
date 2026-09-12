@@ -118,24 +118,83 @@ HSR_SCREENSHOT_WINDOW_UNAVAILABLE_MARKERS: tuple[str, ...] = (
     "无法获取窗口客户区域",
     "窗口可能被最小化",
 )
+# M7A 自己关掉游戏只有两条路（tasks/game/__init__.py 的启动重试循环）：等
+# 6 分钟识不出任何界面，或者启动过程抛异常；两处都先打这行 ERROR 再
+# stop_game()，随后 continue 自行重启游戏。「游戏终止：」是 stop_game 成功后
+# 的 INFO，进程被 MAS 抢先杀掉时它多半来不及刷出，所以不能只认它。
+HSR_M7A_SELF_GAME_STOP_MARKERS: tuple[str, ...] = (
+    "获取当前界面超时",
+    "尝试启动游戏时发生错误",
+    "游戏终止：",
+)
+# M7A 冻结 exe 在非中文 ANSI 代码页（如 cp1252）下 stderr 走 backslashreplace，
+# 中文全变成 \uXXXX；它自己改不了，只能在读取侧还原。
+_BACKSLASH_U_RE = re.compile(
+    r"\\u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][c-fC-F][0-9a-fA-F]{2})"
+    r"|\\u([0-9a-fA-F]{4})"
+)
+# loguru 默认前缀「2026-09-12 02:14:35,242 | ERROR | 」，摘要里只留级别。
+_LOGURU_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[,.]\d{3}\s*\|\s*")
+_LOG_LEVEL_RE = re.compile(r"\|\s*(ERROR|CRITICAL)\s*\|")
+HSR_FAILURE_SUMMARY_KEEP_MARKERS: tuple[str, ...] = (
+    "错误截图已保存",
+    "Traceback",
+)
 
 
-# ===== 模块级 final marker（审计 HSR-外部脚本日志语义审计.md §4.3）=====
-HSR_DAILY_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "每日实训尚未刷新",  # daily.py:40/69
-    "每日实训未开启",  # daily.py:42/71
-    "清体力未开启，跳过历战余响和清体力",  # daily.py:63
-)
-HSR_DAILY_FINAL_SUCCESS_SRA: tuple[str, ...] = (
-    "任务完成：领取每日实训奖励",  # ReceiveRewardsTask.py:230
-    "任务完成：领取邮件",  # ReceiveRewardsTask.py:146
-    "任务完成：领取派遣奖励",  # ReceiveRewardsTask.py:198
-    "任务完成：巡星之礼",  # ReceiveRewardsTask.py:173
-    "任务完成：签证奖励",  # ReceiveRewardsTask.py:100
-    "任务完成：领取兑换码",  # ReceiveRewardsTask.py:132
-    "完成任务：领取无名勋礼奖励",  # ReceiveRewardsTask.py:255
-    "没有可领取的奖励",  # ReceiveRewardsTask.py:94/97/99
-)
+def unescape_backslash_u(text: str) -> str:
+    """把 backslashreplace 产生的 ``\\uXXXX`` 还原成原字符。
+
+    只处理紧跟四位十六进制的形式，代理对合并成一个字符，落单的代理项换成
+    U+FFFD 以免后续写 UTF-8 日志时炸掉；不含 ``\\u`` 的文本原样返回。
+    """
+
+    if "\\u" not in text:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        high, low, single = match.groups()
+        if single is None:
+            code = 0x10000 + ((int(high, 16) - 0xD800) << 10) + (int(low, 16) - 0xDC00)
+            return chr(code)
+        code = int(single, 16)
+        if 0xD800 <= code <= 0xDFFF:
+            return "�"
+        return chr(code)
+
+    return _BACKSLASH_U_RE.sub(_replace, text)
+
+
+def select_failure_summary_lines(lines: list[str], limit: int = 8) -> list[str]:
+    """从外部脚本输出里挑出最能说明失败原因的几行。
+
+    M7A 失败前会连打十几条同样的 WARNING，真正的 ERROR 和错误截图路径排在
+    最后；单纯截尾会让通知首行落在一条「按 ESC 后重试」的 WARNING 上。有
+    ERROR 级别行时只保留它们和截图/回溯行，否则退回截尾。
+    """
+
+    picked = [
+        line
+        for line in lines
+        if _LOG_LEVEL_RE.search(line)
+        or any(marker in line for marker in HSR_FAILURE_SUMMARY_KEEP_MARKERS)
+    ]
+    if not any(_LOG_LEVEL_RE.search(line) for line in picked):
+        picked = list(lines)
+    picked = [_LOGURU_PREFIX_RE.sub("", line) for line in picked]
+    if len(picked) > limit:
+        picked = picked[-limit:]
+    return picked
+
+
+def find_m7a_self_game_stop(lines: list[str]) -> str | None:
+    """返回 M7A 自行关闭游戏的那行输出；没有则返回 None。"""
+
+    for line in reversed(lines):
+        if any(marker in line for marker in HSR_M7A_SELF_GAME_STOP_MARKERS):
+            return line
+    return None
+
 
 HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
     "已达到最高积分 12000，记录时间",  # divergent_universe.py:120
@@ -363,44 +422,3 @@ def detect_weekly_completion(
             f"但本次调用方为 {upper_script}，拒绝跨脚本写完成态"
         )
     return True, f"{label} 日志命中周常完成 marker：{marker}"
-
-
-def detect_daily_completion(
-    result: object,
-    script: str,
-) -> tuple[bool, str]:
-    """根据 M7A/SRA 输出判断日常领取模块是否已完成。
-
-    当前仅定义检测函数骨架，**不**接入 ReceiveRewards on_success；
-    后续如需接入，由 on_success 决定是否走本判定。
-    """
-
-    text = result_text(result)
-    if not text:
-        return False, "外部脚本未返回可判断的日常日志"
-
-    upper_script = str(script).upper()
-    candidate_sets: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("M7A", HSR_DAILY_FINAL_SUCCESS_M7A),
-        ("SRA", HSR_DAILY_FINAL_SUCCESS_SRA),
-    )
-
-    matched = next(
-        (
-            (label, marker)
-            for label, markers in candidate_sets
-            for marker in markers
-            if marker in text
-        ),
-        None,
-    )
-    if matched is None:
-        return False, "未从外部脚本日志确认日常领取完成"
-
-    label, marker = matched
-    if upper_script != label:
-        return False, (
-            f"日志中出现 {label} 模块 final marker「{marker}」，"
-            f"但本次调用方为 {upper_script}，拒绝跨脚本写完成态"
-        )
-    return True, f"{label} 日志命中日常完成 marker：{marker}"

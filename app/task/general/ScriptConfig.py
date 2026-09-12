@@ -72,7 +72,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
-        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
 
         arguments_list = []

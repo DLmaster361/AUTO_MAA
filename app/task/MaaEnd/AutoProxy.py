@@ -56,8 +56,11 @@ from app.utils.constants import (
 from app.utils.io import read_file, write_file
 
 from .resource_loader import (
+    get_loaded_maaend_options,
     load_maaend_interface_i18n,
     load_maaend_task_i18n,
+    maaend_task_option_supported,
+    maaend_task_supported,
 )
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
 from .tools import login, push_notification, replace_account_switch_task
@@ -154,6 +157,27 @@ def _select_auto_collect_routes(
     }
 
 
+def _disable_removed_tasks(
+    maaend_tasks: list[dict[str, object]],
+    task_i18n: dict[str, str],
+) -> set[str]:
+    """禁用当前 MaaEnd 版本已移除的任务条目，返回被移除的任务名。
+
+    MaaEnd 更新可能删除或合并旧任务，其加载配置时会静默移除无效条目；
+    若注入的运行配置里只剩这类条目，MaaEnd 会以“没有启用的任务”拒绝启动，
+    自动代理也会因该任务永不回报完成而反复重试。
+    """
+
+    removed_names: set[str] = set()
+    for task in maaend_tasks:
+        task_name = str(task.get("taskName"))
+        if task_name.startswith("__MXU_") or task_name in task_i18n:
+            continue
+        task["enabled"] = False
+        removed_names.add(task_name)
+    return removed_names
+
+
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
 
@@ -187,6 +211,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_name_map: dict[str, str] = {}
         self.unique_task: dict[str, str] = {}
         self.maaend_config_file: Path | None = None
+        self.maaend_root_path: Path | None = None
+        # 一轮运行内 check/prepare 会多次读同一份 mxu-MaaEnd.json，按文件签名缓存解析结果
+        self._source_tasks_cache: (
+            tuple[tuple, list[dict[str, object]] | None] | None
+        ) = None
         self.account_switch_mode: str | None = None
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
@@ -427,8 +456,25 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
     def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
-        """读取当前用户所选 MaaEnd 实例的任务列表。"""
+        """读取当前用户所选 MaaEnd 实例的任务列表（文件未变时复用上次解析结果）。"""
 
+        if self.maaend_config_file is None:
+            return None
+        try:
+            stat = self.maaend_config_file.stat()
+            signature = (str(self.maaend_config_file), stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None
+        if (
+            self._source_tasks_cache is not None
+            and self._source_tasks_cache[0] == signature
+        ):
+            return self._source_tasks_cache[1]
+        tasks = self._parse_source_maaend_tasks()
+        self._source_tasks_cache = (signature, tasks)
+        return tasks
+
+    def _parse_source_maaend_tasks(self) -> list[dict[str, object]] | None:
         if self.maaend_config_file is None:
             return None
         try:
@@ -457,7 +503,9 @@ class AutoProxyTask(TaskExecuteBase):
         tasks = selected_instance.get("tasks")
         if not isinstance(tasks, list):
             return None
-        return [task for task in tasks if isinstance(task, dict)]
+        result = [task for task in tasks if isinstance(task, dict)]
+        self._drop_removed_medication_task(result)
+        return result
 
     def _source_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """非快速配置下按 MaaEnd 配置判断阶段是否可执行。"""
@@ -516,16 +564,39 @@ class AutoProxyTask(TaskExecuteBase):
             task_name = MAAEND_AUTO_COLLECT_TASK
             task_label = "自动采集"
         else:
-            if not any(
-                bool(self.cur_user_config.get("Task", f"If{task_name}"))
-                and not self._quick_task_daily_once_done(task_name)
-                for task_name in MAAEND_TASKS
+            sanity_enabled = bool(self.cur_user_config.get("Task", "IfSanity")) and not (
+                self._quick_task_daily_once_done("Sanity")
+            )
+            if not (
+                sanity_enabled
+                or any(
+                    bool(self.cur_user_config.get("Task", f"If{task_name}"))
+                    and not self._quick_task_daily_once_done(task_name)
+                    for task_name in MAAEND_TASKS
+                )
             ):
                 return "快速配置未开启任何日常任务", False
 
             tasks = self._source_maaend_tasks()
             if tasks is None:
                 return None, False
+
+            # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
+            # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
+            if self.cur_user_config.get("Task", "IfSanity") and not self._quick_task_daily_once_done(
+                "Sanity"
+            ):
+                sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
+                target_sanity_task_name = (
+                    "AutoEssence"
+                    if sanity_task_key["SanityTaskType"] == "Essence"
+                    else "ProtocolSpace"
+                )
+                if not any(
+                    str(task.get("taskName", "")) == target_sanity_task_name
+                    for task in tasks
+                ):
+                    return None, False
 
             target_sanity_task_name: str | None = None
             for task in tasks:
@@ -828,15 +899,18 @@ class AutoProxyTask(TaskExecuteBase):
                 # 中止相关程序
                 await self.kill_managed_process()
 
-                await Notify.push_plyer(
-                    "用户自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
-                )
+                try:
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"{self.cur_user_item.name}的自动代理出现异常",
+                        3,
+                    )
+                except Exception:
+                    pass
 
                 if not self.retryable:
-                    logger.info("检测到游戏画面参数错误，跳过后续重试")
+                    logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
 
         if self.cur_user_config.get("Info", "IfScriptAfterTask"):
@@ -870,12 +944,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
-        )
+        try:
+            await Notify.push_plyer(
+                "用户自动代理出现异常！",
+                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                f"{self.cur_user_item.name}的自动代理出现异常",
+                3,
+            )
+        except Exception:
+            pass
 
     async def kill_managed_process(self, kill_game: bool = True) -> None:
         """中止关联进程
@@ -911,6 +988,234 @@ class AutoProxyTask(TaskExecuteBase):
                 )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
+
+    def _maaend_task_option_supported(self, task_name: str, option_name: str) -> bool:
+        """读取当前安装的 MaaEnd 是否声明了指定配置项。"""
+
+        root_path = self._maaend_root_path()
+        if root_path is None:
+            return False
+        try:
+            return maaend_task_option_supported(root_path, task_name, option_name)
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            logger.debug(f"读取 MaaEnd 选项声明失败 {task_name}.{option_name}: {error}")
+            return False
+
+    def _maaend_task_supported(self, task_name: str) -> bool | None:
+        """读取当前安装的 MaaEnd 是否声明了指定任务。
+
+        资源不可读时返回 None（未知），调用方据此不做移除判断。
+        """
+
+        root_path = self._maaend_root_path()
+        if root_path is None:
+            return None
+        try:
+            return maaend_task_supported(root_path, task_name)
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            logger.debug(f"读取 MaaEnd 任务声明失败 {task_name}: {error}")
+            return None
+
+    def _maaend_root_path(self) -> Path | None:
+        """获取 MaaEnd 安装目录；未完成 prepare 时回退到脚本配置。"""
+
+        root_path = getattr(self, "maaend_root_path", None)
+        if root_path is not None:
+            return root_path
+        script_config = getattr(self, "script_config", None)
+        if script_config is None:
+            return None
+        path = str(script_config.get("Info", "Path")).strip()
+        return Path(path) if path else None
+
+    def _drop_removed_medication_task(
+        self, tasks: list[dict[str, object]]
+    ) -> None:
+        """新版 MaaEnd 将应急理智加强剂并入理智任务，移除旧独立任务。"""
+
+        if self._maaend_task_supported("AutoUseSpMedication") is not False:
+            return
+        kept_tasks = [
+            task
+            for task in tasks
+            if str(task.get("taskName", "")) != "AutoUseSpMedication"
+        ]
+        if len(kept_tasks) == len(tasks):
+            return
+        tasks[:] = kept_tasks
+        logger.info("MaaEnd 当前版本已移除应急理智加强剂独立任务，改用理智任务内置选项")
+
+    def _ensure_sanity_task(
+        self, tasks: list[dict[str, object]], task_name: str
+    ) -> dict[str, object] | None:
+        """为新版拆分资源补齐旧配置实例中缺失的理智任务。"""
+
+        for task in tasks:
+            if str(task.get("taskName", "")) == task_name:
+                return task
+
+        task = {
+            # 运行失败重试时会从源配置重新复制任务列表；固定 ID 才能让首轮
+            # 生成的 task_dict 继续匹配这条补齐任务并保持其启用状态。
+            "id": f"automas-{task_name.lower()}",
+            "taskName": task_name,
+            "enabled": False,
+            # 与 MaaEnd 自己保存的任务条目保持同样的字段形状
+            "enabledByController": {
+                str(self.script_config.get("Game", "ControllerType")): True
+            },
+            "expanded": False,
+            "optionValues": {},
+        }
+        tasks.append(task)
+        logger.info(f"MaaEnd 配置实例缺少 {task_name}，已在运行副本中补齐任务")
+        return task
+
+    def _write_auto_essence_options(
+        self,
+        task: dict[str, object],
+        sanity_task_key: dict[str, object],
+    ) -> None:
+        """按 MaaEnd 旧版/2.28+ 字段写入基质刷取任务。"""
+
+        option_values = task.setdefault("optionValues", {})
+        if not isinstance(option_values, dict):
+            option_values = {}
+            task["optionValues"] = option_values
+
+        location = sanity_task_key.get("AutoEssenceSpecifiedLocation")
+        location = location if isinstance(location, str) else ""
+        target_weapons = _load_json_list(sanity_task_key.get("AutoEssenceTargetWeapons"))
+        menu = sanity_task_key.get("AutoEssenceMenu")
+        if menu not in {"Random", "Location", "Target"}:
+            menu = "Target" if target_weapons else "Location"
+        root_path = self._maaend_root_path()
+
+        has_menu = self._maaend_task_option_supported("AutoEssence", "AutoEssenceMenu")
+        if has_menu:
+            option_values["AutoEssenceMenu"] = {
+                "type": "select",
+                "caseName": menu,
+            }
+            option_values.pop("AutoEssenceChooseLocation", None)
+            option_values.pop("AutoEssenceSelectLocation", None)
+        else:
+            # 旧版只有 ChooseLocation checkbox；Target/Location 均退化为指定地点。
+            option_values.pop("AutoEssenceMenu", None)
+
+        def clear_target_options() -> None:
+            """清除上一轮写入的目标武器选项，组名由 MaaEnd 资源决定。"""
+
+            for key in [
+                name
+                for name in option_values
+                if name.startswith(("AutoEssenceWeapons", "AutoEssenceWeaponType"))
+            ]:
+                option_values.pop(key, None)
+
+        if menu != "Target" or not has_menu:
+            clear_target_options()
+            option_values.pop("AutoEssenceObtainModeClaimOnlyForcedFilter", None)
+
+        if menu == "Target" and has_menu:
+            # 未限制目标时保留 MaaEnd 资源声明的默认值（各武器类型全选），
+            # 清除上一次目标模式留下的覆盖项即可表达“不限武器”。
+            clear_target_options()
+            try:
+                target_groups = (
+                    get_loaded_maaend_options(root_path).get(
+                        "essenceTargetWeaponGroups", []
+                    )
+                    if root_path is not None
+                    else []
+                )
+            except (OSError, KeyError, TypeError, ValueError) as error:
+                logger.debug(f"读取 MaaEnd 目标武器分组失败: {error}")
+                target_groups = []
+
+            selected = set(target_weapons)
+            matched_targets: set[str] = set()
+            for group in target_groups:
+                if not isinstance(group, dict):
+                    continue
+                group_value = group.get("value")
+                options = group.get("options")
+                if not isinstance(group_value, str) or not isinstance(options, list):
+                    continue
+                option_name = f"AutoEssenceWeapons{group_value}"
+                switch_name = f"AutoEssenceWeaponType{group_value}"
+                group_values = {
+                    str(option.get("value"))
+                    for option in options
+                    if isinstance(option, dict) and option.get("value") is not None
+                }
+                selected_group_values = [
+                    str(option.get("value"))
+                    for option in options
+                    if isinstance(option, dict)
+                    and option.get("value") in selected
+                ]
+                if not selected:
+                    continue
+                if selected_group_values:
+                    matched_targets.update(selected_group_values)
+                if self._maaend_task_option_supported("AutoEssence", option_name):
+                    option_values[option_name] = {
+                        "type": "checkbox",
+                        "caseNames": selected_group_values,
+                    }
+                if self._maaend_task_option_supported("AutoEssence", switch_name):
+                    option_values[switch_name] = {
+                        "type": "switch",
+                        "value": bool(selected.intersection(group_values)),
+                    }
+
+            unknown_targets = selected - matched_targets
+            if unknown_targets:
+                logger.warning(
+                    "MaaEnd 目标武器配置包含当前资源不存在的选项，已忽略: "
+                    + ", ".join(sorted(unknown_targets))
+                )
+
+            if self._maaend_task_option_supported(
+                "AutoEssence", "AutoEssenceObtainModeClaimOnlyForcedFilter"
+            ):
+                option_values["AutoEssenceObtainModeClaimOnlyForcedFilter"] = {
+                    "type": "select",
+                    "caseName": "ObtainScaling2",
+                }
+        elif has_menu and menu == "Location":
+            if location and self._maaend_task_option_supported(
+                "AutoEssence", "AutoEssenceSelectLocation"
+            ):
+                option_values["AutoEssenceSelectLocation"] = {
+                    "type": "select",
+                    "caseName": location,
+                }
+        elif self._maaend_task_option_supported(
+            "AutoEssence", "AutoEssenceChooseLocation"
+        ):
+            if location:
+                option_values["AutoEssenceChooseLocation"] = {
+                    "type": "checkbox",
+                    "caseNames": [location],
+                }
+            else:
+                # 空地点表示沿用 MaaEnd 默认地点集合，不写入空 checkbox。
+                option_values.pop("AutoEssenceChooseLocation", None)
+
+        if self._maaend_task_option_supported("AutoEssence", "AutoUseSpMedication"):
+            option_values["AutoUseSpMedication"] = {
+                "type": "select",
+                "caseName": (
+                    "UseMedication"
+                    if self.cur_user_config.get("Task", "IfAutoUseSpMedication")
+                    else "EndTask"
+                ),
+            }
+
+        # 旧版曾把该字段写入任务选项；清掉后避免新版把它当成未知选项。
+        option_values.pop("AutoEssenceSpecifiedLocation", None)
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
@@ -990,7 +1295,10 @@ class AutoProxyTask(TaskExecuteBase):
             maaend_instance["savedDevice"] = {
                 "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
             }
-        maaend_tasks = maaend_instance["tasks"]
+        maaend_tasks = maaend_instance.get("tasks")
+        if not isinstance(maaend_tasks, list):
+            raise ValueError("MaaEnd 配置实例中未找到任务列表")
+        self._drop_removed_medication_task(maaend_tasks)
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
         account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
@@ -1020,6 +1328,8 @@ class AutoProxyTask(TaskExecuteBase):
             "task.SceneManager.focus.color_match_failed_prefix"
         ]
 
+        removed_task_names = _disable_removed_tasks(maaend_tasks, maaend_i18n)
+
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
 
         def get_task_book_name(task: dict[str, object]) -> str:
@@ -1039,6 +1349,8 @@ class AutoProxyTask(TaskExecuteBase):
             target_task_name = (
                 "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
             )
+            if self.cur_user_config.get("Task", "IfSanity"):
+                self._ensure_sanity_task(maaend_tasks, target_task_name)
 
         if self.task_dict is None:
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
@@ -1059,6 +1371,9 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 task_name_value = str(task.get("taskName"))
                 if task_name_value.startswith("__MXU_"):
+                    continue
+
+                if task_name_value in removed_task_names:
                     continue
 
                 task_enabled = bool(task.get("enabled", False))
@@ -1116,6 +1431,19 @@ class AutoProxyTask(TaskExecuteBase):
                     data=WSTaskNoticeData(level="warning", message=warning_message),
                 )
 
+            if removed_task_names:
+                warning_message = (
+                    f"用户 {self.cur_user_item.name} 的 MaaEnd 配置中存在"
+                    f"当前版本已移除的任务：{'、'.join(sorted(removed_task_names))}，"
+                    "已自动跳过，请重做「MaaEnd 配置」以同步最新任务列表"
+                )
+                logger.warning(warning_message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=warning_message),
+                )
+
         # 按本轮任务表写回 MaaEnd 运行配置
         for task in maaend_tasks:
             task_name_value = str(task.get("taskName"))
@@ -1162,6 +1490,28 @@ class AutoProxyTask(TaskExecuteBase):
                 and target_task_name == "ProtocolSpace"
             ):
                 task.setdefault("optionValues", {})
+                # MaaEnd 2.28 重命名了领取方式字段；新资源存在时切换到新字段，
+                # 旧资源则保留源配置中的旧字段。
+                supports_obtain_mode = self._maaend_task_option_supported(
+                    "ProtocolSpace", "ProtocolSpaceObtainMode"
+                )
+                supports_obtain_mode_claim = self._maaend_task_option_supported(
+                    "ProtocolSpace", "ProtocolSpaceObtainModeClaim"
+                )
+                if supports_obtain_mode:
+                    task["optionValues"].pop("ProtocolSpaceSuccessAction", None)
+                if supports_obtain_mode_claim:
+                    task["optionValues"].pop("ProtocolSpaceUsePermit", None)
+                if supports_obtain_mode:
+                    task["optionValues"]["ProtocolSpaceObtainMode"] = {
+                        "type": "select",
+                        "caseName": "ObtainScaling2",
+                    }
+                if supports_obtain_mode_claim:
+                    task["optionValues"]["ProtocolSpaceObtainModeClaim"] = {
+                        "type": "select",
+                        "caseName": "ObtainScaling2",
+                    }
                 task["optionValues"]["ProtocolSpaceTab"] = {
                     "type": "select",
                     "caseName": sanity_task_type,
@@ -1174,6 +1524,17 @@ class AutoProxyTask(TaskExecuteBase):
                     task["optionValues"][option] = {
                         "type": "select",
                         "caseName": sanity_task_key[option],
+                    }
+                if self._maaend_task_option_supported(
+                    "ProtocolSpace", "ProtocolSpaceUseSpMedication"
+                ):
+                    task["optionValues"]["ProtocolSpaceUseSpMedication"] = {
+                        "type": "select",
+                        "caseName": (
+                            "UseMedication"
+                            if self.cur_user_config.get("Task", "IfAutoUseSpMedication")
+                            else "EndTask"
+                        ),
                     }
                 reward_option = sanity_task_key.get("RewardsSetOption")
                 if reward_option == "RewardsSetA":
@@ -1231,12 +1592,7 @@ class AutoProxyTask(TaskExecuteBase):
                 and task_name_value == target_task_name
                 and target_task_name == "AutoEssence"
             ):
-                task.setdefault("optionValues", {})
-                task["optionValues"].pop("AutoEssenceSpecifiedLocation", None)
-                task["optionValues"]["AutoEssenceChooseLocation"] = {
-                    "type": "checkbox",
-                    "caseNames": [sanity_task_key["AutoEssenceSpecifiedLocation"]],
-                }
+                self._write_auto_essence_options(task, sanity_task_key)
 
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
@@ -1304,8 +1660,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
         if "资源加载失败" in log:
+            # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
-        elif "快捷键开始任务：失败" in log:
+            self.retryable = False
+        elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
@@ -1364,7 +1722,10 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         self.cur_user_log.status = "Success!"
-                except Exception:
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"MaaEnd 任务执行情况解析失败: {e}"
+                    )
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif self.is_log_stalled(

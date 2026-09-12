@@ -566,6 +566,7 @@ import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vu
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import type { HSRConfig_Update } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
@@ -576,7 +577,7 @@ import {
   type HSRUpdateResult,
 } from '@/composables/useHSRPluginApi'
 import type { HSRConfig_Info, HSRConfig_Game, HSRConfig_Run } from '@/api'
-import type { HSRScriptConfig } from '@/types/script'
+import type { HSRScriptConfig, ScriptDetail } from '@/types/script'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const { t } = useI18n()
@@ -667,7 +668,8 @@ const hsrPluginApi = useHSRPluginApi()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
@@ -711,118 +713,117 @@ const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
 ])
 
 const handleChange = async (category: string, key: string, value: any): Promise<boolean> => {
-  if (isInitializing.value || isSaving.value) return false
-  isSaving.value = true
-  try {
-    const updateData: any = { [category]: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return false
-    logger.info(`配置已保存: ${category}.${key}`)
-    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-      await refreshScript()
-      await loadCapabilities()
-      await loadSraProfiles()
+  if (isInitializing.value) return false
+  return enqueue(async () => {
+    try {
+      const updateData: any = { [category]: { [key]: value } }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) return false
+      logger.info(`配置已保存: ${category}.${key}`)
+      if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+        await refreshScript()
+        await Promise.all([loadCapabilities(), loadSraProfiles()])
+      }
+      return true
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      return false
     }
-    return true
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-    return false
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const refreshScript = async () => {
   try {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) return
-    formData.infoName = scriptDetail.name
-    const cfg = scriptDetail.config as HSRScriptConfig
-    if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
-    if (cfg.Game) {
-      Object.assign(hsrConfig.Game, cfg.Game)
-      if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
-        hsrConfig.Game.Enabled = true
-      }
-      if (hsrConfig.Game.WaitTime === undefined || hsrConfig.Game.WaitTime === null) {
-        hsrConfig.Game.WaitTime = 60
-      }
-      if (
-        hsrConfig.Game.ForceResolution1920x1080 === undefined ||
-        hsrConfig.Game.ForceResolution1920x1080 === null
-      ) {
-        hsrConfig.Game.ForceResolution1920x1080 = false
-      }
-      if (
-        hsrConfig.Game.RedeemCodesOnlyWhenChanged === undefined ||
-        hsrConfig.Game.RedeemCodesOnlyWhenChanged === null
-      ) {
-        hsrConfig.Game.RedeemCodesOnlyWhenChanged = true
-      }
-    }
-    if (cfg.Run) {
-      Object.assign(hsrConfig.Run, cfg.Run)
-      if (hsrConfig.Run.RunTimesLimit === undefined) hsrConfig.Run.RunTimesLimit = 3
-      if (hsrConfig.Run.DailyTimeLimit === undefined) hsrConfig.Run.DailyTimeLimit = 20
-      if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
-      if (hsrConfig.Run.LowPerformanceMode === undefined) hsrConfig.Run.LowPerformanceMode = false
-    }
-    // 生成的 HSRConfig 类型尚未包含 Update 组，这里按后端 schema 手动取；
-    // 不在选项集合里的值（旧配置或损坏）回退到默认，避免下拉框显示空白。
-    const update = (cfg as { Update?: Partial<Record<keyof HSRUpdateConfig, unknown>> | null })
-      .Update
-    if (update) {
-      const pick = <T extends string>(value: unknown, options: readonly T[], fallback: T): T =>
-        options.includes(value as T) ? (value as T) : fallback
-      const defaults = getDefaultUpdateConfig()
-      hsrConfig.Update.AutoUpdateMode = pick(
-        update.AutoUpdateMode,
-        HSR_AUTO_UPDATE_MODES,
-        defaults.AutoUpdateMode
-      )
-      hsrConfig.Update.Channel = pick(update.Channel, HSR_UPDATE_CHANNELS, defaults.Channel)
-      hsrConfig.Update.M7ASource = pick(update.M7ASource, HSR_M7A_SOURCES, defaults.M7ASource)
-      hsrConfig.Update.SRASource = pick(update.SRASource, HSR_SRA_SOURCES, defaults.SRASource)
-      hsrConfig.Update.MirrorChyanCDK =
-        typeof update.MirrorChyanCDK === 'string' ? update.MirrorChyanCDK : ''
-    }
+    applyScriptDetail(scriptDetail)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`刷新配置失败: ${errorMsg}`)
   }
 }
 
-const handleRunConfigChange = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData: any = { Run: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return
-    logger.info(`配置已保存: Run.${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
+const applyScriptDetail = (scriptDetail: ScriptDetail) => {
+  formData.infoName = scriptDetail.name
+  const cfg = scriptDetail.config as HSRScriptConfig
+  if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
+  if (cfg.Game) {
+    Object.assign(hsrConfig.Game, cfg.Game)
+    if (hsrConfig.Game.Enabled === undefined || hsrConfig.Game.Enabled === null) {
+      hsrConfig.Game.Enabled = true
+    }
+    if (hsrConfig.Game.WaitTime === undefined || hsrConfig.Game.WaitTime === null) {
+      hsrConfig.Game.WaitTime = 60
+    }
+    if (
+      hsrConfig.Game.ForceResolution1920x1080 === undefined ||
+      hsrConfig.Game.ForceResolution1920x1080 === null
+    ) {
+      hsrConfig.Game.ForceResolution1920x1080 = false
+    }
+    if (
+      hsrConfig.Game.RedeemCodesOnlyWhenChanged === undefined ||
+      hsrConfig.Game.RedeemCodesOnlyWhenChanged === null
+    ) {
+      hsrConfig.Game.RedeemCodesOnlyWhenChanged = true
+    }
+  }
+  if (cfg.Run) {
+    Object.assign(hsrConfig.Run, cfg.Run)
+    if (hsrConfig.Run.RunTimesLimit === undefined) hsrConfig.Run.RunTimesLimit = 3
+    if (hsrConfig.Run.DailyTimeLimit === undefined) hsrConfig.Run.DailyTimeLimit = 20
+    if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
+    if (hsrConfig.Run.LowPerformanceMode === undefined) hsrConfig.Run.LowPerformanceMode = false
+  }
+  // 生成类型里 Update 的每个字段都是 optional | null，这里归一成非空的本地形态；
+  // 不在选项集合里的值（旧配置或损坏）回退到默认，避免下拉框显示空白。
+  const update = (cfg as { Update?: Partial<Record<keyof HSRUpdateConfig, unknown>> | null }).Update
+  if (update) {
+    const pick = <T extends string>(value: unknown, options: readonly T[], fallback: T): T =>
+      options.includes(value as T) ? (value as T) : fallback
+    const defaults = getDefaultUpdateConfig()
+    hsrConfig.Update.AutoUpdateMode = pick(
+      update.AutoUpdateMode,
+      HSR_AUTO_UPDATE_MODES,
+      defaults.AutoUpdateMode
+    )
+    hsrConfig.Update.Channel = pick(update.Channel, HSR_UPDATE_CHANNELS, defaults.Channel)
+    hsrConfig.Update.M7ASource = pick(update.M7ASource, HSR_M7A_SOURCES, defaults.M7ASource)
+    hsrConfig.Update.SRASource = pick(update.SRASource, HSR_SRA_SOURCES, defaults.SRASource)
+    hsrConfig.Update.MirrorChyanCDK =
+      typeof update.MirrorChyanCDK === 'string' ? update.MirrorChyanCDK : ''
   }
 }
 
+const handleRunConfigChange = async (key: string, value: any) => {
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData: any = { Run: { [key]: value } }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) return
+      logger.info(`配置已保存: Run.${key}`)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+    }
+  }, `Run.${key}`)
+}
+
 const handleUpdateConfigChange = async (key: keyof HSRUpdateConfig, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData: any = { Update: { [key]: value } }
-    const success = await updateScript(scriptId, updateData)
-    if (!success) return
-    logger.info(`配置已保存: Update.${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData: any = { Update: { [key]: value } }
+      const success = await updateScript(scriptId, updateData)
+      if (!success) return
+      logger.info(`配置已保存: Update.${key}`)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+    }
+  }, `Update.${key}`)
 }
 
 const autoUpdateModeOptions = computed(() => [
@@ -982,14 +983,14 @@ const runManualUpdate = async (engine: HSREngine, action: HSRUpdateAction) => {
 }
 
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const normalizedValue = value ?? 60
   hsrConfig.Game[key] = normalizedValue
   await handleChange('Game', key, normalizedValue)
 }
 
 const handleGameEnabledChange = async (value: boolean | string | number) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const previousValue = hsrConfig.Game.Enabled ?? true
   const enabled = Boolean(value)
   hsrConfig.Game.Enabled = enabled
@@ -1001,7 +1002,7 @@ const handleGameEnabledChange = async (value: boolean | string | number) => {
 }
 
 const handleGameResolutionChange = async (value: boolean | string | number) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const enabled = Boolean(value)
   hsrConfig.Game.ForceResolution1920x1080 = enabled
   const saved = await handleChange('Game', 'ForceResolution1920x1080', enabled)
@@ -1009,7 +1010,7 @@ const handleGameResolutionChange = async (value: boolean | string | number) => {
 }
 
 const handleRedeemCodePolicyChange = async (value: boolean | string | number) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
   const enabled = Boolean(value)
   hsrConfig.Game.RedeemCodesOnlyWhenChanged = enabled
   const saved = await handleChange('Game', 'RedeemCodesOnlyWhenChanged', enabled)
@@ -1164,9 +1165,9 @@ onMounted(async () => {
       router.push('/scripts')
       return
     }
-    await refreshScript()
-    await loadCapabilities()
-    await loadSraProfiles()
+    // 直接用这次拿到的结果填表, 不再重复 GET 一次; 能力快照与 SRA 档案互不依赖, 并行拉
+    applyScriptDetail(scriptDetail)
+    await Promise.all([loadCapabilities(), loadSraProfiles()])
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)

@@ -45,6 +45,7 @@ TYPE_BOOK = {
     "HSRConfig": "HSR",
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
+    "BAAHConfig": "BAAH",
 }
 """配置类型映射表"""
 
@@ -113,6 +114,7 @@ MAA_TASKS = [
     "Mall",
     "Award",
     "Roguelike",
+    "SwitchTheme",
 ]
 """MAA任务列表"""
 
@@ -125,6 +127,7 @@ MAA_TASKS_ZH = [
     "信用收支",
     "领取奖励",
     "自动肉鸽",
+    "更换主题",
 ]
 """MAA任务列表"""
 
@@ -157,6 +160,10 @@ MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "30145",
     "30155",
     "30165",
+    # 无对应可刷关卡：家具零件（基建产出）、合成玉（源石兑换）、声望（战斗经验）
+    "3401",
+    "4003",
+    "5001",
 }
 """MAA 库存保持不可刷取物品 ID"""
 
@@ -200,15 +207,6 @@ MAA_TASK_TRANSITION_METHOD_BOOK = {
     "ExitEmulator": "9",
 }
 """MAA任务切换方式映射表"""
-
-MAA_STARTUP_BASE = {
-    "$type": "StartUpTask",
-    "AccountName": "",
-    "Name": "开始唤醒",
-    "IsEnable": True,
-    "TaskType": "StartUp",
-}
-"""MAA开始唤醒基础配置"""
 
 MAA_ANNIHILATION_FIGHT_BASE = {
     "$type": "FightTask",
@@ -331,6 +329,9 @@ MAAEND_SANITY_TASK_TYPES = (
 )
 """MaaEnd理智任务类型列表"""
 
+MAAEND_AUTO_ESSENCE_MENUS = ("Random", "Location", "Target")
+"""MaaEnd 基质刷取模式（随机、地点、目标）"""
+
 MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
     "WeaponProgression": ("WeaponEXP", "WeaponTune"),
@@ -409,6 +410,9 @@ MAAEND_SANITY_TASK_DEFAULTS = {
     "CrisisDrills": "AdvancedProgression1",
     "RewardsSetOption": "RewardsSetA",
     "AutoEssenceSpecifiedLocation": "",
+    # Location 保持原有“指定地点”语义；Target 由用户显式切换。
+    "AutoEssenceMenu": "Location",
+    "AutoEssenceTargetWeapons": [],
 }
 """MaaEnd理智任务字段默认值"""
 
@@ -419,6 +423,8 @@ MAAEND_SANITY_TASK_FIELDS = (
     "CrisisDrills",
     "RewardsSetOption",
     "AutoEssenceSpecifiedLocation",
+    "AutoEssenceMenu",
+    "AutoEssenceTargetWeapons",
 )
 """MaaEnd理智任务字段列表"""
 
@@ -847,19 +853,6 @@ TIME_FIELDS = {
     "%f": "microsecond",
 }
 """时间字段映射表"""
-
-POWER_SIGN_MAP = {
-    "NoAction": "无动作",
-    "Shutdown": "关机",
-    "ShutdownForce": "强制关机",
-    "Reboot": "重启",
-    "Hibernate": "休眠",
-    "Sleep": "睡眠",
-    "KillSelf": "退出程序",
-    "Logoff": "注销此账户",
-}
-"""电源操作类型索引表"""
-
 
 RESERVED_NAMES = {
     "CON",

@@ -35,9 +35,7 @@ from app.core.notify import (
     global_target,
     should_send_result,
 )
-from app.tools.game_sign_notify import (
-    get_task_game_sign_summary,
-)
+from app.tools.community_notify import get_task_community_summary
 
 
 async def push_proxy_result(
@@ -79,7 +77,7 @@ async def push_proxy_result(
         f"未完成用户数: {message['uncompleted_count']}"
     )
     summary_text = (
-        get_task_game_sign_summary(task_info)
+        get_task_community_summary(task_info)
         if task_info is not None and message.get("game_sign_summary")
         else ""
     )

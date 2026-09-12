@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { ADBScreenshotIn } from '../models/ADBScreenshotIn';
 import type { ADBScreenshotOut } from '../models/ADBScreenshotOut';
+import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { CheckImageAllIn } from '../models/CheckImageAllIn';
 import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
@@ -17,8 +18,6 @@ import type { Emulator2PathRemoveIn } from '../models/Emulator2PathRemoveIn';
 import type { Emulator2PathRemovePreviewOut } from '../models/Emulator2PathRemovePreviewOut';
 import type { Emulator2SearchIn } from '../models/Emulator2SearchIn';
 import type { Emulator2SearchOut } from '../models/Emulator2SearchOut';
-import type { Emulator2SettingsIn } from '../models/Emulator2SettingsIn';
-import type { Emulator2SettingsOut } from '../models/Emulator2SettingsOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
@@ -295,6 +294,44 @@ export class GetService {
         });
     }
     /**
+     * MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost(
+        requestBody: Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 仓库库存（label=数量字符串，value=物品ID）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotInventoryApiScriptsMaaDepotInventoryPost(
+        requestBody: ScriptDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/inventory',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询 webhook 配置
      * @param requestBody
      * @returns WebhookGetOut Successful Response
@@ -458,29 +495,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/instances/delete/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询实例设置
-     * 读一台设备的四项设置。
-     *
-     * 每项都带状态：``.config`` 里有的才是用户保存过的，没有而从模拟器默认读到的
-     * 标 ``default``，两边都没有标 ``unset``。
-     * @param requestBody
-     * @returns Emulator2SettingsOut Successful Response
-     * @throws ApiError
-     */
-    public static getSettingsApiEmulator2SettingsGetPost(
-        requestBody: Emulator2SettingsIn,
-    ): CancelablePromise<Emulator2SettingsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/settings/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

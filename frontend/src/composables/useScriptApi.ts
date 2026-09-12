@@ -47,6 +47,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   HSR: ScriptCreateIn.type.HSR,
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
+  BAAH: ScriptCreateIn.type.BAAH,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -61,6 +62,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
+  BAAHConfig: 'BAAH',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -268,6 +270,10 @@ export function useScriptApi() {
                           maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
                         IfAward:
                           maaUserData.Task?.IfAward !== undefined ? maaUserData.Task.IfAward : true,
+                        IfSwitchTheme:
+                          maaUserData.Task?.IfSwitchTheme !== undefined
+                            ? maaUserData.Task.IfSwitchTheme
+                            : false,
                         IfRoguelike:
                           maaUserData.Task?.IfRoguelike !== undefined
                             ? maaUserData.Task.IfRoguelike
@@ -331,7 +337,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
@@ -431,7 +437,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           srcUserData.Data?.LastProxyDate !== undefined
                             ? srcUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           srcUserData.Data?.ProxyTimes !== undefined
                             ? srcUserData.Data.ProxyTimes
@@ -513,7 +519,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           generalUserData.Data?.LastProxyDate !== undefined
                             ? generalUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           generalUserData.Data?.ProxyTimes !== undefined
                             ? generalUserData.Data.ProxyTimes
@@ -585,6 +591,23 @@ export function useScriptApi() {
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
                             : '',
+                        AutoEssenceMenu:
+                          maaEndUserData.Task?.AutoEssenceMenu === 'Random' ||
+                          maaEndUserData.Task?.AutoEssenceMenu === 'Target'
+                            ? maaEndUserData.Task.AutoEssenceMenu
+                            : 'Location',
+                        AutoEssenceTargetWeapons: Array.isArray(
+                          maaEndUserData.Task?.AutoEssenceTargetWeapons
+                        )
+                          ? Array.from(
+                              new Set(
+                                maaEndUserData.Task.AutoEssenceTargetWeapons.filter(
+                                  (item): item is string =>
+                                    typeof item === 'string' && item.length > 0
+                                )
+                              )
+                            )
+                          : [],
                         IfSanity:
                           maaEndUserData.Task?.IfSanity != null
                             ? maaEndUserData.Task.IfSanity
@@ -708,7 +731,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           maaEndUserData.Data?.LastProxyDate !== undefined
                             ? maaEndUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           maaEndUserData.Data?.ProxyTimes !== undefined
                             ? maaEndUserData.Data.ProxyTimes
@@ -790,7 +813,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           m9aUserData.Data?.LastProxyDate !== undefined
                             ? m9aUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         LastPsychubeDate:
                           m9aUserData.Data?.LastPsychubeDate !== undefined
                             ? m9aUserData.Data.LastPsychubeDate
@@ -907,7 +930,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           okwwUserData.Data?.LastProxyDate !== undefined
                             ? okwwUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           okwwUserData.Data?.ProxyTimes !== undefined
                             ? okwwUserData.Data.ProxyTimes
@@ -918,7 +941,7 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (String(userIndex.type) === 'MaaFWUserConfig' && userData) {
+                  } else if (userIndex.type === 'MaaFWUserConfig' && userData) {
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
@@ -933,10 +956,9 @@ export function useScriptApi() {
                       Task: maafwUserData.Task ?? {},
                       Notify: maafwUserData.Notify ?? {},
                       Data: {
-                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '',
+                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '2000-01-01',
                         ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
-                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? false,
-                        LastSklandDate: '',
+                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? true,
                       },
                     } as unknown as User
                   } else if (userIndex.type === 'HSRUserConfig' && userData) {
@@ -1033,7 +1055,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           hsrUserData.Data?.LastProxyDate !== undefined
                             ? hsrUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           hsrUserData.Data?.ProxyTimes !== undefined
                             ? hsrUserData.Data.ProxyTimes
@@ -1128,7 +1150,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           bettergiUserData.Data?.LastProxyDate !== undefined
                             ? bettergiUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           bettergiUserData.Data?.ProxyTimes !== undefined
                             ? bettergiUserData.Data.ProxyTimes
@@ -1252,7 +1274,7 @@ export function useScriptApi() {
                         LastProxyDate:
                           zzzodUserData.Data?.LastProxyDate !== undefined
                             ? zzzodUserData.Data.LastProxyDate
-                            : '',
+                            : '2000-01-01',
                         ProxyTimes:
                           zzzodUserData.Data?.ProxyTimes !== undefined
                             ? zzzodUserData.Data.ProxyTimes
@@ -1261,6 +1283,70 @@ export function useScriptApi() {
                           zzzodUserData.Data?.LastProxyStatus !== undefined
                             ? zzzodUserData.Data.LastProxyStatus
                             : '未知',
+                      },
+                    }
+                  } else if (userIndex.type === 'BAAHUserConfig' && userData) {
+                    const baahUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: baahUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          baahUserData.Info?.Name !== undefined
+                            ? baahUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          baahUserData.Info?.Status !== undefined
+                            ? baahUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          baahUserData.Info?.RemainedDay !== undefined
+                            ? baahUserData.Info.RemainedDay
+                            : -1,
+                        ConfigName:
+                          baahUserData.Info?.ConfigName !== undefined
+                            ? baahUserData.Info.ConfigName
+                            : '',
+                        Notes:
+                          baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
+                        Tag:
+                          baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
+                      },
+                      Notify: {
+                        Enabled:
+                          baahUserData.Notify?.Enabled !== undefined
+                            ? baahUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          baahUserData.Notify?.IfSendStatistic !== undefined
+                            ? baahUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          baahUserData.Notify?.IfSendMail !== undefined
+                            ? baahUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          baahUserData.Notify?.ToAddress !== undefined
+                            ? baahUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          baahUserData.Notify?.IfServerChan !== undefined
+                            ? baahUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          baahUserData.Notify?.ServerChanKey !== undefined
+                            ? baahUserData.Notify.ServerChanKey
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          baahUserData.Data?.LastProxyDate !== undefined
+                            ? baahUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          baahUserData.Data?.ProxyTimes !== undefined
+                            ? baahUserData.Data.ProxyTimes
+                            : 0,
                       },
                     }
                   }

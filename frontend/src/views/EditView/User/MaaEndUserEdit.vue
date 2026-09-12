@@ -78,6 +78,8 @@
               :loading="loading"
               :if-quick-config="formData.Info.IfQuickConfig"
               :essence-location-options="essenceLocationOptions"
+              :essence-menu-options="essenceMenuOptions"
+              :essence-target-weapon-groups="essenceTargetWeaponGroups"
               :options-loading="maaEndOptionsLoading"
               :options-loaded="maaEndOptionsLoaded"
               :is-plan-mode="isSanityPlanMode"
@@ -161,6 +163,7 @@ import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import {
   MAAEND_PLAN_WEEKDAY_KEYS,
   maaEndPlanKeyToSanityConfig,
+  type MaaEndEssenceTargetGroup,
   type MaaEndSanityConfig,
 } from '@/utils/maaEndProtocolSpace'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
@@ -207,6 +210,8 @@ const maaEndTaskId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
+const essenceMenuOptions = ref<ComboBoxItem[]>([])
+const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
 const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: t('edit.fixed'), value: 'Fixed' },
 ])
@@ -257,6 +262,8 @@ const getDefaultMaaEndUserData = () => ({
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
     AutoEssenceSpecifiedLocation: '',
+    AutoEssenceMenu: 'Location',
+    AutoEssenceTargetWeapons: [],
     SeizeDeliveryJobsReward: 15.9,
     SeizeDeliveryJobsCommissionSource: 'Unlimited',
     AutoCollectMode: 'Distributed',
@@ -470,6 +477,8 @@ const loadMaaEndOptions = async () => {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code === 200) {
       essenceLocationOptions.value = response.essenceLocations
+      essenceMenuOptions.value = response.essenceMenus ?? []
+      essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
       presetSupported.value = response.controllerTypes[controllerType.value ?? ''] === 'Win32'
       maaEndOptionsLoaded.value = true
     }

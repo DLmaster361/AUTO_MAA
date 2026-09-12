@@ -47,6 +47,8 @@ from jinja2 import Environment, FileSystemLoader
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
+    BAAHConfig,
+    BAAHUserConfig,
     BetterGIConfig,
     BetterGIUserConfig,
     EmulatorConfig,
@@ -780,6 +782,7 @@ class AppConfig(GlobalConfig):
             "HSR",
             "BetterGI",
             "ZzzOd",
+            "BAAH",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -794,7 +797,8 @@ class AppConfig(GlobalConfig):
         | OkNteConfig
         | HSRConfig
         | BetterGIConfig
-        | ZzzOdConfig,
+        | ZzzOdConfig
+        | BAAHConfig,
     ]:
         """添加脚本配置"""
 
@@ -1058,7 +1062,8 @@ class AppConfig(GlobalConfig):
         | OkNteUserConfig
         | HSRUserConfig
         | BetterGIUserConfig
-        | ZzzOdUserConfig,
+        | ZzzOdUserConfig
+        | BAAHUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1099,6 +1104,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(BetterGIUserConfig)
         elif isinstance(script_config, ZzzOdConfig):
             uid, config = await script_config.UserData.add(ZzzOdUserConfig)
+        elif isinstance(script_config, BAAHConfig):
+            uid, config = await script_config.UserData.add(BAAHUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 

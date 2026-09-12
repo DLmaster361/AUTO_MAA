@@ -45,6 +45,7 @@ TYPE_BOOK = {
     "HSRConfig": "HSR",
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
+    "BAAHConfig": "BAAH",
 }
 """配置类型映射表"""
 

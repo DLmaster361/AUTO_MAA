@@ -1559,6 +1559,35 @@ export default {
     bettergiSessionTimeoutWarn: 'BetterGI 设置会话即将超时，30 秒后自动保存',
     bettergiSettingsSaved: 'BetterGI 设置已保存',
     bettergiSettingsSaveFailed: '保存 BetterGI 设置失败',
+    // BAAH 专项
+    baahScriptConfiguration: 'BAAH 脚本配置',
+    baahScriptNameHint: '用于区分不同的 BAAH 脚本实例',
+    baahScriptPathHint:
+      'BAAH 主程序（BAAH.exe）的完整路径；程序目录、配置目录与日志目录都由它所在的目录派生，无需另行选择',
+    baahManageConfig: '托管关键配置项',
+    baahManageConfigHint:
+      '开启后，本软件会在运行前自动写入 BAAH 运行所需的设置（运行结束自动退出、打开日志落盘），运行结束后恢复你的原值',
+    baahAutoStartNotice:
+      '请在 BAAH 中关闭自动启动模拟器：把它的「模拟器路径」留空，模拟器交给本软件启动。开启上面的「托管关键配置项」时本软件会自动置空该项；若把它设为「否」，请自己在 BAAH 的模拟器设置里清空，否则两边会各拉起一台模拟器互相抢占',
+    baahPushLogEnabled: '推送任务节点详情',
+    baahPushLogEnabledHint:
+      '开启后，本次运行的 BAAH 任务节点（执行成功/跳过/失败）会随任务报告一起推送；关闭后不采集任务节点，任务日志记录与结果判定不受影响',
+    baahEmulatorHint:
+      '选择本软件要调度的模拟器；运行前由本软件启动它并等待设备就绪，BAAH 只负责连接，无需在 BAAH 内填写模拟器路径与端口',
+    baahCloseEmulatorOnFinish: '结束后关闭模拟器',
+    baahCloseEmulatorOnFinishHint: '开启后，本次任务结束时由本软件关闭所选的模拟器实例',
+    baahNotBaahScript: '脚本类型不是 BAAH',
+    baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
+    baahRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
+    baahConfigName: 'BAAH 配置文件名',
+    baahConfigNameHint:
+      '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',
+    baahConfigNamePlaceholder: '例如：example',
+    baahUserTag: '用户标签',
+    baahUserTagHint: '由本软件按运行情况自动生成，仅供查看',
+    baahLastProxyDate: '上次代理日期',
+    baahProxyTimes: '代理次数',
+    baahDataReadOnlyHint: '由本软件自动统计，仅供查看',
     // ZZZ-OD 专项
     zzzodScriptConfiguration: 'ZZZ-OD 脚本配置',
     zzzodScriptNameHint: '用于区分不同的 ZZZ-OD 脚本实例',
@@ -2929,6 +2958,7 @@ export default {
       HSR: 'HSR脚本',
       BetterGI: 'BetterGI脚本',
       ZzzOd: 'ZZZ-OD脚本',
+      BAAH: 'BAAH脚本',
       General: '通用脚本',
     },
     typeDesc: {
@@ -2941,6 +2971,7 @@ export default {
       HSR: '崩坏：星穹铁道 三月七 / SRA 双脚本适配',
       BetterGI: '原神BGI专项一条龙脚本',
       ZzzOd: '绝区零一条龙 · 自动每日与实例（账号）管理',
+      BAAH: '碧蓝档案爱丽丝助手专项，自动完成每日任务与多实例（账号）管理',
       General: '通用自动化脚本，适用于所有具备日志文件的脚本',
     },
     mask: {
@@ -3040,6 +3071,7 @@ export default {
         HSR: '三月七 / SRA 双脚本适配',
         BetterGI: '原神BGI专项一条龙脚本',
         ZzzOd: '绝区零一条龙 · 自动每日与实例（账号）管理',
+        BAAH: '碧蓝档案爱丽丝助手专项，自动完成每日任务与多实例（账号）管理',
       },
     },
     toast: {

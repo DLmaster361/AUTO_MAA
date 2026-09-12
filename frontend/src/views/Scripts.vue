@@ -260,6 +260,7 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   HSR: 'hsr',
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
+  BAAH: 'baah',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
@@ -443,6 +444,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/bettergi`)
   } else if (script.type === 'ZzzOd') {
     router.push(`/scripts/${script.id}/users/add/zzzod`)
+  } else if (script.type === 'BAAH') {
+    router.push(`/scripts/${script.id}/users/add/baah`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -473,6 +476,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/bettergi`)
     } else if (script.type === 'ZzzOd') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
+    } else if (script.type === 'BAAH') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }

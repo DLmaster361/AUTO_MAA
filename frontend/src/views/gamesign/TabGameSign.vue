@@ -21,6 +21,7 @@ import {
   buildUserTagsMap,
   getSignDetailAlias,
   getSignDetailClass,
+  getSignDetailItems,
   getSignStatusKey,
   getTagClass,
   getTagText,
@@ -607,18 +608,25 @@ onMounted(() => {
                           :key="gIdx"
                         >
                           <template
-                            v-for="game in group.games"
-                            :key="`${game.account || group.account_alias}-${game.game}`"
+                            v-for="game in getSignDetailItems(group.games)"
+                            :key="`${game.account || group.account_alias}-${game.game}-${game.kind}`"
                           >
                             <div class="sign-tooltip-alias">
                               {{ getSignDetailAlias(group, game, t('gamesign.unknownUser')) }}
                             </div>
                             <div class="sign-tooltip-row">
-                              <span>{{ game.game }}</span>
+                              <span>{{
+                                game.kind === 'community'
+                                  ? t('gamesign.list.kuroCoinSign')
+                                  : game.kind === 'game'
+                                    ? t('gamesign.list.gameSignTask', { game: game.game })
+                                    : game.game
+                              }}</span>
                               <span :class="getSignDetailClass(game.status)">
                                 ● {{ t(getSignStatusKey(game.status)) }}
                               </span>
                               <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
+                              <span v-if="game.reason" class="tt-reason">{{ game.reason }}</span>
                             </div>
                           </template>
                         </template>
@@ -629,6 +637,9 @@ onMounted(() => {
                     </template>
                     <span :class="['platform-tag', getTagClass(tag.status)]">
                       {{ getTagText(tag) }}
+                      <template v-if="tag.status === 'partial' && tag.failedCount > 0">
+                        · {{ t('gamesign.signStatus.partialFailure') }}
+                      </template>
                     </span>
                   </a-tooltip>
                 </a-space>
@@ -1140,6 +1151,8 @@ onMounted(() => {
 .sign-tooltip {
   width: 100%;
   min-width: 0;
+  max-height: min(360px, calc(50vh - 64px));
+  overflow-y: auto;
   color: rgba(255, 255, 255, 0.85);
 }
 .sign-tooltip-title {
@@ -1193,6 +1206,11 @@ onMounted(() => {
 .tt-reward {
   grid-column: 1 / -1;
   color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+}
+.tt-reason {
+  grid-column: 1 / -1;
+  color: var(--ant-color-error);
   font-size: 12px;
 }
 .sign-tooltip-empty {

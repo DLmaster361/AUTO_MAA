@@ -20,18 +20,9 @@
 
 """Emulator 2.0 的雷电 14 后端。
 
-继承旧 ``LDManager``，启动 / 关闭 / 状态 / 实例锁 / 配置守卫**全部原样复用**，
-只覆盖两处行为：
-
-1. **不禁用游戏中心。** 旧管理器在启动流程里自己读全局「屏蔽广告」开关并执行
-   ``pm disable-user com.android.flysilkworm``。实测那条命令对安卓端已观察到的两类广告
-   （桌面顶部搜索栏、底部推广栏）一条都挡不住，唯一效果是杀掉用户想保留的游戏中心，
-   所以这里让它变成空操作。
-2. **老板键按实例读。** 旧管理器读的是配置级的 ``Info.BossKey``，而雷电的老板键是
-   每个实例各一份的。认不出时**明确报错，不猜**。
-
-配置守卫（启动前拍快照、关闭后校验回滚）**有意保留**——用户开着屏蔽广告时，
-新配置也享受同样的配置保护。代价是设置写入必须拿同一把实例锁，见 :meth:`write_instance_settings`。
+继承旧 ``LDManager`` 的启动、关闭、状态、实例锁和配置守卫。
+「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
+老板键按实例读取；设置写入与配置守卫使用同一把实例锁。
 """
 
 import asyncio
@@ -50,6 +41,7 @@ from app.utils.platform import IS_WINDOWS
 from .adb import parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing
 from .bosskey import BossKey, read_boss_key
+from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
 from .settings import (
     InstanceSettings,
     SettingsConflictError,
@@ -122,6 +114,9 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     ``AppLaunchMixin`` 必须排在 ``LDManager`` 前面：带包启动改走
     「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``launch --packagename``。
     """
+
+    #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
+    store_package = "com.android.flysilkworm"
 
     #: adb devices 的缓存。放类属性而不是覆写 __init__，免得和父类的构造契约纠缠。
     _adb_cache: list[str] | None = None
@@ -519,12 +514,40 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
 
         raise RuntimeError(f"删除雷电实例 {native_index} 失败：它仍然在列表中")
 
-    async def _block_ads_via_adb(self, idx: str) -> None:
-        """空操作：不禁用游戏中心。
+    async def prepare_launch(self, idx: str) -> None:
+        """启动前按旧版全局开关应用「大雷主人模式」。
 
-        旧实现禁用 ``com.android.flysilkworm``。实测（见去广告实验记录）它对安卓桌面
-        顶部搜索栏与底部推广栏一条都挡不住——那两处是雷电魔改 launcher 自己联网拉的，
-        与游戏中心无关——所以旧实现只是白白杀掉用户要保留的游戏中心。
+        ``globalsetting --cleanmode`` 是**整个安装**的全局开关，宿主只在 VM 冷启动时把它
+        作为 ``phone.cleanmode`` 推进客户机，所以放在启动前、每次都设：开着设 1、关着设 0，
+        和旧配置的处理口径一致。已经在跑的其他实例要到它们下次冷启动才会跟着变。
+        设不上只记警告，不拦启动。
+        """
+        enabled = is_master_mode_enabled()
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                *ldplayer_clean_mode_args(enabled),
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - 见 docstring
+            logger.warning(f"设置雷电「大雷主人模式」失败，实例 {idx} 照常启动: {e}")
+            return
+        if result.returncode != 0:
+            logger.warning(
+                f"设置雷电「大雷主人模式」返回 {result.returncode}，实例 {idx} 照常启动: "
+                f"{result.stdout.strip()}"
+            )
+            return
+        logger.info(
+            f"雷电「大雷主人模式」已{'开启' if enabled else '关闭'}，实例 {idx} 冷启动后生效"
+        )
+
+    async def _block_ads_via_adb(self, idx: str) -> None:
+        """保留父类兼容入口，但不禁用游戏中心。
+
+        模式由 :meth:`prepare_launch` 统一处理，整包禁用会让「打开游戏中心」失效。
         """
         return None
 

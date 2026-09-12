@@ -1159,6 +1159,56 @@ export default {
       'Treat the daily run as timed out when the MAA log has not changed for this long',
     update: 'Update',
     runLimits: 'Run limits',
+    hsrExternalUpdate: 'External script updates',
+    hsrUpdateSectionHint:
+      'March7th Assistant and SRA are third-party tools you installed yourself, so MAS never rewrites their folders unless you turn this on. Auto update only runs after the whole run has finished and never makes the current run wait for a download; after enabling it, a full run has to complete before the first update happens. Use the manual buttons below to update right away.',
+    hsrUpdateModeTip:
+      'Off: never update automatically; After run: check and update once every user in this run has finished. A failed update never affects the run result',
+    hsrUpdateModeOff: 'Off',
+    hsrUpdateModeAfterRun: 'After run',
+    hsrUpdateChannel: 'Update channel',
+    hsrUpdateChannelTip: 'Shared by both scripts; beta builds may be unstable',
+    hsrUpdateChannelStable: 'Stable',
+    hsrUpdateChannelBeta: 'Beta',
+    hsrUpdateM7ASource: 'March7th Assistant download source',
+    hsrUpdateM7ASourceTip:
+      'March7th Assistant is only available from GitHub and MirrorChyan. MirrorChyan requires a CDK; if the CDK is unusable the update fails and is skipped, it never silently falls back to GitHub',
+    hsrUpdateSRASource: 'SRA download source',
+    hsrUpdateSRASourceTip:
+      'The AUTO-MAS download site needs no CDK and has no rate limit, and is the default for SRA. MirrorChyan requires a CDK; if the CDK is unusable the update fails and is skipped, it never silently falls back to GitHub',
+    hsrUpdateSourceAutoSite: 'AUTO-MAS download site (no CDK)',
+    hsrUpdateSourceGithub: 'GitHub',
+    hsrUpdateSourceMirrorChyan: 'MirrorChyan (CDK required)',
+    hsrUpdateCdk: 'MirrorChyan CDK',
+    hsrUpdateCdkTip:
+      'Used only for March7th Assistant / SRA updates and unrelated to the CDK in global settings; required when either download source is MirrorChyan',
+    hsrUpdateCdkPlaceholder: 'Enter the MirrorChyan CDK',
+    hsrUpdateCdkHint:
+      'Required when either download source is MirrorChyan; get one on the MirrorChyan site',
+    hsrUpdateCdkMissing:
+      'MirrorChyan is selected as a download source but no CDK is set: the update will fail and be skipped, it will not fall back to GitHub',
+    hsrUpdateCdkGetLink: 'Get a MirrorChyan CDK',
+    hsrUpdateManual: 'Manual update',
+    hsrUpdateManualTip:
+      'Auto update waits for the run to finish; use these buttons to update now. Updating is not possible while a task is running',
+    hsrUpdateNeedPath:
+      'Set the March7th Assistant or SRA path and the check / update buttons will appear here',
+    hsrUpdateEngineM7A: 'March7th Assistant',
+    hsrUpdateEngineSRA: 'SRA',
+    hsrUpdateInstalledVersion: 'Installed: {version}',
+    hsrUpdateVersionUnknown: 'unknown version',
+    hsrUpdateCheckNow: 'Check for updates',
+    hsrUpdateApplyNow: 'Update now',
+    hsrUpdateDone: '{engine} updated to {version}',
+    hsrUpdateUpToDate: '{engine} is already up to date ({version})',
+    hsrUpdateAvailable:
+      '{engine} {latest} is available (current {current}); click "Update now" to install',
+    hsrUpdateNotInstallable:
+      '{engine} {version} is available, but it cannot be installed from the current download source',
+    hsrUpdateNotInstallableHint:
+      'Usually the MirrorChyan CDK is missing or unusable; check the CDK or switch to another download source',
+    hsrUpdateCheckFailed: 'Could not check for {engine} updates',
+    hsrUpdateRequestFailed: '{engine} update request failed',
     calyxCrimson: 'Calyx (Crimson)',
     calyxCrimsonTraceMaterials:
       'Calyx (Crimson): trace materials (gold and crimson are stored separately)',
@@ -2048,6 +2098,7 @@ export default {
     start: 'Start',
     stop: 'Stop',
     hide: 'Hide window',
+    openStore: 'Open game center',
     settings: 'Settings',
     settingsTitle: 'Instance settings',
     settingsHint:
@@ -2128,6 +2179,7 @@ export default {
       creating: 'Creating',
       deleting: 'Deleting',
       operating: 'Working',
+      openingStore: 'Opening',
     },
     configGuard: 'Config guard',
     guardTip:
@@ -2162,6 +2214,8 @@ export default {
       batchPartial: '{ok} succeeded, {fail} failed',
       batchFailed: 'Batch settings failed',
       operateFailed: 'The device operation failed',
+      storeOpened: 'Game center opened',
+      storeOpenFailed: 'Failed to open the game center',
       createOk: 'Instance created as device #{slot}',
       createFailed: 'Failed to create the instance',
       deleteOk: 'Instance deleted',
@@ -2549,6 +2603,8 @@ export default {
       'First-time setup usually takes a few minutes. Feel free to do something else.',
     slowHint: 'This is slower than usual. Still waiting for the backend.',
     viewLog: 'Open the log',
+    transferSource: 'from {source}',
+    probeUnavailable: '{source} unavailable',
   },
   init: {
     failure: {

@@ -77,6 +77,9 @@ export default defineConfig(({ command }) => {
     },
     // 开发服务器配置
     server: {
+      // 钉死 IPv4：localhost 解析随环境漂移（本机 vite 曾只绑 ::1，而 wait-on 经 Node 访问
+      // IPv6 回环被拒），host 需与 electron-dev 的 wait-on/VITE_DEV_SERVER_URL 同为 127.0.0.1
+      host: '127.0.0.1',
       port: DEV_SERVER_PORT,
       // 端口被占用时直接失败，避免静默换端口后 Electron 仍加载另一实例的页面
       strictPort: true,

@@ -1121,6 +1121,56 @@ export default {
       '日課代行タスク実行中、MAA のログがこの時間だけ変化しなければタイムアウトとみなします',
     update: '更新を実行',
     runLimits: '実行の制限',
+    hsrExternalUpdate: '外部スクリプトの更新',
+    hsrUpdateSectionHint:
+      '三月七アシスタントと SRA はご自身でインストールしたサードパーティ製ツールのため、MAS は既定ではそのフォルダを書き換えません。自動更新は今回のタスクがすべて終わった後にのみ行われ、実行中のタスクをダウンロード待ちにすることはありません。有効化後は一巡完了してから初めて更新されます。すぐ更新したい場合は下の手動ボタンをお使いください。',
+    hsrUpdateModeTip:
+      'オフ：自動更新しない。タスク完了後：今回のユーザー全員の実行が終わってから確認・更新します。更新に失敗してもタスクの結果には影響しません',
+    hsrUpdateModeOff: 'オフ',
+    hsrUpdateModeAfterRun: 'タスク完了後',
+    hsrUpdateChannel: '更新チャンネル',
+    hsrUpdateChannelTip: '2 つのスクリプトで共通。ベータ版は不安定な場合があります',
+    hsrUpdateChannelStable: '安定版',
+    hsrUpdateChannelBeta: 'ベータ版',
+    hsrUpdateM7ASource: '三月七アシスタントのダウンロード元',
+    hsrUpdateM7ASourceTip:
+      '三月七アシスタントは GitHub と MirrorChyan からのみ入手できます。MirrorChyan を選ぶ場合は CDK が必須で、CDK が使えないときはエラーでスキップされ、自動的に GitHub へは切り替わりません',
+    hsrUpdateSRASource: 'SRA のダウンロード元',
+    hsrUpdateSRASourceTip:
+      'AUTO-MAS ダウンロードサイトは CDK 不要・帯域制限なしで、SRA の既定です。MirrorChyan を選ぶ場合は CDK が必須で、CDK が使えないときはエラーでスキップされ、自動的に GitHub へは切り替わりません',
+    hsrUpdateSourceAutoSite: 'AUTO-MAS ダウンロードサイト（CDK 不要）',
+    hsrUpdateSourceGithub: 'GitHub',
+    hsrUpdateSourceMirrorChyan: 'MirrorChyan（CDK 必須）',
+    hsrUpdateCdk: 'MirrorChyan CDK',
+    hsrUpdateCdkTip:
+      '三月七アシスタント / SRA の更新にのみ使い、全体設定の CDK とは無関係です。いずれかのダウンロード元に MirrorChyan を選んだ場合は必須です',
+    hsrUpdateCdkPlaceholder: 'MirrorChyan CDK を入力してください',
+    hsrUpdateCdkHint:
+      'いずれかのダウンロード元に MirrorChyan を選んだ場合は必須です。MirrorChyan 公式サイトで取得できます',
+    hsrUpdateCdkMissing:
+      'ダウンロード元に MirrorChyan を選んでいますが CDK が未入力です。更新時はエラーでスキップされ、GitHub へは自動的に切り替わりません',
+    hsrUpdateCdkGetLink: 'MirrorChyan CDK を取得',
+    hsrUpdateManual: '手動更新',
+    hsrUpdateManualTip:
+      '自動更新は今回のタスクが終わるまで待ちます。今すぐ更新したい場合はここから操作してください。タスク実行中は更新できません',
+    hsrUpdateNeedPath:
+      '三月七アシスタントまたは SRA のパスを設定すると、ここに確認 / 更新ボタンが表示されます',
+    hsrUpdateEngineM7A: '三月七アシスタント',
+    hsrUpdateEngineSRA: 'SRA',
+    hsrUpdateInstalledVersion: 'インストール済み：{version}',
+    hsrUpdateVersionUnknown: 'バージョン不明',
+    hsrUpdateCheckNow: '更新を確認',
+    hsrUpdateApplyNow: '今すぐ更新',
+    hsrUpdateDone: '{engine} を {version} に更新しました',
+    hsrUpdateUpToDate: '{engine} は最新版です（{version}）',
+    hsrUpdateAvailable:
+      '{engine} の新しいバージョン {latest} があります（現在 {current}）。「今すぐ更新」でインストールできます',
+    hsrUpdateNotInstallable:
+      '{engine} の新しいバージョン {version} がありますが、現在のダウンロード元からはインストールできません',
+    hsrUpdateNotInstallableHint:
+      '多くの場合 MirrorChyan CDK が未設定か使用できない状態です。CDK を確認するか、別のダウンロード元に切り替えてください',
+    hsrUpdateCheckFailed: '{engine} の更新確認に失敗しました',
+    hsrUpdateRequestFailed: '{engine} の更新リクエストに失敗しました',
     calyxCrimson: '疑似花萼（赤）',
     calyxCrimsonTraceMaterials: '疑似花萼（赤）：軌跡素材（金と赤は別々に保存されます）',
     calyxGolden: '疑似花萼（金）',
@@ -1758,6 +1808,7 @@ export default {
     start: '起動',
     stop: '停止',
     hide: 'ウィンドウを隠す',
+    openStore: 'ゲームセンターを開く',
     settings: '設定',
     settingsTitle: 'インスタンス設定',
     settingsHint:
@@ -1836,6 +1887,7 @@ export default {
       creating: '作成中',
       deleting: '削除中',
       operating: '処理中',
+      openingStore: '起動中',
     },
     configGuard: '設定ガード',
     guardTip:
@@ -1870,6 +1922,8 @@ export default {
       batchPartial: '成功 {ok} 台、失敗 {fail} 台',
       batchFailed: '一括設定に失敗しました',
       operateFailed: 'デバイスの操作に失敗しました',
+      storeOpened: 'ゲームセンターを開きました',
+      storeOpenFailed: 'ゲームセンターを開けませんでした',
       createOk: 'インスタンスを作成しました（デバイス番号 #{slot}）',
       createFailed: 'インスタンスの作成に失敗しました',
       deleteOk: 'インスタンスを削除しました',
@@ -2262,6 +2316,8 @@ export default {
     firstRunEstimate: '初回の準備には数分かかります。ほかのことをしていて大丈夫です',
     slowHint: 'いつもより時間がかかっています。バックエンドの応答を待っています',
     viewLog: 'ログを見る',
+    transferSource: '{source} から',
+    probeUnavailable: '{source} は利用できません',
   },
   init: {
     failure: {

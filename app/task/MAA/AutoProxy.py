@@ -146,11 +146,15 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
 
 
 def _has_completed_annihilation_week(log: str) -> bool:
-    """判断剿灭日志是否表明本周额度已完成。"""
+    """判断剿灭日志是否表明本周额度已完成。
+
+    MAA 理智不足无法开战时同样打印「完成任务: 剿灭作战」且无进度行，
+    与已达上限在日志上不可区分，故无进度行一律视为未达标，宁可下次重试。
+    """
 
     progress = _parse_annihilation_weekly_progress(log)
     return "完成任务: 剿灭作战" in log and (
-        progress is None or progress[0] >= progress[1]
+        progress is not None and progress[0] >= progress[1]
     )
 
 
@@ -805,14 +809,17 @@ class AutoProxyTask(TaskExecuteBase):
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
-        # 多配置使用默认配置
+        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
         if gui_set["Current"] != "Default":
             gui_set["Configurations"]["Default"] = gui_set["Configurations"][
                 gui_set["Current"]
             ]
-            gui_new_set["Configurations"]["Default"] = gui_new_set["Configurations"][
-                gui_set["Current"]
-            ]
+            gui_new_configurations = gui_new_set.setdefault("Configurations", {})
+            if gui_set["Current"] in gui_new_configurations:
+                gui_new_configurations["Default"] = gui_new_configurations[
+                    gui_set["Current"]
+                ]
+            gui_new_configurations.setdefault("Default", {})
             gui_set["Current"] = "Default"
 
         # 各配置部分的引用
@@ -1321,15 +1328,6 @@ class AutoProxyTask(TaskExecuteBase):
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
                     self.task_dict[en_task] = False
-
-            if self.mode == "Routine" and (
-                "任务出错: 理智作战" in log
-                or any(
-                    f"理智作战: {task_name} 添加任务失败" in log
-                    for task_name in ("活动关优先", "理智作战", "剩余理智")
-                )
-            ):
-                self.task_dict["Fight"] = True
 
             if any(self.task_dict.values()):
                 self.cur_user_log.status = "MAA 部分任务执行失败"

@@ -154,6 +154,27 @@ def _select_auto_collect_routes(
     }
 
 
+def _disable_removed_tasks(
+    maaend_tasks: list[dict[str, object]],
+    task_i18n: dict[str, str],
+) -> set[str]:
+    """禁用当前 MaaEnd 版本已移除的任务条目，返回被移除的任务名。
+
+    MaaEnd 更新可能删除或合并旧任务，其加载配置时会静默移除无效条目；
+    若注入的运行配置里只剩这类条目，MaaEnd 会以“没有启用的任务”拒绝启动，
+    自动代理也会因该任务永不回报完成而反复重试。
+    """
+
+    removed_names: set[str] = set()
+    for task in maaend_tasks:
+        task_name = str(task.get("taskName"))
+        if task_name.startswith("__MXU_") or task_name in task_i18n:
+            continue
+        task["enabled"] = False
+        removed_names.add(task_name)
+    return removed_names
+
+
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
 
@@ -1020,6 +1041,8 @@ class AutoProxyTask(TaskExecuteBase):
             "task.SceneManager.focus.color_match_failed_prefix"
         ]
 
+        removed_task_names = _disable_removed_tasks(maaend_tasks, maaend_i18n)
+
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
 
         def get_task_book_name(task: dict[str, object]) -> str:
@@ -1059,6 +1082,9 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 task_name_value = str(task.get("taskName"))
                 if task_name_value.startswith("__MXU_"):
+                    continue
+
+                if task_name_value in removed_task_names:
                     continue
 
                 task_enabled = bool(task.get("enabled", False))
@@ -1108,6 +1134,19 @@ class AutoProxyTask(TaskExecuteBase):
                 warning_message = (
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
                     "已跳过理智任务快速配置"
+                )
+                logger.warning(warning_message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=warning_message),
+                )
+
+            if removed_task_names:
+                warning_message = (
+                    f"用户 {self.cur_user_item.name} 的 MaaEnd 配置中存在"
+                    f"当前版本已移除的任务：{'、'.join(sorted(removed_task_names))}，"
+                    "已自动跳过，请重做「MaaEnd 配置」以同步最新任务列表"
                 )
                 logger.warning(warning_message)
                 await Publisher.send(
@@ -1305,7 +1344,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
         if "资源加载失败" in log:
             self.cur_user_log.status = "MaaEnd 资源加载失败"
-        elif "快捷键开始任务：失败" in log:
+        elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"

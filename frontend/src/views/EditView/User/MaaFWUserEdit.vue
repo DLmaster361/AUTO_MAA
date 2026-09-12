@@ -44,7 +44,6 @@
           />
 
           <TaskQueueSection
-            v-model:queued-task-names="queuedTaskNames"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -57,9 +56,11 @@
             :preset-templates="presetTemplates"
             :task-by-name="taskByName"
             :selected-task="selectedTask"
+            :selected-task-id="selectedQueuedTask?.id || ''"
             :task-snapshot="taskSnapshot"
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
+            @reorder-tasks="applyQueuedTaskIds"
             @reload-interface="reloadInterface"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
@@ -113,12 +114,14 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
 import { getScriptIcon, maafwScriptIcon } from '@/utils/scriptIcon'
+import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
+  MaaFWQueuedTaskItem,
   MaaFWScriptConfig,
   MaaFWTaskInfo,
   MaaFWTaskOptionValue,
@@ -221,7 +224,7 @@ const handleProjectIconError = (event: Event) => {
   image.dataset.maafwIconFallbackApplied = 'true'
   image.src = maafwScriptIcon
 }
-const selectedTaskName = ref('')
+const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
 const showPresetModal = ref(false)
 const taskSnapshot = ref<MaaFWTaskSnapshot>({
@@ -290,14 +293,17 @@ const taskByName = computed(() => {
   const entries = (previewData.value?.tasks || []).map(task => [task.name, task] as const)
   return new Map<string, MaaFWTaskInfo>(entries)
 })
-const isPretaskName = (taskName: string) => taskByName.value.get(taskName)?.entry === 'MXU_PRETASK'
-const partitionTaskOrder = (taskNames: string[]) => {
-  const uniqueNames = taskNames.filter(
-    (taskName, index, values) => values.indexOf(taskName) === index
-  )
+// 队列元素是任务实例 id：同一个任务可以加入多次，首份的 id 就是裸任务名，
+// 第二份起是 `<任务名>__MAS_DUP__<随机后缀>`。
+const validTaskNames = computed(() => new Set(taskByName.value.keys()))
+const resolveTaskName = (taskId: string) => resolveMaaFWTaskName(taskId, validTaskNames.value)
+const getTaskInfoById = (taskId: string) => taskByName.value.get(resolveTaskName(taskId))
+const isPretaskId = (taskId: string) => getTaskInfoById(taskId)?.entry === 'MXU_PRETASK'
+const partitionTaskOrder = (taskIds: string[]) => {
+  const uniqueIds = taskIds.filter((taskId, index, values) => values.indexOf(taskId) === index)
   return [
-    ...uniqueNames.filter(taskName => isPretaskName(taskName)),
-    ...uniqueNames.filter(taskName => !isPretaskName(taskName)),
+    ...uniqueIds.filter(taskId => isPretaskId(taskId)),
+    ...uniqueIds.filter(taskId => !isPretaskId(taskId)),
   ]
 }
 const getDefaultControllerName = () => {
@@ -353,31 +359,36 @@ const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) => {
   }
   return true
 }
-const orderedTasks = computed(() => {
-  const tasks = taskByName.value
-  return taskSnapshot.value.taskOrder
-    .map(taskName => tasks.get(taskName))
+const orderedTasks = computed<MaaFWQueuedTaskItem[]>(() => {
+  const queuedItems = taskSnapshot.value.taskOrder
+    .map(taskId => ({ id: taskId, task: getTaskInfoById(taskId) }))
     .filter(
-      (task): task is MaaFWTaskInfo => task !== undefined && isTaskActiveForCurrentContext(task)
+      (item): item is { id: string; task: MaaFWTaskInfo } =>
+        item.task !== undefined && isTaskActiveForCurrentContext(item.task)
     )
+  const copyTotals = new Map<string, number>()
+  for (const item of queuedItems) {
+    copyTotals.set(item.task.name, (copyTotals.get(item.task.name) || 0) + 1)
+  }
+  const copyCounters = new Map<string, number>()
+  return queuedItems.map(item => {
+    const copyIndex = (copyCounters.get(item.task.name) || 0) + 1
+    copyCounters.set(item.task.name, copyIndex)
+    return { ...item, copyIndex, copyTotal: copyTotals.get(item.task.name) || 1 }
+  })
 })
-const queuedTaskNames = computed({
-  get: () => orderedTasks.value.map(task => task.name),
-  set: value => {
-    const visibleTaskNames = new Set(orderedTasks.value.map(task => task.name))
-    const hiddenTaskNames = taskSnapshot.value.taskOrder.filter(
-      taskName => !visibleTaskNames.has(taskName)
-    )
-    taskSnapshot.value.taskOrder = partitionTaskOrder([...value, ...hiddenTaskNames])
-  },
-})
+// 拖拽结束后子组件回传可见部分的新顺序；被 controller/resource 过滤掉的实例
+// 不在队列里显示，要原样接回去，不能被这次重排冲掉。
+const applyQueuedTaskIds = (taskIds: string[]) => {
+  const visibleTaskIds = new Set(orderedTasks.value.map(item => item.id))
+  const hiddenTaskIds = taskSnapshot.value.taskOrder.filter(taskId => !visibleTaskIds.has(taskId))
+  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskIds, ...hiddenTaskIds])
+}
 const activeTasks = computed(() =>
   (previewData.value?.tasks || []).filter(task => isTaskActiveForCurrentContext(task))
 )
-const availableTasks = computed(() => {
-  const queuedTaskNames = new Set(taskSnapshot.value.taskOrder)
-  return activeTasks.value.filter(task => !queuedTaskNames.has(task.name))
-})
+// 已在队列里的任务仍然留在候选中：同一个任务可以再加一份，各自带独立的选项。
+const availableTasks = computed(() => activeTasks.value)
 const groupByName = computed(() => {
   const entries = (previewData.value?.groups || []).map(group => [group.name, group] as const)
   return new Map<string, MaaFWGroupInfo>(entries)
@@ -479,13 +490,13 @@ const presetTemplates = computed(() => {
     })
     .filter(template => template.taskNames.length > 0)
 })
-const selectedTask = computed(() => {
-  return (
-    orderedTasks.value.find(task => task.name === selectedTaskName.value) ||
+const selectedQueuedTask = computed(
+  () =>
+    orderedTasks.value.find(item => item.id === selectedTaskId.value) ||
     orderedTasks.value[0] ||
     null
-  )
-})
+)
+const selectedTask = computed(() => selectedQueuedTask.value?.task || null)
 watch(
   () => formData.Info.Name,
   newVal => {
@@ -507,13 +518,13 @@ watch(
 
 watch(
   orderedTasks,
-  tasks => {
-    if (tasks.length === 0) {
-      selectedTaskName.value = ''
+  items => {
+    if (items.length === 0) {
+      selectedTaskId.value = ''
       return
     }
-    if (!tasks.some(task => task.name === selectedTaskName.value)) {
-      selectedTaskName.value = tasks[0].name
+    if (!items.some(item => item.id === selectedTaskId.value)) {
+      selectedTaskId.value = items[0].id
     }
   },
   { immediate: true }
@@ -535,20 +546,18 @@ const selectedPresetLabel = computed(() => {
   return preset ? getDisplayName(preset) : '切换预设'
 })
 
-const selectTask = (taskName: string) => {
-  selectedTaskName.value = taskName
+const selectTask = (taskId: string) => {
+  selectedTaskId.value = taskId
 }
 
 const persistQueuedSnapshot = async () => {
   taskSnapshot.value.taskOrder = partitionTaskOrder(taskSnapshot.value.taskOrder)
-  const queuedTaskNames = new Set(taskSnapshot.value.taskOrder)
+  const queuedTaskIdSet = new Set(taskSnapshot.value.taskOrder)
   taskSnapshot.value.taskChecked = Object.fromEntries(
-    taskSnapshot.value.taskOrder.map(taskName => [taskName, true])
+    taskSnapshot.value.taskOrder.map(taskId => [taskId, true])
   )
   taskSnapshot.value.taskOptions = Object.fromEntries(
-    Object.entries(taskSnapshot.value.taskOptions).filter(([taskName]) =>
-      queuedTaskNames.has(taskName)
-    )
+    Object.entries(taskSnapshot.value.taskOptions).filter(([taskId]) => queuedTaskIdSet.has(taskId))
   )
   formData.Task.SelectedPreset = ''
   await savePresetAndSnapshot()
@@ -558,11 +567,13 @@ const pruneQueuedTasksForCurrentContext = async (persist = true) => {
   if (!previewData.value) return false
 
   const activeTaskNames = new Set(activeTasks.value.map(task => task.name))
-  const nextOrder = taskSnapshot.value.taskOrder.filter(taskName => activeTaskNames.has(taskName))
+  const nextOrder = taskSnapshot.value.taskOrder.filter(taskId =>
+    activeTaskNames.has(resolveTaskName(taskId))
+  )
   if (nextOrder.length === taskSnapshot.value.taskOrder.length) return false
 
   taskSnapshot.value.taskOrder = nextOrder
-  selectedTaskName.value = nextOrder[0] || ''
+  selectedTaskId.value = nextOrder[0] || ''
   if (persist) {
     await persistQueuedSnapshot()
   }
@@ -575,15 +586,16 @@ const syncControllerResourceSelection = async () => {
 }
 
 const addTaskToQueue = async (taskName: string) => {
-  if (!taskByName.value.has(taskName) || taskSnapshot.value.taskOrder.includes(taskName)) {
+  if (!taskByName.value.has(taskName)) {
     addTaskCascaderValue.value = []
     return
   }
 
-  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, taskName])
-  taskSnapshot.value.taskChecked[taskName] = true
-  ensureTaskOptionMap(taskName)
-  selectedTaskName.value = taskName
+  const taskId = buildMaaFWTaskInstanceId(taskName, new Set(taskSnapshot.value.taskOrder))
+  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, taskId])
+  taskSnapshot.value.taskChecked[taskId] = true
+  ensureTaskOptionMap(taskId)
+  selectedTaskId.value = taskId
   addTaskCascaderValue.value = []
   await persistQueuedSnapshot()
 }
@@ -600,17 +612,15 @@ const applyPresetTemplate = async (presetName: string) => {
   if (!template) return
 
   const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  const pretaskNames = taskSnapshot.value.taskOrder.filter(taskName => isPretaskName(taskName))
-  const nextTaskNames = partitionTaskOrder([...pretaskNames, ...template.taskNames])
-  const nextTaskNameSet = new Set(nextTaskNames)
-  taskSnapshot.value.taskOrder = nextTaskNames
-  taskSnapshot.value.taskChecked = Object.fromEntries(
-    nextTaskNames.map(taskName => [taskName, true])
-  )
+  const pretaskIds = taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
+  const nextTaskIds = partitionTaskOrder([...pretaskIds, ...template.taskNames])
+  const nextTaskIdSet = new Set(nextTaskIds)
+  taskSnapshot.value.taskOrder = nextTaskIds
+  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
   taskSnapshot.value.taskOptions = Object.fromEntries(
-    Object.entries(presetSnapshot.taskOptions).filter(([taskName]) => nextTaskNameSet.has(taskName))
+    Object.entries(presetSnapshot.taskOptions).filter(([taskId]) => nextTaskIdSet.has(taskId))
   )
-  selectedTaskName.value = nextTaskNames[0] || ''
+  selectedTaskId.value = nextTaskIds[0] || ''
   formData.Task.SelectedPreset = presetName
   showPresetModal.value = false
   await savePresetAndSnapshot()
@@ -621,51 +631,52 @@ const appendPresetTemplate = async (presetName: string) => {
   if (!template) return
 
   const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  const existingNames = new Set(taskSnapshot.value.taskOrder)
-  const appendedNames = template.taskNames.filter(taskName => !existingNames.has(taskName))
-  const nextTaskNames = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...appendedNames])
-  const nextTaskNameSet = new Set(nextTaskNames)
-  taskSnapshot.value.taskOrder = nextTaskNames
-  taskSnapshot.value.taskChecked = Object.fromEntries(
-    nextTaskNames.map(taskName => [taskName, true])
+  // 追加预设只补齐队列里还没有的任务；要再来一份同样的任务，用「添加任务」手动加。
+  const existingTaskNames = new Set(
+    taskSnapshot.value.taskOrder.map(taskId => resolveTaskName(taskId))
   )
+  const appendedNames = template.taskNames.filter(taskName => !existingTaskNames.has(taskName))
+  const nextTaskIds = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...appendedNames])
+  const nextTaskIdSet = new Set(nextTaskIds)
+  taskSnapshot.value.taskOrder = nextTaskIds
+  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
   taskSnapshot.value.taskOptions = Object.fromEntries(
     [
       ...Object.entries(taskSnapshot.value.taskOptions),
       ...Object.entries(presetSnapshot.taskOptions),
-    ].filter(([taskName]) => nextTaskNameSet.has(taskName))
+    ].filter(([taskId]) => nextTaskIdSet.has(taskId))
   )
-  selectedTaskName.value = appendedNames[0] || nextTaskNames[0] || ''
+  selectedTaskId.value = appendedNames[0] || nextTaskIds[0] || ''
   formData.Task.SelectedPreset = ''
   showPresetModal.value = false
   await savePresetAndSnapshot()
 }
 
 const deleteSelectedTask = async () => {
-  const taskName = selectedTask.value?.name
-  if (!taskName) return
+  const taskId = selectedQueuedTask.value?.id
+  if (!taskId) return
 
-  const nextOrder = taskSnapshot.value.taskOrder.filter(item => item !== taskName)
+  const nextOrder = taskSnapshot.value.taskOrder.filter(item => item !== taskId)
   taskSnapshot.value.taskOrder = nextOrder
-  delete taskSnapshot.value.taskChecked[taskName]
-  delete taskSnapshot.value.taskOptions[taskName]
-  selectedTaskName.value = nextOrder[0] || ''
+  delete taskSnapshot.value.taskChecked[taskId]
+  delete taskSnapshot.value.taskOptions[taskId]
+  selectedTaskId.value = nextOrder[0] || ''
   await persistQueuedSnapshot()
 }
 
-const ensureTaskOptionMap = (taskName: string) => {
-  const existing = taskSnapshot.value.taskOptions[taskName]
+const ensureTaskOptionMap = (taskId: string) => {
+  const existing = taskSnapshot.value.taskOptions[taskId]
   if (existing) return existing
 
-  taskSnapshot.value.taskOptions[taskName] = {}
-  return taskSnapshot.value.taskOptions[taskName]
+  taskSnapshot.value.taskOptions[taskId] = {}
+  return taskSnapshot.value.taskOptions[taskId]
 }
 
 const handleTaskOptionUpdate = async (
-  taskName: string,
+  taskId: string,
   payload: { optionName: string; value: MaaFWTaskOptionValue }
 ) => {
-  const options = ensureTaskOptionMap(taskName)
+  const options = ensureTaskOptionMap(taskId)
   options[payload.optionName] = payload.value
   formData.Task.SelectedPreset = ''
   await savePresetAndSnapshot()
@@ -689,20 +700,20 @@ const normalizeTaskSnapshot = (
 ): MaaFWTaskSnapshot => {
   const parsed = parseTaskSnapshot(raw) as Partial<MaaFWTaskSnapshot>
   const tasks = preview?.tasks || []
-  const taskNames = tasks.map(task => task.name)
+  const knownTaskNames = new Set(tasks.map(task => task.name))
   const order = Array.isArray(parsed.taskOrder)
-    ? parsed.taskOrder.filter(taskName => taskNames.includes(taskName))
+    ? parsed.taskOrder.filter(taskId =>
+        knownTaskNames.has(resolveMaaFWTaskName(taskId, knownTaskNames))
+      )
     : []
   const taskChecked: Record<string, boolean> = Object.fromEntries(
-    order
-      .filter(taskName => parsed.taskChecked?.[taskName] !== false)
-      .map(taskName => [taskName, true])
+    order.filter(taskId => parsed.taskChecked?.[taskId] !== false).map(taskId => [taskId, true])
   )
-  const queuedOrder = order.filter(taskName => taskChecked[taskName])
-  const queuedTaskNames = new Set(queuedOrder)
+  const queuedOrder = order.filter(taskId => taskChecked[taskId])
+  const queuedTaskIds = new Set(queuedOrder)
 
   const taskOptions = Object.fromEntries(
-    Object.entries(parsed.taskOptions || {}).filter(([taskName]) => queuedTaskNames.has(taskName))
+    Object.entries(parsed.taskOptions || {}).filter(([taskId]) => queuedTaskIds.has(taskId))
   )
 
   return {
@@ -884,15 +895,15 @@ const handlePresetMenuClick = async ({ key }: { key: string | number }) => {
   await applyPresetTemplate(String(key))
 }
 
-const moveTask = async (taskName: string, direction: -1 | 1) => {
-  const visibleTaskNames = orderedTasks.value.map(task => task.name)
-  const visibleIndex = visibleTaskNames.indexOf(taskName)
-  const targetTaskName = visibleTaskNames[visibleIndex + direction]
-  if (!targetTaskName) return
-  if (isPretaskName(taskName) !== isPretaskName(targetTaskName)) return
+const moveTask = async (taskId: string, direction: -1 | 1) => {
+  const visibleTaskIds = orderedTasks.value.map(item => item.id)
+  const visibleIndex = visibleTaskIds.indexOf(taskId)
+  const targetTaskId = visibleTaskIds[visibleIndex + direction]
+  if (!targetTaskId) return
+  if (isPretaskId(taskId) !== isPretaskId(targetTaskId)) return
 
-  const index = taskSnapshot.value.taskOrder.indexOf(taskName)
-  const nextIndex = taskSnapshot.value.taskOrder.indexOf(targetTaskName)
+  const index = taskSnapshot.value.taskOrder.indexOf(taskId)
+  const nextIndex = taskSnapshot.value.taskOrder.indexOf(targetTaskId)
   if (index < 0 || nextIndex < 0) return
   if (nextIndex < 0 || nextIndex >= taskSnapshot.value.taskOrder.length) return
 

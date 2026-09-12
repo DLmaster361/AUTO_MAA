@@ -80,6 +80,15 @@ jobs:
         with:
           python-version: '3.12'
 
+      # 分支名把目标分支也编进去：dev 与 release/* 在同一个 tag 之后各自准备同一个版本号时，
+      # 否则会共用 chore/release-vX 这一个 head，后跑的那次会改写先开的 PR。
+      - name: 计算发版分支名
+        id: slug
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "base_slug=${REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+
       - name: 编译碎片并推进版本号
         id: release
         env:
@@ -104,7 +113,7 @@ jobs:
         with:
           token: ${{ secrets.RELEASE_PR_TOKEN || github.token }}
           base: ${{ github.ref_name }}
-          branch: chore/release-${{ steps.release.outputs.version }}
+          branch: chore/release-${{ steps.slug.outputs.base_slug }}-${{ steps.release.outputs.version }}
           delete-branch: true
           commit-message: 'chore(release): ${{ steps.release.outputs.version }}'
           committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'

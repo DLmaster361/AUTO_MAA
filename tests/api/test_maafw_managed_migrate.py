@@ -1,13 +1,13 @@
 """自选目录 → 托管的迁移回归。
 
-迁移最容易出的两种错都不会报错，只会让用户在别处发现东西没了：
+迁移最容易出的错不会报错，只会让用户在别处发现东西没了：用「新建一个托管脚本
+再删旧的」代替原地转换，脚本 ID 变了，队列成员、计划表、通知绑定和 ``data/<uid>/``
+下的用户数据全部对不上。
 
-- 用「新建一个托管脚本再删旧的」代替原地转换：脚本 ID 变了，队列成员、计划表、
-  通知绑定和 ``data/<uid>/`` 下的用户数据全部对不上。
-- 删原目录删早了或删错了：导入还没成功就把源删了，或者把驱动器根、AUTO-MAS
-  自己的工作目录当成"原目录"删掉。
+另一条是硬规矩：**迁移永远不碰原目录。** 投影是白名单式的，万一漏了运行时才需要
+但 interface.json 没声明的文件，原目录是唯一的退路；删不删由用户在外面自己做。
 
-所以这里钉的是「uid 与用户数据不变」和「删除的时机与范围」。
+所以这里钉的是「uid 与用户数据不变」和「原目录一个字节不动」。
 """
 
 import shutil
@@ -99,7 +99,7 @@ class MigrateRouteTest(unittest.IsolatedAsyncioTestCase):
         await config.set("Info", "Path", str(self.source) if path is None else path)
         return config
 
-    def _patched(self, script_config, *, import_error=None, rmtree=None):
+    def _patched(self, script_config, *, import_error=None):
         store = MagicMock()
         if import_error is not None:
             store.import_project.side_effect = import_error
@@ -112,7 +112,6 @@ class MigrateRouteTest(unittest.IsolatedAsyncioTestCase):
             patch.object(scripts_api, "_managed_store", return_value=store),
             patch.object(scripts_api.Config, "convert_script", AsyncMock()),
             patch.object(scripts_api.Config, "update_script", AsyncMock()),
-            patch.object(scripts_api.shutil, "rmtree", rmtree or MagicMock()),
         )
 
     async def test_already_managed_script_is_refused(self) -> None:
@@ -143,7 +142,7 @@ class MigrateRouteTest(unittest.IsolatedAsyncioTestCase):
         patches = self._patched(
             await self._plain_config(), import_error=RuntimeError("依赖不合规")
         )
-        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+        with patches[0], patches[1], patches[2], patches[3]:
             result = await scripts_api.migrate_maafw_script_to_managed(
                 MaaFWManagedMigrateIn(scriptId="s1")
             )
@@ -151,103 +150,22 @@ class MigrateRouteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.code, 400)
         self.assertIn("依赖不合规", result.message)
 
-    async def test_source_is_kept_unless_the_user_asked(self) -> None:
-        rmtree = MagicMock()
-        patches = self._patched(await self._plain_config(), rmtree=rmtree)
-        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+    async def test_source_directory_is_never_touched(self) -> None:
+        # 投影万一漏了文件，原目录是唯一退路；删不删由用户在资源管理器里自己做。
+        marker = self.source / "keep-me.txt"
+        marker.write_text("still here", encoding="utf-8")
+        patches = self._patched(await self._plain_config())
+        with patches[0], patches[1], patches[2], patches[3]:
             result = await scripts_api.migrate_maafw_script_to_managed(
                 MaaFWManagedMigrateIn(scriptId="s1")
             )
 
         self.assertEqual(result.code, 200)
-        self.assertFalse(result.data.sourceDeleted)
-        rmtree.assert_not_called()
-
-    async def test_source_is_deleted_only_after_a_successful_conversion(self) -> None:
-        rmtree = MagicMock()
-        patches = self._patched(await self._plain_config(), rmtree=rmtree)
-        with (
-            patches[0],
-            patches[1],
-            patches[2],
-            patches[3],
-            patches[4],
-            patch.object(
-                scripts_api.FolderValidator, "validate", lambda _self, _v: True
-            ),
-        ):
-            result = await scripts_api.migrate_maafw_script_to_managed(
-                MaaFWManagedMigrateIn(scriptId="s1", deleteSource=True)
-            )
-
-        self.assertTrue(result.data.sourceDeleted)
-        rmtree.assert_called_once()
-
-    async def test_conversion_failure_leaves_the_source_alone(self) -> None:
-        rmtree = MagicMock()
-        patches = self._patched(await self._plain_config(), rmtree=rmtree)
-        with (
-            patches[0],
-            patches[1],
-            patches[4],
-            patch.object(
-                scripts_api.Config,
-                "convert_script",
-                AsyncMock(side_effect=RuntimeError("配置已锁定")),
-            ),
-        ):
-            result = await scripts_api.migrate_maafw_script_to_managed(
-                MaaFWManagedMigrateIn(scriptId="s1", deleteSource=True)
-            )
-
-        self.assertEqual(result.code, 500)
-        rmtree.assert_not_called()
-
-    async def test_forbidden_source_is_reported_not_deleted(self) -> None:
-        rmtree = MagicMock()
-        patches = self._patched(await self._plain_config(), rmtree=rmtree)
-        with (
-            patches[0],
-            patches[1],
-            patches[2],
-            patches[3],
-            patches[4],
-            patch.object(
-                scripts_api.FolderValidator, "validate", lambda _self, _v: False
-            ),
-        ):
-            result = await scripts_api.migrate_maafw_script_to_managed(
-                MaaFWManagedMigrateIn(scriptId="s1", deleteSource=True)
-            )
-
-        self.assertEqual(result.code, 200)
-        self.assertFalse(result.data.sourceDeleted)
-        self.assertIn("允许删除的范围", result.data.sourceDeleteError)
-        rmtree.assert_not_called()
-
-    async def test_delete_failure_does_not_undo_a_finished_migration(self) -> None:
-        # 项目已经在 Store 里、脚本也已经转过去了，把这一步报成失败会让用户以为
-        # 迁移没成，再点一次就又导入一个同内容的新版本。
-        rmtree = MagicMock(side_effect=PermissionError("文件占用"))
-        patches = self._patched(await self._plain_config(), rmtree=rmtree)
-        with (
-            patches[0],
-            patches[1],
-            patches[2],
-            patches[3],
-            patches[4],
-            patch.object(
-                scripts_api.FolderValidator, "validate", lambda _self, _v: True
-            ),
-        ):
-            result = await scripts_api.migrate_maafw_script_to_managed(
-                MaaFWManagedMigrateIn(scriptId="s1", deleteSource=True)
-            )
-
-        self.assertEqual(result.code, 200)
-        self.assertFalse(result.data.sourceDeleted)
-        self.assertIn("文件占用", result.data.sourceDeleteError)
-        self.assertIn("原目录未删除", result.message)
+        self.assertTrue(marker.is_file())
+        self.assertEqual(result.data.sourcePath, str(self.source))
+        # 用户得知道原目录在哪、什么时候可以删。
+        self.assertIn(str(self.source), result.message)
+        self.assertIn("自行删除", result.message)
 
     async def test_stale_project_path_is_cleared(self) -> None:
         # 迁移后项目不在原处了；留着会把一个可能刚被删掉的目录当项目路径显示。
@@ -257,7 +175,6 @@ class MigrateRouteTest(unittest.IsolatedAsyncioTestCase):
             patches[0],
             patches[1],
             patches[2],
-            patches[4],
             patch.object(scripts_api.Config, "update_script", update),
         ):
             await scripts_api.migrate_maafw_script_to_managed(

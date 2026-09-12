@@ -22,7 +22,6 @@
 
 
 import asyncio
-import shutil
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -37,7 +36,6 @@ from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import MaaFWManagedConfig as RuntimeMaaFWManagedConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
-from app.models.ConfigBase import FolderValidator
 from app.models.schema import *
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
@@ -1128,14 +1126,14 @@ async def import_managed_maafw_project(
 async def migrate_maafw_script_to_managed(
     payload: MaaFWManagedMigrateIn = Body(...),
 ) -> MaaFWManagedMigrateOut:
-    """导入现有项目目录、原地把脚本换成托管类型，可选地删掉原目录。
+    """导入现有项目目录、原地把脚本换成托管类型。**原目录一个字节都不动。**
 
     转换是**原地**的：脚本 ID 不变，队列成员、计划表、通知绑定和 ``data/<uid>/``
     下的用户数据全都留着。新建一个托管脚本再删旧的会把这些一并丢掉。
 
-    删原目录是不可撤销的，只在 ``deleteSource`` 为真时做，并且一定排在导入与
-    转换都成功之后；删除失败不回滚迁移——项目已经在 Store 里了，把它撤回去反而
-    更糟，如实报告让用户自己删。
+    不提供"顺便删掉原目录"：投影是白名单式的，万一漏了某个项目运行时才需要、但
+    interface.json 没声明的文件，原目录是唯一的退路。删不删由用户在资源管理器里
+    自己做，且应当等托管版本证明能跑之后再做——返回值里把原目录路径原样告诉他。
     """
 
     try:
@@ -1200,39 +1198,22 @@ async def migrate_maafw_script_to_managed(
             message=f"项目已入库但脚本转换失败: {exc}",
         )
 
-    source_deleted = False
-    source_delete_error: str | None = None
-    if payload.deleteSource:
-        # Info.Path 本来就过了 FolderValidator，这里再验一次是防手改配置：
-        # 它拦掉驱动器根、系统目录和 AUTO-MAS 自己的工作目录。
-        if not FolderValidator().validate(str(source_path)):
-            source_delete_error = "原目录不在允许删除的范围内，请手动确认后自行删除"
-        else:
-            try:
-                await asyncio.to_thread(shutil.rmtree, source_path)
-                source_deleted = True
-            except Exception as exc:
-                source_delete_error = f"{type(exc).__name__}: {exc}"
-
     data = MaaFWManagedMigrateData(
         projectId=record["projectId"],
         version=record["version"],
         storeId=record["storeId"],
         dataPath=str(record.get("dataPath") or ""),
         sourcePath=str(source_path),
-        sourceDeleted=source_deleted,
-        sourceDeleteError=source_delete_error,
         projection=_managed_projection(manifest),
     )
-    message = (
-        f"已转为托管：{data.projectId}@{data.version}，"
-        f"脱壳省下 {data.projection.savedPercent:.2f}%"
+    return MaaFWManagedMigrateOut(
+        message=(
+            f"已转为托管：{data.projectId}@{data.version}，"
+            f"脱壳省下 {data.projection.savedPercent:.2f}%；"
+            f"原目录保留在 {data.sourcePath}，确认托管版本能正常运行后可自行删除"
+        ),
+        data=data,
     )
-    if source_delete_error:
-        message = f"{message}；原目录未删除：{source_delete_error}"
-    elif source_deleted:
-        message = f"{message}，原目录已删除"
-    return MaaFWManagedMigrateOut(message=message, data=data)
 
 
 @router.post(

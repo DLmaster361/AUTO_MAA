@@ -21,17 +21,9 @@ export type MaaFWManagedMigrateData = {
      */
     dataPath: string;
     /**
-     * 迁移前的原项目目录
+     * 迁移前的原项目目录；AUTO-MAS 不会动它，由用户自行决定是否删除
      */
     sourcePath: string;
-    /**
-     * 原目录是否已删除
-     */
-    sourceDeleted?: boolean;
-    /**
-     * 删除原目录失败的原因；迁移本身已经完成
-     */
-    sourceDeleteError?: (string | null);
     /**
      * 脱壳报告
      */

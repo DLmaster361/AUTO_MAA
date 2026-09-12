@@ -768,7 +768,7 @@ const refreshScript = async () => {
       if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
       if (hsrConfig.Run.LowPerformanceMode === undefined) hsrConfig.Run.LowPerformanceMode = false
     }
-    // 生成的 HSRConfig 类型尚未包含 Update 组，这里按后端 schema 手动取；
+    // 生成类型里 Update 的每个字段都是 optional | null，这里归一成非空的本地形态；
     // 不在选项集合里的值（旧配置或损坏）回退到默认，避免下拉框显示空白。
     const update = (cfg as { Update?: Partial<Record<keyof HSRUpdateConfig, unknown>> | null })
       .Update

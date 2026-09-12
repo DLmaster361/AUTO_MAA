@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from app.task.HSR.tools.update import apply as apply_module
 from app.task.HSR.tools.update.apply import (
     HSRUpdateApplyError,
     apply_package,
@@ -20,7 +24,7 @@ from app.task.HSR.tools.update.apply import (
     journal_path,
     rollback,
 )
-from app.task.HSR.tools.update.discover import is_newer
+from app.task.HSR.tools.update.discover import HSRUpdateError, is_newer
 from app.task.HSR.tools.update.engines import get_spec, select_asset_name
 
 
@@ -238,6 +242,44 @@ def test_pending_journal_is_rolled_back_before_a_new_apply(
     assert _snapshot(install) == before
 
 
+@pytest.mark.parametrize(
+    "bad_journal",
+    [
+        b"{ this is not json",
+        json.dumps({"schema": 999, "entries": []}).encode(),
+    ],
+    ids=["corrupt-json", "unknown-schema"],
+)
+def test_unreadable_journal_blocks_apply_instead_of_wiping_backup(
+    install: Path, tmp_path: Path, bad_journal: bytes
+) -> None:
+    """rollback() 对读不懂的 journal 是返回 False 而不是抛。
+
+    apply_package 若不查这个返回值，紧接着的 _reset_dir(backup) 就会把上一轮
+    崩溃留下的唯一备份清掉。这里备份里的文件必须原样留着、journal 也留着，
+    等人来看。
+    """
+
+    work = install / ".automas_update"
+    backup = work / "backup"
+    backup.mkdir(parents=True)
+    (backup / "SRA-cli.exe").write_bytes(b"old-binary")
+    journal_path(install).write_bytes(bad_journal)
+
+    with pytest.raises(HSRUpdateError, match="无法识别的未完成更新记录"):
+        apply_package(
+            tmp_path / "irrelevant.zip",
+            install,
+            engine="SRA",
+            from_version="v2.19.0",
+            to_version="v2.21.0",
+            seven_zip=None,
+        )
+
+    assert (backup / "SRA-cli.exe").read_bytes() == b"old-binary"
+    assert has_pending_journal(install)
+
+
 def test_single_root_folder_is_stripped(tmp_path: Path, install: Path) -> None:
     """M7A 的包是单根 update/ 或 March7thAssistant_full/，必须脱壳。"""
 
@@ -369,3 +411,177 @@ def test_station_url_only_for_sra() -> None:
     assert get_spec("SRA").station_url("v2.21.0") == (
         "https://download.auto-mas.top/d/StarRailAssistant/StarRailAssistant-v2.21.0.zip"
     )
+
+
+# ── 7z 解包前检查 ─────────────────────────────────────────────────────
+#
+# 夹具照抄 7-Zip 23.01 `l -slt` 的真实输出：档案头 → "----------" → 每条目一块。
+# 符号链接条目多一行 "Symbolic Link = <目标>"（tar 来源的条目没有 Attributes 行）。
+
+_SLT_HEADER = """\
+
+7-Zip (a) 23.01 (x64) : Copyright (c) 1999-2023 Igor Pavlov : 2023-06-20
+
+Scanning the drive for archives:
+1 file, 177714330 bytes (170 MiB)
+
+Listing archive: update.7z
+
+--
+Path = update.7z
+Type = 7z
+Physical Size = 177714330
+Headers Size = 33279
+Method = LZMA2:27 LZMA:20 BCJ2
+Solid = +
+Blocks = 2
+
+----------
+"""
+
+
+def _slt_entry(path: str, size: int = 0, *, symlink: str = "", attrs: str = "A") -> str:
+    lines = [
+        f"Path = {path}",
+        f"Size = {size}",
+        f"Packed Size = {size}",
+        "Modified = 2026-09-06 18:10:44.3918121",
+        f"Attributes = {attrs}",
+    ]
+    if symlink:
+        lines.append(f"Symbolic Link = {symlink}")
+    lines += ["CRC = ", "Encrypted = -", "Method = ", "Block = "]
+    return "\n".join(lines) + "\n"
+
+
+def _fake_7za(listing: str) -> mock.MagicMock:
+    """让 subprocess.run 对 `l -slt` 返回给定列表；其他调用一律不该发生。"""
+
+    def run(args, **_kwargs):
+        assert args[1] == "l", f"解包前检查阶段不应执行 {args[1]}"
+        return subprocess.CompletedProcess(args, 0, stdout=listing, stderr="")
+
+    return mock.MagicMock(side_effect=run)
+
+
+def test_inspect_7z_accepts_real_shaped_listing(tmp_path: Path) -> None:
+    listing = _SLT_HEADER + "\n".join(
+        [
+            _slt_entry("update", attrs="D"),
+            _slt_entry("update\\assets", attrs="D"),
+            _slt_entry("update\\March7th Assistant.exe", 15_981_100),
+            _slt_entry("update\\assets\\config\\version.txt", 12),
+        ]
+    )
+    with mock.patch.object(apply_module.subprocess, "run", _fake_7za(listing)):
+        apply_module._inspect_7z(tmp_path / "update.7z", tmp_path / "7za.exe")
+
+
+def test_inspect_7z_rejects_symlink_entry(tmp_path: Path) -> None:
+    """正式版后端提权跑，7za 会真的把符号链接建出来，必须在解包前拒掉。"""
+
+    listing = _SLT_HEADER + "\n".join(
+        [
+            _slt_entry("real.txt", 5),
+            _slt_entry("link.txt", 8, symlink="real.txt"),
+        ]
+    )
+    with (
+        mock.patch.object(apply_module.subprocess, "run", _fake_7za(listing)),
+        pytest.raises(HSRUpdateError, match="符号链接"),
+    ):
+        apply_module._inspect_7z(tmp_path / "p.7z", tmp_path / "7za.exe")
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "..\\..\\outside.txt",
+        "a/../../b",
+        "C:\\Windows\\x",
+        "/etc/passwd",
+        "\\\\srv\\share",
+    ],
+)
+def test_inspect_7z_rejects_escaping_path(tmp_path: Path, bad_path: str) -> None:
+    listing = _SLT_HEADER + _slt_entry(bad_path, 1)
+    with (
+        mock.patch.object(apply_module.subprocess, "run", _fake_7za(listing)),
+        pytest.raises(HSRUpdateError, match="越界"),
+    ):
+        apply_module._inspect_7z(tmp_path / "p.7z", tmp_path / "7za.exe")
+
+
+def test_inspect_7z_rejects_too_many_entries(tmp_path: Path) -> None:
+    listing = _SLT_HEADER + "\n".join(
+        _slt_entry(f"f{i}", 1) for i in range(apply_module._MAX_ENTRIES + 1)
+    )
+    with (
+        mock.patch.object(apply_module.subprocess, "run", _fake_7za(listing)),
+        pytest.raises(HSRUpdateError, match="条目过多"),
+    ):
+        apply_module._inspect_7z(tmp_path / "p.7z", tmp_path / "7za.exe")
+
+
+def test_inspect_7z_rejects_zip_bomb_sized_listing(tmp_path: Path) -> None:
+    listing = _SLT_HEADER + _slt_entry("boom.bin", apply_module._MAX_EXPANDED_BYTES + 1)
+    with (
+        mock.patch.object(apply_module.subprocess, "run", _fake_7za(listing)),
+        pytest.raises(HSRUpdateError, match="展开体积"),
+    ):
+        apply_module._inspect_7z(tmp_path / "p.7z", tmp_path / "7za.exe")
+
+
+def test_inspect_7z_rejects_unreadable_archive(tmp_path: Path) -> None:
+    def run(args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args, 2, stdout="", stderr="Can not open the file as archive"
+        )
+
+    with (
+        mock.patch.object(
+            apply_module.subprocess, "run", mock.MagicMock(side_effect=run)
+        ),
+        pytest.raises(HSRUpdateError, match="无法读取"),
+    ):
+        apply_module._inspect_7z(tmp_path / "p.7z", tmp_path / "7za.exe")
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("update\\assets\\x.png", False),
+        ("a/b/c", False),
+        ("..\\x", True),
+        ("a/../x", True),
+        ("a/..", True),
+        ("C:\\x", True),
+        ("/x", True),
+        ("\\\\srv\\x", True),
+        ("..hidden", False),
+        ("a..b/c", False),
+    ],
+)
+def test_escapes_stage(name: str, expected: bool) -> None:
+    assert apply_module._escapes_stage(name) is expected
+
+
+def test_reject_symlinks_passes_on_clean_tree(tmp_path: Path) -> None:
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "f.txt").write_text("x")
+    apply_module._reject_symlinks(tmp_path)
+
+
+def test_reject_symlinks_catches_one(tmp_path: Path) -> None:
+    """解包后的兜底。造不出符号链接（Windows 未提权）就跳过。"""
+
+    target = tmp_path / "real.txt"
+    target.write_text("x")
+    link = tmp_path / "nested" / "link.txt"
+    link.parent.mkdir()
+    try:
+        os.symlink(target, link)
+    except OSError as exc:
+        pytest.skip(f"当前会话无法创建符号链接：{exc}")
+    with pytest.raises(HSRUpdateError, match="符号链接"):
+        apply_module._reject_symlinks(tmp_path)

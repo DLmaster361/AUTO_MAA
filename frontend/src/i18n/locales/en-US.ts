@@ -1163,7 +1163,7 @@ export default {
     hsrUpdateSectionHint:
       'March7th Assistant and SRA are third-party tools you installed yourself, so MAS never rewrites their folders unless you turn this on. Auto update only runs after the whole run has finished and never makes the current run wait for a download; after enabling it, a full run has to complete before the first update happens. Use the manual buttons below to update right away.',
     hsrUpdateModeTip:
-      'Off: never update automatically; After run: check and update once every user in this run has finished. A failed update never affects the run result',
+      'Off: never update automatically; After run: check and update once every user in this run has finished normally. No update happens if the run was cancelled, failed, or did not pass the config check. A failed update is rolled back and skipped without affecting the run result; only if the rollback itself fails is the run marked abnormal',
     hsrUpdateModeOff: 'Off',
     hsrUpdateModeAfterRun: 'After run',
     hsrUpdateChannel: 'Update channel',

@@ -159,6 +159,22 @@ class MultipleOptionsValidator(ValidatorBase):
         return value if self.validate(value) else []
 
 
+class StringListValidator(ValidatorBase):
+    """仅允许字符串成员的动态多选列表。
+
+    MaaEnd 的目标武器选项来自安装目录，无法在配置模型初始化时写死，
+    因此不能使用需要静态选项表的 ``MultipleOptionsValidator``。
+    """
+
+    def validate(self, value):
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+    def correct(self, value):
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
+
+
 class UUIDValidator(ValidatorBase):
     """UUID验证器"""
 

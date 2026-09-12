@@ -28,6 +28,14 @@ export type MaaEndUserConfig_Task = {
      */
     AutoEssenceSpecifiedLocation?: (string | null);
     /**
+     * 基质刷取模式
+     */
+    AutoEssenceMenu?: ('Random' | 'Location' | 'Target' | null);
+    /**
+     * 基质目标武器 ID 列表
+     */
+    AutoEssenceTargetWeapons?: (Array<string> | null);
+    /**
      * 理智任务
      */
     IfSanity?: (boolean | null);

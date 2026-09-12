@@ -49,8 +49,8 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
     update_maafw_project_if_needed,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
-    detect_maafw_project_shell_hint,
     _public_package_source,
+    detect_maafw_project_shell_hint,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
@@ -554,6 +554,17 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
             essenceLocations=[
                 ComboBoxItem(**item) for item in data["essenceLocations"]
             ],
+            essenceMenus=[
+                ComboBoxItem(**item) for item in data.get("essenceMenus", [])
+            ],
+            essenceTargetWeaponGroups=[
+                MaaEndEssenceTargetGroup(
+                    value=item["value"],
+                    label=item["label"],
+                    options=[ComboBoxItem(**option) for option in item["options"]],
+                )
+                for item in data.get("essenceTargetWeaponGroups", [])
+            ],
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -566,6 +577,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
             controllers=[],
             controllerTypes={},
             essenceLocations=[],
+            essenceMenus=[],
+            essenceTargetWeaponGroups=[],
         )
 
 

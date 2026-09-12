@@ -74,14 +74,6 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: SCRIPT_LOGOS.M9A,
   },
   {
-    value: 'MaaFWManaged',
-    titleKey: 'scripts.type.MaaFWManaged',
-    descriptionKey: 'scripts.create.typeDesc.MaaFWManaged',
-    keywords: ['maafw', 'mfw', 'managed', '托管', '脱壳', '精简'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.MaaFWManaged,
-  },
-  {
     value: 'MaaFW',
     titleKey: 'scripts.type.MaaFW',
     descriptionKey: 'scripts.create.typeDesc.MaaFW',

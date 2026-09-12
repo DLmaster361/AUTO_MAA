@@ -119,22 +119,6 @@
           />
         </div>
 
-        <div v-if="!isManagedScript && !isWizard">
-          <MigrateToManagedSection
-            :script-id="scriptId"
-            :source-path="maafwConfig.Info.Path"
-            @migrated="reloadAfterManagedChange"
-          />
-        </div>
-
-        <div v-if="isManagedScript" v-show="!isWizard || currentStep === 0">
-          <ManagedProjectSection
-            :script-id="scriptId"
-            :managed="managedSection"
-            @imported="reloadAfterManagedChange"
-          />
-        </div>
-
         <div v-show="!isWizard || currentStep === 2">
           <UpdateSettingsSection
             :maafw-config="maafwConfig"
@@ -215,8 +199,6 @@ import type {
 } from '@/types/script'
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
-import ManagedProjectSection from './MaaFWScriptEdit/ManagedProjectSection.vue'
-import MigrateToManagedSection from './MaaFWScriptEdit/MigrateToManagedSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 
@@ -271,12 +253,6 @@ const weeklyOnceTasks = ref<string[]>([])
 const monthlyOnceTasks = ref<string[]>([])
 
 const maafwConfig = reactive<MaaFWScriptConfig>(getDefaultMaaFWScriptConfig())
-
-// 托管形态与自选目录形态共用这个编辑页；托管专属区块只在前者出现。
-const isManagedScript = ref(false)
-const managedSection = computed(
-  () => (maafwConfig as unknown as Record<string, Record<string, unknown>>).Managed ?? null
-)
 
 const formData = reactive<{ type: ScriptType; name: string; path: string }>({
   type: 'MaaFW',
@@ -613,14 +589,8 @@ const runUpdateApply = async () => {
   updateError.value = ''
   try {
     updateResult.value = await applyMaaFWUpdate(scriptId)
-    if (updateResult.value.updated) {
-      if (isManagedScript.value) {
-        // 托管形态换的是 Store 的当前版本，后端已经改过 Managed 段；只刷预览
-        // 会拿旧 checkout 去读，界面停在旧版本号和旧脱壳报告上。
-        await reloadAfterManagedChange()
-      } else if (maafwConfig.Info.Path) {
-        await runPreview()
-      }
+    if (updateResult.value.updated && maafwConfig.Info.Path) {
+      await runPreview()
     }
   } catch (error) {
     updateError.value = error instanceof Error ? error.message : String(error)
@@ -633,18 +603,6 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-// 导入或切换版本之后，Info.Path 与 Managed 段都被后端改过了，重新拉一次配置，
-// 否则界面还停在旧 checkout 上。
-const reloadAfterManagedChange = async () => {
-  const detail = await getScript(scriptId)
-  if (!detail) return
-  applyScriptConfig(detail.config as Partial<MaaFWScriptConfig>)
-  isManagedScript.value = detail.type === 'MaaFWManaged'
-  if (maafwConfig.Info.Path) {
-    await runPreview()
-  }
-}
-
 onMounted(async () => {
   pageLoading.value = true
   try {
@@ -655,7 +613,6 @@ onMounted(async () => {
       return
     }
     applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
-    isManagedScript.value = scriptDetail.type === 'MaaFWManaged'
     if (!maafwConfig.Info.Name) {
       maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
       formData.name = maafwConfig.Info.Name

@@ -1579,8 +1579,8 @@ export default {
     baahRunTimeLimitHint: '单次运行的最长等待时间（分钟）；超时按运行失败处理',
     baahConfigName: 'BAAH 配置文件名',
     baahConfigNameHint:
-      '填写 BAAH 界面里已有的配置文件名（例如：国服2），本软件会用它启动 BAAH.exe 国服2.json',
-    baahConfigNamePlaceholder: '例如：国服2',
+      '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',
+    baahConfigNamePlaceholder: '例如：example',
     baahUserTag: '用户标签',
     baahUserTagHint: '由本软件按运行情况自动生成，仅供查看',
     baahLastProxyDate: '上次代理日期',

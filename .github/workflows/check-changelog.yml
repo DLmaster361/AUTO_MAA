@@ -82,6 +82,19 @@ jobs:
           echo "flags=$flags" >> "$GITHUB_OUTPUT"
           echo "PR 类型：$kind，附加参数：${flags:-无}"
 
+      # 发版 PR 会往 CHANGELOG.md 里写整段新条目。默认分支上旧的署名机器人还在的话，
+      # 合并后它会给每一条再签一次 PR 作者，所以先确认它已经删掉。
+      - name: 发版 PR 前确认旧署名机器人已从默认分支删除
+        if: steps.kind.outputs.kind == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/append-version-contributor.yml?ref=${default_branch}" >/dev/null 2>&1; then
+            echo "::error::默认分支 ${default_branch} 上仍有 append-version-contributor.yml，合并这个发版 PR 会让它把每一条都误签成 PR 作者。请先从 ${default_branch} 删除它。"
+            exit 1
+          fi
+
       - name: 检查更新日志
         env:
           BASE_REF: ${{ github.base_ref }}

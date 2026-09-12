@@ -1134,6 +1134,12 @@ def compile_release(
     pending: Dict[str, List[str]] = {}
     first = next(iter(sections))
     if dates[first] == UNRELEASED:
+        if first != target:
+            print(
+                f"提示：顶部手工预留的 {first} 未发布段已并入 {target}，"
+                "版本号以 tag 推算的结果为准",
+                file=sys.stderr,
+            )
         merge_entries(pending, sections.pop(first))
         dates.pop(first)
 

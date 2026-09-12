@@ -1563,6 +1563,8 @@ export default {
     baahManageConfig: '托管关键配置项',
     baahManageConfigHint:
       '开启后，本软件会在运行前自动写入 BAAH 运行所需的设置（运行结束自动退出、打开日志落盘），运行结束后恢复你的原值',
+    baahAutoStartNotice:
+      '请在 BAAH 中关闭自动启动模拟器：把它的「模拟器路径」留空，模拟器交给本软件启动。开启上面的「托管关键配置项」时本软件会自动置空该项；若把它设为「否」，请自己在 BAAH 的模拟器设置里清空，否则两边会各拉起一台模拟器互相抢占',
     baahPushLogEnabled: '推送任务节点详情',
     baahPushLogEnabledHint:
       '开启后，本次运行的 BAAH 任务节点（执行成功/跳过/失败）会随任务报告一起推送；关闭后不采集任务节点，任务日志记录与结果判定不受影响',

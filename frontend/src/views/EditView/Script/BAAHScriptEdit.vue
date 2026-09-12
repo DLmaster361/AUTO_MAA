@@ -140,6 +140,14 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <!-- 关闭托管时 BAAH 会用它自己的设置启动模拟器，两边抢同一台设备 -->
+          <a-alert
+            type="warning"
+            show-icon
+            :message="t('edit.baahAutoStartNotice')"
+            style="margin-top: 16px"
+          />
         </div>
 
         <!-- 模拟器管理 -->

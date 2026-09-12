@@ -1652,6 +1652,8 @@ export default {
     baahManageConfig: 'Manage key settings',
     baahManageConfigHint:
       'When on, this app writes the settings BAAH needs before the run (exit when finished, write logs to disk) and restores your original values afterwards',
+    baahAutoStartNotice:
+      'Turn off BAAH auto-starting the emulator: leave its "emulator path" empty and let this app start the emulator. With "Manage key settings" on this app blanks that field for you; if you set it to No, clear it yourself in BAAH, otherwise both sides will launch an emulator and fight over it',
     baahPushLogEnabled: 'Push task node details',
     baahPushLogEnabledHint:
       'When on, the BAAH task nodes of this run (finished / skipped / failed) are included in the task report; when off no task nodes are collected, while the run log and the result decision stay unchanged',

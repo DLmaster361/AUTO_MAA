@@ -21,8 +21,6 @@ import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApp
 import type { Emulator2SettingsApplyAllOut } from '../models/Emulator2SettingsApplyAllOut';
 import type { Emulator2SettingsApplyIn } from '../models/Emulator2SettingsApplyIn';
 import type { Emulator2SettingsApplyOut } from '../models/Emulator2SettingsApplyOut';
-import type { Emulator2SettingsIn } from '../models/Emulator2SettingsIn';
-import type { Emulator2SettingsOut } from '../models/Emulator2SettingsOut';
 import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
@@ -217,29 +215,6 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/instances/store/open',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询实例设置
-     * 读一台设备的四项设置。
-     *
-     * 每项都带状态：``.config`` 里有的才是用户保存过的，没有而从模拟器默认读到的
-     * 标 ``default``，两边都没有标 ``unset``。
-     * @param requestBody
-     * @returns Emulator2SettingsOut Successful Response
-     * @throws ApiError
-     */
-    public static getSettingsApiEmulator2SettingsGetPost(
-        requestBody: Emulator2SettingsIn,
-    ): CancelablePromise<Emulator2SettingsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/settings/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

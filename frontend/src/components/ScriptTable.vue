@@ -799,6 +799,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   HSR: 'purple',
   BetterGI: 'gold',
   ZzzOd: 'volcano',
+  BAAH: 'magenta',
   General: 'green',
 }
 

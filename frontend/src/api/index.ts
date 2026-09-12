@@ -9,6 +9,14 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { ADBScreenshotIn } from './models/ADBScreenshotIn';
 export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
+export type { BAAHConfig } from './models/BAAHConfig';
+export type { BAAHConfig_Info } from './models/BAAHConfig_Info';
+export type { BAAHConfig_Run } from './models/BAAHConfig_Run';
+export type { BAAHConfig_Script } from './models/BAAHConfig_Script';
+export type { BAAHUserConfig } from './models/BAAHUserConfig';
+export type { BAAHUserConfig_Data } from './models/BAAHUserConfig_Data';
+export type { BAAHUserConfig_Info } from './models/BAAHUserConfig_Info';
+export type { BAAHUserConfig_Notify } from './models/BAAHUserConfig_Notify';
 export type { BackendHealthOut } from './models/BackendHealthOut';
 export type { BetterGIConfig } from './models/BetterGIConfig';
 export type { BetterGIConfig_Game } from './models/BetterGIConfig_Game';

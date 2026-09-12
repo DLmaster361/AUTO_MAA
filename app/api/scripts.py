@@ -333,6 +333,7 @@ SCRIPT_BOOK = {
     "HSRConfig": HSRConfig,
     "BetterGIConfig": BetterGIConfig,
     "ZzzOdConfig": ZzzOdConfig,
+    "BAAHConfig": BAAHConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -346,6 +347,7 @@ USER_BOOK = {
     "HSRConfig": HSRUserConfig,
     "BetterGIConfig": BetterGIUserConfig,
     "ZzzOdConfig": ZzzOdUserConfig,
+    "BAAHConfig": BAAHUserConfig,
 }
 
 

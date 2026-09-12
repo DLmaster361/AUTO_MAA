@@ -12,6 +12,7 @@ import srcIcon from '@/assets/SRC.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
+  BAAH: generalIcon,
   MAA: maaIcon,
   General: generalIcon,
   Okww: okwwIcon,

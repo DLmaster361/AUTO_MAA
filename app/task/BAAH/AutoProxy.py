@@ -1,0 +1,434 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+"""BAAH 自动代理模式。
+
+以子进程方式启动 BAAH 的指定配置并监控其日志，按成功/失败关键字判定结果，
+失败时按配置重试。BAAH 自身没有心跳与看门狗，进程卡死只能靠日志静默与进程
+存活共同判定。
+
+运行前会写入本软件所需的托管配置项（运行结束自动退出、日志落盘等），
+运行结束后恢复用户原值，详见 ``.tools.config_manager``。
+"""
+
+import asyncio
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.config import BAAHConfig, BAAHUserConfig
+from app.models.ConfigBase import MultipleConfig
+from app.models.schema import WSTaskNoticeData
+from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.services import Notify, System
+from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
+from app.utils.constants import UTC4
+
+from .tools import (
+    SOFTWARE_CONFIG_RELATIVE,
+    ManagedConfigBackup,
+    apply_managed_config,
+    latest_log_file,
+    resolve_config_dir,
+    resolve_config_name,
+    resolve_log_dir,
+    resolve_user_config_path,
+    restore_managed_config,
+)
+
+logger = get_logger("BAAH 自动代理")
+
+## BAAH 日志行格式为「{版本} - {分:秒} - {级别} : {消息}」，按空格分词后
+## 时间戳位于第 3 个字段，此处使用 0 基切片区间
+BAAH_LOG_TIME_RANGE = (2, 3)
+
+## BAAH 只输出「分:秒」，不带日期与小时
+BAAH_LOG_TIME_FORMAT = "%M:%S"
+
+## 完成任务时 BAAH 固定输出的日志文本（只在成功路径出现）
+BAAH_SUCCESS_LOG = "所有任务结束|All tasks are finished"
+
+## 运行失败时 BAAH 顶层异常处理输出的日志文本
+BAAH_ERROR_LOG = "运行出错:|Error occurred:"
+
+## 等待日志文件生成的超时（秒）
+_LOG_FILE_WAIT_SECONDS = 60
+
+## 一次运行结束后等待相关进程退出的时间（秒）
+_PROCESS_EXIT_WAIT_SECONDS = 10
+
+
+class AutoProxyTask(TaskExecuteBase):
+    """自动代理模式"""
+
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        script_config: BAAHConfig,
+        user_config: MultipleConfig[BAAHUserConfig],
+        game_manager: ProcessManager | None,
+    ):
+        super().__init__()
+
+        if script_info.task_info is None:
+            raise RuntimeError("ScriptItem 未绑定到 TaskItem")
+
+        self.task_info = script_info.task_info
+        self.script_info = script_info
+        self.script_config = script_config
+        self.user_config = user_config
+        self.game_manager = game_manager
+        self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
+        self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
+        self.cur_user_config = self.user_config[self.cur_user_uid]
+        self.check_result = "-"
+        self.run_book = False
+        self.managed_backup: ManagedConfigBackup | None = None
+        self.process_manager: ProcessManager | None = None
+        self.log_monitor: LogMonitor | None = None
+        self.script_log_path: Path | None = None
+
+        self._resolve_paths()
+
+    def _resolve_paths(self) -> None:
+        """解析 BAAH 程序目录、配置目录与日志目录"""
+
+        self.root_path = Path(self.script_config.get("Info", "RootPath"))
+        self.config_dir = resolve_config_dir(
+            self.root_path, self.script_config.get("Script", "ConfigDir")
+        )
+        self.log_dir = resolve_log_dir(
+            self.root_path, self.script_config.get("Script", "LogDir")
+        )
+        self.baah_path = Path(self.script_config.get("Script", "BAAHPath"))
+        self.software_config_path = self.root_path / SOFTWARE_CONFIG_RELATIVE
+
+    async def check(self) -> str:
+        """校验 BAAH 运行所需的路径与用户配置"""
+
+        if not self.root_path.is_dir():
+            self.cur_user_item.status = "异常"
+            return "未找到 BAAH 程序目录, 请检查脚本配置中的程序目录设置！"
+
+        if not self.baah_path.is_file():
+            self.cur_user_item.status = "异常"
+            return "未找到 BAAH 主程序, 请检查脚本配置中的主程序路径设置！"
+
+        try:
+            config_name = resolve_config_name(
+                str(self.cur_user_config.get("Info", "ConfigName"))
+            )
+        except ValueError as e:
+            self.cur_user_item.status = "异常"
+            return f"{e}, 请在用户配置中填写 BAAH 配置文件名称！"
+
+        if not resolve_user_config_path(self.config_dir, config_name).is_file():
+            self.cur_user_item.status = "异常"
+            return (
+                f"未找到 BAAH 配置文件 {config_name}.json, "
+                "请先在 BAAH 界面中创建同名配置！"
+            )
+
+        return "Pass"
+
+    async def prepare(self):
+        """运行前准备"""
+
+        self.process_manager = ProcessManager()
+        self.wait_event = asyncio.Event()
+        self.log_start_time = datetime.now()
+        self.log_start_at = time.monotonic()
+
+        ## 成功与失败关键字固定：成功文本只出现在 BAAH 的成功路径，
+        ## 失败文本是其顶层异常处理的输出
+        self.success_log = compile_log_signs(BAAH_SUCCESS_LOG, "Split")
+        self.error_log = compile_log_signs(BAAH_ERROR_LOG, "Split")
+
+        self.log_monitor = LogMonitor(
+            BAAH_LOG_TIME_RANGE,
+            BAAH_LOG_TIME_FORMAT,
+            self.check_log,
+        )
+
+        config_name = resolve_config_name(
+            str(self.cur_user_config.get("Info", "ConfigName"))
+        )
+        self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
+
+    async def main_task(self):
+        """自动代理模式主逻辑"""
+
+        self.check_result = await self.check()
+        if self.check_result != "Pass":
+            logger.warning(f"未通过配置检查: {self.check_result}")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                ),
+            )
+            return
+
+        await self.prepare()
+
+        logger.info(f"开始代理用户: {self.cur_user_uid}")
+        self.cur_user_item.status = "运行"
+
+        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+            if self.run_book:
+                break
+
+            logger.info(
+                f"用户 {self.cur_user_item.name} - 尝试次数: "
+                f"{i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+            )
+            self.log_start_time = datetime.now()
+            self.log_start_at = time.monotonic()
+            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
+                LogRecord()
+            )
+
+            await self.run_once()
+
+            if self.cur_user_log.status == "Success!":
+                self.run_book = True
+                self.cur_user_item.status = "完成"
+                logger.success(f"用户: {self.cur_user_uid} - BAAH 完成代理任务")
+                break
+
+            self.cur_user_item.status = "异常"
+            logger.warning(
+                f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
+            )
+            await asyncio.sleep(3)
+
+    async def run_once(self) -> None:
+        """执行一次 BAAH 运行。
+
+        写入托管配置、启动进程、等待日志判定，最后无论成功失败都恢复托管配置。
+        """
+
+        self.wait_event.clear()
+
+        try:
+            self.managed_backup = apply_managed_config(
+                self.user_config_path, self.software_config_path
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败: {e}")
+            await self.handle_pre_script_error("写入 BAAH 托管配置失败", e)
+            return
+
+        try:
+            await self._run_launched()
+        finally:
+            restore_managed_config(self.managed_backup)
+            self.managed_backup = None
+
+    async def _run_launched(self) -> None:
+        """启动 BAAH 进程并等待日志给出结果"""
+
+        if self.process_manager is None or self.log_monitor is None:
+            raise RuntimeError("自动代理任务尚未完成初始化")
+
+        config_name = self.user_config_path.name
+        logger.info(f"运行 BAAH 任务: {self.baah_path}, 配置: {config_name}")
+
+        ## 记录启动时刻：BAAH 每次运行都会新建日志文件，据此锁定本次日志
+        launch_at = time.time()
+
+        try:
+            await self.process_manager.open_process(self.baah_path, config_name)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"启动 BAAH 进程失败: {e}")
+            await self.handle_pre_script_error("启动 BAAH 进程失败", e)
+            return
+
+        self.script_info.log = "正在等待 BAAH 日志文件生成"
+        log_path: Path | None = None
+        deadline = time.monotonic() + _LOG_FILE_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            log_path = latest_log_file(self.log_dir, launch_at)
+            if log_path is not None:
+                break
+            await asyncio.sleep(1)
+
+        if log_path is None:
+            await self.handle_pre_script_error("未找到 BAAH 日志文件")
+            return
+
+        self.script_log_path = log_path
+        logger.success(f"成功定位到日志文件: {self.script_log_path}")
+
+        await self.log_monitor.start_monitor_file(
+            self._resolve_log_file_path, self.log_start_time
+        )
+        await self.wait_event.wait()
+        await self.log_monitor.stop()
+
+        await self.kill_managed_process()
+        await asyncio.sleep(_PROCESS_EXIT_WAIT_SECONDS)
+
+    def _resolve_log_file_path(self) -> Path:
+        """返回当前会话的日志文件路径"""
+
+        if self.script_log_path is None:
+            raise RuntimeError("尚未定位到 BAAH 日志文件")
+        return self.script_log_path
+
+    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
+        """日志回调：判定本次运行的结果"""
+
+        log = "".join(log_content)
+        self.cur_user_log.content = log_content
+        self.script_info.log = log
+
+        if self.success_log.search(log) is not None:
+            self.cur_user_log.status = "Success!"
+        elif self.is_log_stalled(
+            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+        ):
+            self.cur_user_log.status = "脚本进程超时"
+        elif self.error_log.search(log) is not None:
+            self.cur_user_log.status = "BAAH 运行出错"
+        elif self.process_manager is not None and await self.process_manager.is_running():
+            self.cur_user_log.status = "BAAH 正常运行中"
+        else:
+            ## 进程已退出但未命中成功标记：不能确认任务完成
+            self.cur_user_log.status = "BAAH 在完成任务前退出"
+
+        logger.debug(f"BAAH 日志分析结果: {self.cur_user_log.status}")
+        if self.cur_user_log.status != "BAAH 正常运行中":
+            logger.info(f"BAAH 任务结果: {self.cur_user_log.status}, 日志锁已释放")
+            self.wait_event.set()
+
+    async def kill_managed_process(self) -> None:
+        """中止本次运行托管的进程"""
+
+        if self.process_manager is None:
+            return
+
+        try:
+            logger.info(f"中止 BAAH 进程: {self.baah_path}")
+            await self.process_manager.kill()
+            await System.kill_process(self.baah_path)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"中止 BAAH 进程失败: {e}")
+
+    async def handle_pre_script_error(
+        self, error_message: str, e: Exception | None = None
+    ) -> None:
+        """处理运行前的准备阶段错误"""
+
+        if e is None:
+            logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=error_message),
+            )
+        else:
+            logger.opt(exception=True).warning(
+                f"用户: {self.cur_user_uid} - {error_message}: {e}"
+            )
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
+            )
+
+        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
+        self.cur_user_log.status = error_message
+
+        await self.kill_managed_process()
+
+        await Notify.push_plyer(
+            "用户自动代理出现异常！",
+            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+            f"{self.cur_user_item.name}的自动代理出现异常",
+            3,
+        )
+
+    async def final_task(self):
+        """运行结束后的收尾工作"""
+
+        if self.check_result != "Pass":
+            self.cur_user_item.status = "异常"
+            return
+
+        if self.log_monitor is not None:
+            await self.log_monitor.stop()
+
+        await self.kill_managed_process()
+
+        restore_managed_config(self.managed_backup)
+        self.managed_backup = None
+
+        for t, log_item in self.cur_user_item.log_record.items():
+            log_path = Config.build_history_log_path(
+                script_name=self.script_info.name,
+                user_name=self.cur_user_item.name,
+                log_time=t.astimezone(UTC4),
+            )
+
+            if log_item.status == "BAAH 正常运行中":
+                log_item.status = "任务被用户手动中止"
+
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
+                log_item.status = "未捕获到日志"
+
+            await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+    async def on_crash(self, e: Exception):
+        """任务异常时的清理"""
+
+        self.cur_user_item.status = "异常"
+        logger.opt(exception=True).warning(f"BAAH 任务出现异常: {e}")
+
+        try:
+            if self.log_monitor is not None:
+                await self.log_monitor.stop()
+        except Exception as stop_error:
+            logger.opt(exception=True).warning(f"停止日志监控失败: {stop_error}")
+
+        try:
+            await self.kill_managed_process()
+        except Exception as kill_error:
+            logger.opt(exception=True).warning(f"清理 BAAH 进程失败: {kill_error}")
+
+        try:
+            restore_managed_config(self.managed_backup)
+            self.managed_backup = None
+        except Exception as restore_error:
+            logger.opt(exception=True).warning(
+                f"恢复 BAAH 托管配置失败: {restore_error}"
+            )
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"BAAH 任务出现异常: {e}"),
+        )

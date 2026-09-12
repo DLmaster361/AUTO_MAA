@@ -54,6 +54,7 @@ from app.runtime_tasks import RuntimeTasks
 from app.utils import LazyProxy, get_logger
 
 from .config import (
+    BAAHConfig,
     BetterGIConfig,
     Config,
     GeneralConfig,
@@ -363,6 +364,8 @@ class Task(TaskExecuteBase):
             return task.BetterGIManager(script_item)
         if isinstance(script_config, ZzzOdConfig):
             return task.ZzzOdManager(script_item)
+        if isinstance(script_config, BAAHConfig):
+            return task.BAAHManager(script_item)
         if isinstance(script_config, MaaFWConfig):
             return task.MaaFWEmbeddedManager(script_item)
         return None

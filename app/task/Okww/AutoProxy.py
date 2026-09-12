@@ -49,7 +49,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import write_file
+from app.utils.io import force_rmtree, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -376,9 +376,9 @@ class AutoProxyTask(TaskExecuteBase):
             tmp_dst = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
             )
-            shutil.rmtree(tmp_dst, ignore_errors=True)
+            force_rmtree(tmp_dst)
             shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            force_rmtree(self.script_config_path)
             tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
         logger.info("OK-WW 运行参数配置完成: 自动代理")

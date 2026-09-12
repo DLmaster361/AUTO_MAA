@@ -473,6 +473,7 @@ def test_compile_refuses_to_go_backwards_or_publish_nothing(tmp_path) -> None:
 
 
 FULL_HISTORY = (
+    "## [v5.6.0] - 2026-10-10\n\n### 新增\n\n- 庚\n\n"
     "## [v5.6.0-beta.2] - 2026-10-02\n\n### 修复\n\n- 己\n\n"
     "## [v5.6.0-beta.1] - 2026-10-01\n\n### 新增\n\n- 戊\n\n"
     "## [v5.5.1] - 2026-09-20\n\n### 修复\n\n- 丁 by [@b](https://github.com/b)\n\n"
@@ -485,9 +486,10 @@ FULL_HISTORY = (
 @pytest.mark.parametrize(
     ("version", "expected"),
     [
-        # 公测：本周期全部 beta 段 + 上一个正式版汇总，不带更早的正式版
-        ("v5.6.0-beta.2", ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1"]),
-        # 转正：本次 + 上一个正式版，不带 beta 段
+        # 公测：本周期全部 beta 段 + 上一个正式周期整条线（补丁与 X.Y.0 汇总都在）
+        ("v5.6.0-beta.2", ["v5.6.0-beta.2", "v5.6.0-beta.1", "v5.5.1", "v5.5.0"]),
+        # 转正：本次 + 上一个正式周期整条线，不带 beta 段
+        ("v5.6.0", ["v5.6.0", "v5.5.1", "v5.5.0"]),
         ("v5.5.0", ["v5.5.0", "v5.4.0"]),
         # 补丁：本次 + 同一 X.Y 下的正式版
         ("v5.5.1", ["v5.5.1", "v5.5.0"]),
@@ -704,6 +706,9 @@ def test_pr_check_flags_dev_only_commits_leaking_into_release(repo) -> None:
 
     problems = _check(repo, "release/v1.0.0-beta.1", dev_ref="dev")
     assert any("只在 dev 上的提交" in p for p in problems)
+    # 发版 PR 被误改目标到 release/* 时同样要拦，不能因为类型分流而跳过
+    release_problems = _check(repo, "release/v1.0.0-beta.1", "release", dev_ref="dev")
+    assert any("只在 dev 上的提交" in p for p in release_problems)
 
     # 正确做法：基于 release 分支 cherry-pick
     _git(repo, "checkout", "-q", "release/v1.0.0-beta.1")
@@ -749,6 +754,20 @@ def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
     assert author(fragments["2"], root=repo, resolve_online=False) == "bob"
     # 解析不到登录名就退回 git 里的作者名
     assert author(fragments["3"], root=repo, resolve_online=False) == "Carol"
+
+
+def test_fragment_author_follows_the_latest_addition_after_reuse(repo) -> None:
+    """碎片发版后被删，同名文件被别人再次新增，署名要归后来的人。"""
+
+    _write(repo, "changelog.d/fix-x.fix.md", "甲\n")
+    _commit(repo, "fix: a", author="Alice <1+alice@users.noreply.github.com>")
+    (repo / "changelog.d/fix-x.fix.md").unlink()
+    _commit(repo, "chore(release): v1.0.0-beta.2")
+    _write(repo, "changelog.d/fix-x.fix.md", "乙\n")
+    _commit(repo, "fix: b", author="Bob <2+bob@users.noreply.github.com>")
+    fragment = changelog.list_fragments(repo / "changelog.d")[0]
+
+    assert changelog.fragment_author(fragment, root=repo, resolve_online=False) == "bob"
 
 
 def test_unconfirmed_commits_lists_user_visible_pushes_without_fragments(repo) -> None:

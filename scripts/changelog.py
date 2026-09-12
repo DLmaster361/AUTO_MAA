@@ -696,7 +696,7 @@ def fragment_author(
     root: Path = REPO_ROOT,
     resolve_online: bool = True,
 ) -> Optional[str]:
-    """碎片的署名 = 它首次进入仓库的那个提交的作者。
+    """碎片的署名 = 最近一次把它加进仓库的那个提交的作者。
 
     squash 合并时就是 PR 作者，rebase 合并保留原作者，直推就是推的人。不读
     Co-authored-by，否则 AI 助手会被签进更新日志。noreply 邮箱直接拆出登录名，
@@ -718,8 +718,9 @@ def fragment_author(
     ).strip()
     if not output:
         return None
-    # git log 最新在前，取最后一行才是首次加入
-    sha, name, email = output.splitlines()[-1].split("\x00")
+    # git log 最新在前，取第一行：碎片发版后会被删除，同名文件可能被后来的 PR 再次
+    # 新增，要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人
+    sha, name, email = output.splitlines()[0].split("\x00")
     noreply = NOREPLY_EMAIL.match(email.strip())
     if noreply:
         return noreply.group("login")
@@ -881,6 +882,19 @@ def check_pull_request(
     changes = changed_files(base, "HEAD", root)
     paths = {path for _, path in changes}
 
+    if dev_ref:
+        # 目标是 release/* 的 PR，不论类型，都不得带入 dev 独有的提交（#673 那种事故的判据）。
+        # 放在类型分流之前：发版 PR 被误改目标到 release/* 时同样要拦。
+        pr_commits = set(git("rev-list", f"{base}..HEAD", root=root).split())
+        dev_only = set(git("rev-list", f"{base}..{dev_ref}", root=root).split())
+        leaked = sorted(pr_commits & dev_only)
+        if leaked:
+            problems.append(
+                f"这个 PR 会把 {len(leaked)} 个只在 {dev_ref} 上的提交带进 {base}。"
+                "release 分支只接受从 dev cherry-pick 出来的修复，"
+                "请基于 release 分支重新开分支并 cherry-pick"
+            )
+
     if kind == "sync":
         return problems
 
@@ -968,17 +982,6 @@ def check_pull_request(
         if not (fragment_dir / path.rsplit("/", 1)[-1]).exists():
             problems.append(f"{path} 在工作区里不存在")
 
-    if dev_ref:
-        # 目标是 release/* 的 PR：不得带入 dev 独有的提交（#673 那种事故的判据）
-        pr_commits = set(git("rev-list", f"{base}..HEAD", root=root).split())
-        dev_only = set(git("rev-list", f"{base}..{dev_ref}", root=root).split())
-        leaked = sorted(pr_commits & dev_only)
-        if leaked:
-            problems.append(
-                f"这个 PR 会把 {len(leaked)} 个只在 {dev_ref} 上的提交带进 {base}。"
-                "release 分支只接受从 dev cherry-pick 出来的修复，"
-                "请基于 release 分支重新开分支并 cherry-pick"
-            )
     return problems
 
 
@@ -1329,8 +1332,9 @@ def select_note_versions(sections: Sections, version: str) -> List[str]:
     """Release 正文首行 JSON 里要带哪些版本段。
 
     老客户端按「比本机新」过滤这份 JSON 并逐段显示，所以：
-    - 公测版带本周期全部 beta 段，加上一个正式版的汇总段（切通道、跳版都能看全）；
-    - 正式版带本次汇总，加上一个正式版的汇总段，不带 beta 段（否则重复显示）；
+    - 公测版带本周期全部 beta 段，加上一个正式周期的整条线（X.Y.0 汇总与其补丁），
+      切通道、跳版都能看全；
+    - 正式版带本次汇总，加上一个正式周期的整条线，不带 beta 段（否则重复显示）；
     - 补丁版带本次，加同一 X.Y 下更早的补丁段与 X.Y.0 汇总段。
     """
 
@@ -1341,6 +1345,14 @@ def select_note_versions(sections: Sections, version: str) -> List[str]:
     older = [v for v in ordered if version_key(v) <= key]  # type: ignore[operator]
     finals = [v for v in older if not is_prerelease(v)]
 
+    def whole_line(anchor: Optional[str]) -> List[str]:
+        """anchor 所在 X.Y 线上的全部正式版段：X.Y.0 汇总加它之后的补丁。"""
+
+        if anchor is None:
+            return []
+        line = version_key(anchor)[:2]  # type: ignore[index]
+        return [v for v in finals if version_key(v)[:2] == line]  # type: ignore[index]
+
     selected: List[str] = []
     if is_prerelease(version):
         selected.extend(
@@ -1348,14 +1360,11 @@ def select_note_versions(sections: Sections, version: str) -> List[str]:
             for v in older
             if is_prerelease(v) and version_key(v)[:3] == key[:3]  # type: ignore[index]
         )
-        previous_final = next(iter(finals), None)
-        if previous_final:
-            selected.append(previous_final)
+        # 上一个正式周期整条线都带上：只带最后一个补丁段会丢掉 X.Y.0 汇总与更早的补丁
+        selected.extend(whole_line(next(iter(finals), None)))
     elif key[2] == 0:
         selected.append(version)
-        previous_final = next((v for v in finals if v != version), None)
-        if previous_final:
-            selected.append(previous_final)
+        selected.extend(whole_line(next((v for v in finals if v != version), None)))
     else:
         selected.extend(v for v in finals if version_key(v)[:2] == key[:2])  # type: ignore[index]
         if not selected or selected[0] != version:

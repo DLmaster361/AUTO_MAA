@@ -367,15 +367,6 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     try:
         uid, config = await Config.add_script(script.type, script.scriptId)
         data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
-    except PermissionError as e:
-        # 试用开关没开：这是策略拒绝不是故障，和导入/迁移两条路由同一口径。
-        return ScriptCreateOut(
-            code=403,
-            status="error",
-            message=str(e),
-            scriptId="",
-            data=GeneralConfig(**{}),
-        )
     except Exception as e:
         return ScriptCreateOut(
             code=500,
@@ -1068,11 +1059,6 @@ async def import_managed_maafw_project(
     「脚本缺少可验证的 Project Store 身份」直接拒掉。
     """
 
-    if not Config.maafw_managed_preview_enabled():
-        return MaaFWManagedImportOut(
-            code=403, status="error", message="MFW 托管功能尚未对本安装开放"
-        )
-
     store = _managed_store()
     try:
         record = await asyncio.to_thread(
@@ -1151,11 +1137,6 @@ async def migrate_maafw_script_to_managed(
     转换都成功之后；删除失败不回滚迁移——项目已经在 Store 里了，把它撤回去反而
     更糟，如实报告让用户自己删。
     """
-
-    if not Config.maafw_managed_preview_enabled():
-        return MaaFWManagedMigrateOut(
-            code=403, status="error", message="MFW 托管功能尚未对本安装开放"
-        )
 
     try:
         script_config = _maafw_script_config(payload.scriptId)

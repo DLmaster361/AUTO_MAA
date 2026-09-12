@@ -52,7 +52,7 @@
       </template>
     </a-alert>
 
-    <a-row v-if="managedPreviewEnabled" :gutter="16" class="managed-import-row">
+    <a-row :gutter="16" class="managed-import-row">
       <a-col :span="16">
         <a-form-item :label="t('edit.managed.sourcePath')">
           <a-input
@@ -152,7 +152,6 @@ import { useI18n } from 'vue-i18n'
 
 import type { MaaFWManagedVersionItem } from '@/api'
 import { useMaaFWManagedApi } from '@/composables/useMaaFWManagedApi'
-import { useMaaFWManagedPreview } from '@/composables/useMaaFWManagedPreview'
 
 const { t } = useI18n()
 
@@ -175,8 +174,6 @@ const {
   readProjection,
 } = useMaaFWManagedApi()
 
-// 导入是「进门」，版本表是「房间」：开关只管前者。
-const { enabled: managedPreviewEnabled, load: loadManagedPreview } = useMaaFWManagedPreview()
 const sourcePath = ref('')
 const versions = ref<MaaFWManagedVersionItem[]>([])
 const excludedOpen = ref(false)
@@ -291,7 +288,6 @@ watch(boundProjectId, value => {
 })
 
 onMounted(() => {
-  void loadManagedPreview()
   if (boundProjectId.value) void refreshVersions()
 })
 </script>

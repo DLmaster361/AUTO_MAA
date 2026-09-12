@@ -55,14 +55,6 @@ class ProjectionSummaryTest(unittest.TestCase):
 
 
 class ImportRouteTest(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        # 这里测的是门里的翻译逻辑；门本身在 test_maafw_managed_preview_gate.py 里测。
-        gate = patch.object(
-            scripts_api.Config, "maafw_managed_preview_enabled", return_value=True
-        )
-        gate.start()
-        self.addCleanup(gate.stop)
-
     async def test_import_without_script_does_not_bind(self) -> None:
         store = MagicMock()
         store.import_project.return_value = RECORD

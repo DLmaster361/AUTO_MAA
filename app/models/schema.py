@@ -964,9 +964,6 @@ class GlobalConfig_Function(BaseModel):
     IfEnableTelemetry: Optional[bool] = Field(
         default=None, description="启用匿名错误与性能遥测"
     )
-    MaaFWManagedPreview: Optional[bool] = Field(
-        default=None, description="MFW 托管小范围试用开关；不在设置界面展示"
-    )
 
 
 class GlobalConfig_Display(BaseModel):

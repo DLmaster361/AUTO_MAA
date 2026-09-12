@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
+import logging
 import os
 import platform as platform_module
 import re
-import shutil
 import struct
 import subprocess
 import sys
@@ -38,7 +37,6 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
     install_cancel_scope,
 )
 
-RUNNER_ENV_MANIFEST_NAME = ".auto_mas_maafw_runner_env.json"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
 RUNNER_DEFAULT_PACKAGES = (
     "maafw",
@@ -51,7 +49,6 @@ RUNNER_DEFAULT_PACKAGES = (
     "psutil",
     "packaging",
 )
-RUNNER_ENV_TIMEOUT = 300
 DEFAULT_RUNTIME_LEASE_TTL_SECONDS = 24 * 60 * 60
 AUTOMATIC_RUNTIME_GC_GRACE_SECONDS = 7 * 24 * 60 * 60
 AUTOMATIC_RUNTIME_GC_KEEP_LATEST = 1
@@ -64,6 +61,8 @@ _AUTOMATIC_GC_ROOTS: set[str] = set()
 _AUTOMATIC_GC_LOCK = threading.Lock()
 
 EnvironmentProgressCallback = Callable[[dict[str, Any]], None]
+
+logger = logging.getLogger("automas.maafw.runner.environment")
 
 
 def _report_environment_progress(
@@ -88,7 +87,9 @@ def _report_environment_progress(
     try:
         callback(event)
     except Exception:
-        return
+        # 进度只是旁观者，不能拖垮环境准备；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW 运行环境进度回调失败: stage=%s", stage, exc_info=True)
 
 
 @dataclass(frozen=True)
@@ -619,8 +620,6 @@ def _runtime_constraint_text(value: Any) -> str:
 #
 # 官方目录里踩线的项目（2026-08-30 勘察）：MMleo 自带 4.5.3、MaaEOV 自带 4.5.6。
 # 这两个用内置运行跑不起来，属已知边界而非缺陷——太老的不支持是正常的。
-MINIMUM_SUPPORTED_MAAFW_VERSION = "5.0.0"
-
 PROJECT_MAAFW_DLL_NAME = "MaaFramework.dll"
 
 # 兜底搜索的最大深度。真实布局最深是 ``runtimes/<rid>/native``（3 层），
@@ -1077,89 +1076,6 @@ def _load_requirements(project_path: Path) -> list[str]:
     return packages
 
 
-def _runner_env_name(project_path: Path) -> str:
-    key = str(project_path)
-    if os.name == "nt":
-        key = key.casefold()
-    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
-    return f"maafw_runner_{digest}"
-
-
-def _build_manifest(project_path: Path, packages: tuple[str, ...]) -> dict[str, object]:
-    requirements_path = project_path / "requirements.txt"
-    interface_path = next(
-        (
-            project_path / file_name
-            for file_name in ("interface.json", "interface.jsonc")
-            if (project_path / file_name).is_file()
-        ),
-        None,
-    )
-    requirements_hash = (
-        hashlib.sha256(requirements_path.read_bytes()).hexdigest()
-        if requirements_path.is_file()
-        else ""
-    )
-    interface_hash = (
-        hashlib.sha256(interface_path.read_bytes()).hexdigest()
-        if interface_path is not None
-        else ""
-    )
-    return {
-        "schemaVersion": 4,
-        "projectPath": str(project_path),
-        "requirementsHash": requirements_hash,
-        "interfaceHash": interface_hash,
-        "packages": list(packages),
-        "pythonVersion": f"{sys.version_info.major}.{sys.version_info.minor}",
-    }
-
-
-def _manifest_matches(manifest_path: Path, expected: dict[str, object]) -> bool:
-    try:
-        current = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return False
-    return current == expected
-
-
-def _write_manifest(manifest_path: Path, manifest: dict[str, object]) -> None:
-    temporary_path = manifest_path.with_suffix(f"{manifest_path.suffix}.tmp")
-    temporary_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    temporary_path.replace(manifest_path)
-
-
-def _run_setup_command(
-    command: list[str],
-    *,
-    cwd: Path,
-    env: dict[str, str] | None = None,
-) -> None:
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            timeout=RUNNER_ENV_TIMEOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            cwd=cwd,
-            env=env,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"MaaFW Runner 环境准备超时: {command[:3]}") from exc
-
-    if result.returncode == 0:
-        return
-    detail = (result.stderr or result.stdout or "").strip()
-    raise RuntimeError(
-        f"MaaFW Runner 环境准备失败 (exit={result.returncode}): {detail[:800]}"
-    )
-
-
 def _installed_maafw_version(
     python_executable: Path,
     env: dict[str, str],
@@ -1193,33 +1109,6 @@ def _normalized_sys_path(path: str) -> str:
         return str(Path(path).resolve())
     except (OSError, RuntimeError):
         return path
-
-
-def _reset_managed_venv(venv_path: Path, managed_root: Path) -> None:
-    resolved_venv = venv_path.resolve()
-    if (
-        resolved_venv.parent != managed_root.resolve()
-        or not resolved_venv.name.startswith("maafw_runner_")
-    ):
-        raise RuntimeError(f"拒绝重建非托管 MaaFW Runner venv: {venv_path}")
-    shutil.rmtree(resolved_venv, ignore_errors=True)
-
-
-def _venv_python(venv_path: Path) -> Path:
-    if os.name == "nt":
-        return venv_path / "Scripts" / "python.exe"
-    return venv_path / "bin" / "python"
-
-
-def _is_valid_venv(venv_path: Path) -> bool:
-    return _venv_python(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
-
-
-def _venv_bootstrap_python() -> str:
-    portable_python = Path.cwd() / "environment" / "python" / "python.exe"
-    if portable_python.is_file():
-        return str(portable_python)
-    return sys.executable
 
 
 def _send_log(send_log: Callable[[str], None] | None, message: str) -> None:

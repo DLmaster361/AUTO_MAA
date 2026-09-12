@@ -606,11 +606,6 @@ class SrcManager(TaskExecuteBase):
             expected_script_id=self.script_info.script_id,
         )
 
-    def _read_config_snapshot_root(self) -> Path:
-        """读取已提交配置快照所属的 SRC 根目录。"""
-
-        return self._read_config_snapshot_state().src_root_path
-
     def _quarantine_config_snapshot(self, reason: str) -> None:
         """隔离不应自动恢复的快照，避免覆盖现场配置。"""
 

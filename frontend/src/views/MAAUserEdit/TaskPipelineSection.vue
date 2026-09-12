@@ -309,6 +309,16 @@
         :has-detail="false"
         @change="emitSave('Task.IfRoguelike', $event)"
       />
+
+      <!-- 更换主题：主题名称在 MAA 中配置，MAS 仅提供调度开关并透传；排在任务队列最后 -->
+      <PipelineRow
+        :name="t('edit.maaSwitchTheme')"
+        :summary="formData.Task.IfSwitchTheme ? t('edit.maaSwitchThemeHint') : ''"
+        :checked="formData.Task.IfSwitchTheme"
+        :disabled="loading"
+        :has-detail="false"
+        @change="emitSave('Task.IfSwitchTheme', $event)"
+      />
     </div>
   </div>
 </template>

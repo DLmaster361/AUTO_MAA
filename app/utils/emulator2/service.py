@@ -568,13 +568,6 @@ def _device_row(
 # ---- 四项设置 -------------------------------------------------------------
 
 
-async def get_settings(emulator_id: str, slot: str) -> dict:
-    """读一台设备的四项设置。"""
-    manager = await build_manager(emulator_id)
-    settings = await manager.read_settings(str(slot))
-    return {"slot": str(slot), "settings": settings.to_dict()}
-
-
 async def apply_settings(
     emulator_id: str, slot: str, changes: dict, expected: dict | None = None
 ) -> dict:

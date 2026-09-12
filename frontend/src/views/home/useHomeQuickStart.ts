@@ -15,13 +15,6 @@ import {
 } from '@/views/home/homeQuickStartTasks'
 import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 
-// 占位任务：value 是判断依据（startsWith('mock-')），label 只用于展示
-const mockSchedulerTaskDefs = [
-  { key: 'mockDaily', value: 'mock-daily-queue' },
-  { key: 'mockGeneral', value: 'mock-general-check' },
-  { key: 'mockNightly', value: 'mock-nightly-queue' },
-] as const
-
 interface HomeGreetingMessage {
   text: string
   author: string
@@ -106,14 +99,11 @@ export const useHomeQuickStart = () => {
   const commandTitle = ref(homeGreeting.text)
   const commandAuthor = ref(homeGreeting.author)
   const schedulerTasksLoading = ref(false)
+  // 任务列表拉取失败：下拉里给一句提示，重新展开下拉即重试
+  const schedulerTasksUnavailable = ref(false)
   const startingHomeTask = ref(false)
-  const buildMockSchedulerTasks = (): HomeTaskOption[] =>
-    mockSchedulerTaskDefs.map(item => ({
-      label: t(`home.quickStart.${item.key}`),
-      value: item.value,
-    }))
 
-  const schedulerTaskOptions = ref<HomeTaskOption[]>(buildMockSchedulerTasks())
+  const schedulerTaskOptions = ref<HomeTaskOption[]>([])
   const selectedHomeTaskIds = ref<string[]>([])
   const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
   let savedSelectedTaskIds: string[] = []
@@ -184,18 +174,19 @@ export const useHomeQuickStart = () => {
     try {
       const response = await Service.getTaskComboxApiInfoComboxTaskPost()
       if (response.code === 200 && Array.isArray(response.data)) {
+        schedulerTasksUnavailable.value = false
         applyRealTaskOptions(toHomeTaskOptions(response.data))
         return
       }
 
-      schedulerTaskOptions.value = buildMockSchedulerTasks()
+      schedulerTasksUnavailable.value = true
       if (!options?.quiet) {
         message.warning(t('home.quickStart.listUnavailable'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取首页任务列表失败: ${errorMsg}`)
-      schedulerTaskOptions.value = buildMockSchedulerTasks()
+      schedulerTasksUnavailable.value = true
       if (!options?.quiet) {
         message.warning(t('home.quickStart.listUnavailable'))
       }
@@ -216,11 +207,6 @@ export const useHomeQuickStart = () => {
     const taskIds = retainSelectedTaskIds(selectedHomeTaskIds.value, schedulerTaskOptions.value)
     if (!taskIds.length) {
       message.error(t('home.quickStart.selectTask'))
-      return
-    }
-
-    if (taskIds.some(taskId => taskId.startsWith('mock-'))) {
-      message.info(t('home.quickStart.mockNotStartable'))
       return
     }
 
@@ -282,6 +268,7 @@ export const useHomeQuickStart = () => {
     commandTitle,
     commandAuthor,
     schedulerTasksLoading,
+    schedulerTasksUnavailable,
     startingHomeTask,
     schedulerTaskOptions,
     selectedHomeTaskIds,

@@ -305,6 +305,9 @@ export default {
     maaCustomInfrastPlan: 'カスタム基地のシフト',
     maaCustomInfrastPlanHint: 'インポート済みの設定から使用するシフトを選びます',
     maaDaily: '日課タスク',
+    maaSwitchTheme: 'テーマ変更',
+    maaSwitchThemeHint:
+      'テーマ名は MAA の「テーマ変更」タスクで設定します。複数指定すると実行ごとに 1 つランダムに切り替わり、空の場合はスキップされます。MAA v6.17.3 以降が必要です',
     maaRoguelike: '自動ローグライク',
     maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
     maaGreenTicketStore: '緑チケット商店',
@@ -2290,12 +2293,8 @@ export default {
       networkFailed: '通信に失敗しました。接続を確認してください',
     },
     quickStart: {
-      mockDaily: 'キュー - 毎日の自動化',
-      mockGeneral: 'スクリプト - 汎用チェック',
-      mockNightly: 'キュー - 夜間バッチ',
-      listUnavailable: 'タスク一覧を取得できないため、仮のタスクを表示しています',
+      listUnavailable: 'タスク一覧を取得できません。ドロップダウンを開き直すと再試行します',
       selectTask: '先にタスクを選んでください',
-      mockNotStartable: 'これは仮のタスクです。実際のタスク一覧が読み込まれると起動できます',
       fallbackLabel: 'ホームのクイックタスク',
       started: 'タスクを開始しました',
       startedCount: '{p0}/{p1} 件のタスクを開始しました',

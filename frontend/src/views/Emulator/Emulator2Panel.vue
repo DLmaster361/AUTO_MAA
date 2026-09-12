@@ -22,6 +22,7 @@ import {
 } from '@ant-design/icons-vue'
 
 import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
+import { usePerformanceStore } from '@/stores/performance'
 import type {
   Emulator2AffectedScript,
   Emulator2BatchResult,
@@ -35,6 +36,7 @@ const props = defineProps<{ emulatorId: string }>()
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('Emulator2')
+const performanceStore = usePerformanceStore()
 
 const loading = ref(false)
 const paths = ref<Emulator2PathItem[]>([])
@@ -731,19 +733,44 @@ watch(
 const AUTO_REFRESH_MS = 15000
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-onMounted(() => {
-  loadDevices()
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+const startAutoRefresh = () => {
+  stopAutoRefresh()
   refreshTimer = setInterval(() => {
     // 有行正在增删时不打扰：那会儿列表正被我们自己改
     if (!loading.value && !rowBusy.value.size && !pendingRows.value.length) {
       loadDevices({ silent: true })
     }
   }, AUTO_REFRESH_MS)
+}
+
+// 窗口进后台时停掉轮询，回到前台立即拉一次再继续
+watch(
+  () => performanceStore.isBackgrounded,
+  backgrounded => {
+    if (backgrounded) {
+      stopAutoRefresh()
+    } else {
+      loadDevices({ silent: true })
+      startAutoRefresh()
+    }
+  }
+)
+
+onMounted(() => {
+  loadDevices()
+  if (!performanceStore.isBackgrounded) {
+    startAutoRefresh()
+  }
 })
 
-onUnmounted(() => {
-  if (refreshTimer) clearInterval(refreshTimer)
-})
+onUnmounted(stopAutoRefresh)
 
 defineExpose({ reload: loadDevices, applyStableMode, captureBaselines, openPaths })
 </script>

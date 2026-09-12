@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -21,6 +22,8 @@ from ..automas_maafw_runtime_pool.installer import (
 )
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
+
+logger = logging.getLogger("automas.maafw.agent_env.env")
 
 AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
 AGENT_ENV_MANIFEST_NAME = ".auto_mas_agent_env.json"
@@ -254,7 +257,9 @@ def _report_agent_progress(
             }
         )
     except Exception:
-        return
+        # 进度只是旁观者，不能拖垮 Agent 环境准备；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW Agent 环境进度回调失败: %s", status, exc_info=True)
 
 
 def _prepare_isolated_venv_env(

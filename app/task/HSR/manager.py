@@ -41,7 +41,6 @@ from .task_mapping import (
     ENGINE_DISPLAY_NAMES,
     HSR_TASK_MODULES,
     describe_script_fallback,
-    get_assigned_script,
     resolve_script_assignment,
     script_supports,
 )
@@ -568,10 +567,7 @@ class HSRManager(TaskExecuteBase):
             self._precheck_daily_stages(script_config, user_config, user_name, assigned)
 
         if sra_available:
-            return self._validate_sra_user_credentials(
-                script_config,
-                only_sra_needed=False,
-            )
+            return self._validate_sra_user_credentials(script_config)
 
         return "Pass"
 
@@ -641,32 +637,7 @@ class HSRManager(TaskExecuteBase):
             and user_config.get("Info", "RemainedDay") != 0
         )
 
-    @staticmethod
-    def _user_needs_sra(user_config, script_config: HSRConfig) -> bool:
-        """判断用户是否需要 SRA StartGame 登录/切号。"""
-
-        effective_engines = resolve_configured_engines(script_config)
-        for module in HSR_TASK_MODULES:
-            if not user_config.get("TaskSwitch", module.key):
-                continue
-            if (
-                get_assigned_script(
-                    module,
-                    script_config,
-                    user_config=user_config,
-                    effective_engines=effective_engines,
-                )
-                == "SRA"
-            ):
-                return True
-        return False
-
-    def _validate_sra_user_credentials(
-        self,
-        script_config: HSRConfig,
-        *,
-        only_sra_needed: bool,
-    ) -> str:
+    def _validate_sra_user_credentials(self, script_config: HSRConfig) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
 
         for uid, user_config in script_config.UserData.items():
@@ -682,9 +653,6 @@ class HSRManager(TaskExecuteBase):
                 == "direct"
             ):
                 continue
-            if only_sra_needed and not self._user_needs_sra(user_config, script_config):
-                continue
-
             user_name = user_config.get("Info", "Name")
             result = check_user_credentials(user_config, user_name)
             if result != "Pass":

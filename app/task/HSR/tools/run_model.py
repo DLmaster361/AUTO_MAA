@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
-from app.models.config import HSRUserConfig
-from app.models.task import UserItem
 from app.utils import ProcessManager
 
 from .game_resolution import HSRGameResolutionOverride
@@ -82,8 +80,6 @@ class HSRModuleResult:
 class HSRRunItem:
     """HSR 队列中的一个真实执行项。"""
 
-    user_item: UserItem
-    user_cfg: HSRUserConfig
     user_name: str
     user_id: str
     phase: HSRPhase
@@ -91,11 +87,13 @@ class HSRRunItem:
     module_name: str
     script: HSRScriptRunner
     description: str
-    timeout_seconds: int
     run: Callable[[], Awaitable[object]]
     on_success: Callable[[object], None] | None = None
     last_error: str = ""
     attempts: int = 0
+    # 非 HSRRetryableTaskError 的异常（配置或代码错误）补跑也不会变好，置 False 后
+    # 只记失败、不进补跑队列
+    retryable: bool = True
 
 
 class HSRRetryableTaskError(RuntimeError):

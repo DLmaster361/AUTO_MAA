@@ -148,9 +148,6 @@ export const createEmptySraActivityOverview = (): SraActivityOverview => ({
   activities: [],
 })
 
-/** @deprecated 请改用 createEmptySraActivityOverview */
-export const createEmptyStarRailActivityOverview = createEmptySraActivityOverview
-
 export interface HomeOverviewResponse {
   Stage: StageOverview
   StageByServer: Record<string, StageOverview>

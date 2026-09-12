@@ -753,13 +753,9 @@ class ToolsConfig_GameSign(BaseModel):
     Enabled: bool | None = Field(default=None, description="是否启用游戏社区")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
     ActivityEnabled: bool | None = Field(default=None, description="是否启用日常便笺")
-    WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
-    WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
     RunOnStartup: bool | None = Field(default=None, description="启动时运行")
-    ScheduledRun: bool | None = Field(default=None, description="定时运行")
     AutoStart: bool | None = Field(default=None, description="是否立即开始")
     LastSignDate: str | None = Field(default=None, description="上次签到日期")
-    ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
     Status: str | None = Field(default=None, description="签到状态标签")
     Result: str | None = Field(default=None, description="签到结果 JSON")
 
@@ -797,12 +793,6 @@ class GameSignAccountCreateOut(OutBase):
     data: GameSignAccountGroupConfig = Field(
         default_factory=GameSignAccountGroupConfig, description="账号组配置"
     )
-
-
-class GameSignAccountGetIn(BaseModel):
-    """游戏社区账号组查询请求"""
-
-    accountId: str = Field(..., description="账号组 UUID")
 
 
 class GameSignAccountInstanceOut(BaseModel):
@@ -1380,6 +1370,7 @@ class MaaUserConfig_Task(BaseModel):
     IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
+    IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
@@ -1652,30 +1643,6 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
 
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
-
-
-class OneDragonPlanStep(BaseModel):
-    """一条龙执行计划中的单个步骤（执行层实例）。"""
-
-    uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
-    kind: Literal["builtin", "js", "pathing", "scriptgroup", "custom"] = Field(
-        ..., description="步骤来源类型"
-    )
-    name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
-    enabled: bool = Field(default=True, description="是否启用该步骤")
-    settings: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="该步骤的 per-任务执行层参数（camelCase 键，按 kind 白名单校验）",
-    )
-
-
-class OneDragonPlan(BaseModel):
-    """一条龙执行计划（Plan），替代/并列于可视化队列 Queue。"""
-
-    version: int = Field(default=1, description="Plan 结构版本")
-    steps: List[OneDragonPlanStep] = Field(
-        default_factory=list, description="有序步骤列表"
-    )
 
 
 class BetterGIUserConfig_OneDragon(BaseModel):
@@ -3868,11 +3835,6 @@ class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
-class ScriptFileIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    jsonFile: str = Field(..., description="配置文件路径")
-
-
 class ScriptUrlIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
     url: str = Field(..., description="配置文件URL")
@@ -3993,10 +3955,6 @@ class EmulatorUpdateIn(BaseModel):
 
 class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-
-
-class EmulatorReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="模拟器 ID列表, 按新顺序排列")
 
 
 class EmulatorOperateIn(BaseModel):
@@ -4201,18 +4159,6 @@ class Emulator2SettingField(BaseModel):
     )
 
 
-class Emulator2SettingsIn(BaseModel):
-    emulatorId: str = Field(..., description="模拟器配置ID")
-    slot: str = Field(..., description="设备号")
-
-
-class Emulator2SettingsOut(OutBase):
-    slot: str = Field(default="", description="设备号")
-    settings: Dict[str, Emulator2SettingField] = Field(
-        default_factory=dict, description="四项设置的当前值与状态"
-    )
-
-
 class Emulator2SettingsApplyIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器配置ID")
     slot: str = Field(..., description="设备号")
@@ -4345,10 +4291,6 @@ class WebhookDeleteIn(WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
 
 
-class WebhookReorderIn(WebhookInBase):
-    indexList: List[str] = Field(..., description="Webhook ID列表, 按新顺序排列")
-
-
 class WebhookTestIn(WebhookInBase):
     data: Webhook = Field(..., description="Webhook配置数据")
 
@@ -4415,10 +4357,6 @@ class QueueUpdateIn(BaseModel):
 
 class QueueDeleteIn(BaseModel):
     queueId: str = Field(..., description="队列ID")
-
-
-class QueueReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="按新顺序排列的调度队列UID列表")
 
 
 class QueueSetInBase(BaseModel):
@@ -4597,9 +4535,11 @@ class WSTaskInfoUpdatedData(BaseModel):
 
 
 class WSTaskLogUpdatedData(BaseModel):
-    """任务当前日志 (type=task.log.updated)。"""
+    """任务日志更新 (type=task.log.updated), 按序号增量推送。"""
 
-    log: str = Field(default="", description="当前脚本日志")
+    log: str = Field(default="", description="append 为真时是新增片段, 否则是完整日志")
+    seq: int = Field(default=0, description="推送序号, 每个任务独立, 从 1 起单调递增")
+    append: bool = Field(default=False, description="是否追加到已有日志, 否则整体替换")
 
 
 class WSTaskScriptIdentityData(BaseModel):
@@ -4630,7 +4570,8 @@ class TaskRuntimeSnapshotItem(BaseModel):
     cycleNextList: List[WSTaskCyclePreviewData] = Field(
         default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
     )
-    log: str = Field(default="", description="当前脚本日志")
+    log: str = Field(default="", description="已推送的脚本日志, 与下一条增量推送衔接")
+    logSeq: int = Field(default=0, description="已推送日志对应的推送序号")
 
 
 class TaskRuntimeSnapshot(BaseModel):

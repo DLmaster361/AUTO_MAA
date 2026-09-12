@@ -51,6 +51,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.utils.logger import get_logger
+
 from .community_activity_roles import (
     CommunityActivityCapability,
     CommunityActivityRoleDiscovery,
@@ -62,6 +64,8 @@ from .community_activity_transport import (
     CommunityActivityTarget,
     CommunityActivityTransportError,
 )
+
+logger = get_logger("社区活动")
 
 if TYPE_CHECKING:
     from .miyoushe import MiyousheSessionCapabilities
@@ -712,12 +716,13 @@ class CommunityActivityProvider:
     async def _publish_credential_update(self, serialized: str) -> None:
         if self._credential_update_sent or self.on_credential_update is None:
             return
-        self._credential_update_sent = True
         try:
             await self.on_credential_update(serialized)
-        except Exception:
+        except Exception as e:  # noqa: BLE001
             # 回写是调用方的可选持久化动作，不能改变只读查询结果。
+            logger.warning(f"社区凭据回写失败: {type(e).__name__}: {e}")
             return
+        self._credential_update_sent = True
 
     @staticmethod
     def _skland_request_headers(

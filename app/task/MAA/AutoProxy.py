@@ -853,10 +853,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "Routine" and self.cur_user_config.get(
             "Task", "IfActivityFirst"
         ):
+            # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
                 server=self.cur_user_config.get("Info", "Server"),
-                refresh=True,
             )
             activity_stage = _resolve_activity_stage(
                 stage_info.get("Activity", []),
@@ -865,8 +865,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-            # 默认关闭时不写入新任务，兼容尚未支持库存保持的 MAA 版本
-            if en_task == "DepotMaintain" and not self.task_dict[en_task]:
+            # 默认关闭时不写入新任务，兼容尚未支持该任务类型的 MAA 版本
+            # （库存保持、更换主题；更换主题需 MAA v6.17.3+，旧版无法反序列化未知任务类型）
+            if (
+                en_task in ("DepotMaintain", "SwitchTheme")
+                and not self.task_dict[en_task]
+            ):
                 continue
 
             task_set[en_task] = _find_task_source(

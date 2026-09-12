@@ -292,6 +292,7 @@ import { Service, type OkNteUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_TASK_COMPLETED,
@@ -320,7 +321,8 @@ const scriptName = ref('OK-NTE脚本')
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 const oknteConfigLoading = ref(false)
 const oknteSubscriptionIds = ref<string[]>([])
 const oknteTaskId = ref<string | null>(null)
@@ -455,29 +457,28 @@ const createUserImmediately = async () => {
 }
 
 const saveField = async (key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || !userId) return
 
-  isSaving.value = true
-  try {
-    const parts = key.split('.')
-    const patch: Record<string, any> = {}
-    let current = patch
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
-
-    if (key === 'Info.Name') {
-      formData.userName = String(value || '')
-    }
-
-    await updateUser(scriptId, userId, patch)
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    isSaving.value = false
+  const parts = key.split('.')
+  const patch: Record<string, any> = {}
+  let current = patch
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    current[parts[i]] = {}
+    current = current[parts[i]]
   }
+  current[parts[parts.length - 1]] = value
+
+  if (key === 'Info.Name') {
+    formData.userName = String(value || '')
+  }
+
+  await enqueue(async () => {
+    try {
+      await updateUser(scriptId, userId, patch)
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e))
+    }
+  }, key)
 }
 
 const saveTaskConfig = async () => {

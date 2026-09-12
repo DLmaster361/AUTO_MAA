@@ -48,7 +48,6 @@ from app.utils.constants import (
     MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
     MAAEND_AUTO_COLLECT_SCHEDULE_OPTIONS,
     MAAEND_AUTO_COLLECT_TASK,
-    MAAEND_AUTO_ESSENCE_TARGET_TYPES,
     MAAEND_DELIVERY_TASK,
     MAAEND_RUN_MOOD_BOOK,
     MAAEND_TASKS,
@@ -993,28 +992,41 @@ class AutoProxyTask(TaskExecuteBase):
     def _maaend_task_option_supported(self, task_name: str, option_name: str) -> bool:
         """读取当前安装的 MaaEnd 是否声明了指定配置项。"""
 
-        root_path = self.maaend_root_path
+        root_path = self._maaend_root_path()
         if root_path is None:
-            root_path = Path(str(self.script_config.get("Info", "Path")).strip())
+            return False
         try:
-            return maaend_task_option_supported(
-                root_path, task_name, option_name
-            )
+            return maaend_task_option_supported(root_path, task_name, option_name)
         except (OSError, KeyError, TypeError, ValueError) as error:
             logger.debug(f"读取 MaaEnd 选项声明失败 {task_name}.{option_name}: {error}")
             return False
 
     def _maaend_task_supported(self, task_name: str) -> bool | None:
-        """读取当前安装的 MaaEnd 是否声明了指定任务。"""
+        """读取当前安装的 MaaEnd 是否声明了指定任务。
 
-        root_path = self.maaend_root_path
+        资源不可读时返回 None（未知），调用方据此不做移除判断。
+        """
+
+        root_path = self._maaend_root_path()
         if root_path is None:
-            root_path = Path(str(self.script_config.get("Info", "Path")).strip())
+            return None
         try:
             return maaend_task_supported(root_path, task_name)
         except (OSError, KeyError, TypeError, ValueError) as error:
             logger.debug(f"读取 MaaEnd 任务声明失败 {task_name}: {error}")
             return None
+
+    def _maaend_root_path(self) -> Path | None:
+        """获取 MaaEnd 安装目录；未完成 prepare 时回退到脚本配置。"""
+
+        root_path = getattr(self, "maaend_root_path", None)
+        if root_path is not None:
+            return root_path
+        script_config = getattr(self, "script_config", None)
+        if script_config is None:
+            return None
+        path = str(script_config.get("Info", "Path")).strip()
+        return Path(path) if path else None
 
     def _drop_removed_medication_task(
         self, tasks: list[dict[str, object]]
@@ -1033,9 +1045,8 @@ class AutoProxyTask(TaskExecuteBase):
         tasks[:] = kept_tasks
         logger.info("MaaEnd 当前版本已移除应急理智加强剂独立任务，改用理智任务内置选项")
 
-    @staticmethod
     def _ensure_sanity_task(
-        tasks: list[dict[str, object]], task_name: str
+        self, tasks: list[dict[str, object]], task_name: str
     ) -> dict[str, object] | None:
         """为新版拆分资源补齐旧配置实例中缺失的理智任务。"""
 
@@ -1049,6 +1060,11 @@ class AutoProxyTask(TaskExecuteBase):
             "id": f"automas-{task_name.lower()}",
             "taskName": task_name,
             "enabled": False,
+            # 与 MaaEnd 自己保存的任务条目保持同样的字段形状
+            "enabledByController": {
+                str(self.script_config.get("Game", "ControllerType")): True
+            },
+            "expanded": False,
             "optionValues": {},
         }
         tasks.append(task)
@@ -1073,9 +1089,7 @@ class AutoProxyTask(TaskExecuteBase):
         menu = sanity_task_key.get("AutoEssenceMenu")
         if menu not in {"Random", "Location", "Target"}:
             menu = "Target" if target_weapons else "Location"
-        root_path = self.maaend_root_path
-        if root_path is None:
-            root_path = Path(str(self.script_config.get("Info", "Path")).strip())
+        root_path = self._maaend_root_path()
 
         has_menu = self._maaend_task_option_supported("AutoEssence", "AutoEssenceMenu")
         if has_menu:
@@ -1089,21 +1103,31 @@ class AutoProxyTask(TaskExecuteBase):
             # 旧版只有 ChooseLocation checkbox；Target/Location 均退化为指定地点。
             option_values.pop("AutoEssenceMenu", None)
 
+        def clear_target_options() -> None:
+            """清除上一轮写入的目标武器选项，组名由 MaaEnd 资源决定。"""
+
+            for key in [
+                name
+                for name in option_values
+                if name.startswith(("AutoEssenceWeapons", "AutoEssenceWeaponType"))
+            ]:
+                option_values.pop(key, None)
+
         if menu != "Target" or not has_menu:
-            for group_value in MAAEND_AUTO_ESSENCE_TARGET_TYPES:
-                option_values.pop(f"AutoEssenceWeapons{group_value}", None)
-                option_values.pop(f"AutoEssenceWeaponType{group_value}", None)
+            clear_target_options()
             option_values.pop("AutoEssenceObtainModeClaimOnlyForcedFilter", None)
 
         if menu == "Target" and has_menu:
             # 未限制目标时保留 MaaEnd 资源声明的默认值（各武器类型全选），
             # 清除上一次目标模式留下的覆盖项即可表达“不限武器”。
-            for group_value in MAAEND_AUTO_ESSENCE_TARGET_TYPES:
-                option_values.pop(f"AutoEssenceWeapons{group_value}", None)
-                option_values.pop(f"AutoEssenceWeaponType{group_value}", None)
+            clear_target_options()
             try:
-                target_groups = get_loaded_maaend_options(root_path).get(
-                    "essenceTargetWeaponGroups", []
+                target_groups = (
+                    get_loaded_maaend_options(root_path).get(
+                        "essenceTargetWeaponGroups", []
+                    )
+                    if root_path is not None
+                    else []
                 )
             except (OSError, KeyError, TypeError, ValueError) as error:
                 logger.debug(f"读取 MaaEnd 目标武器分组失败: {error}")

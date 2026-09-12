@@ -327,15 +327,6 @@ MAAEND_SANITY_TASK_TYPES = (
 MAAEND_AUTO_ESSENCE_MENUS = ("Random", "Location", "Target")
 """MaaEnd 基质刷取模式（随机、地点、目标）"""
 
-MAAEND_AUTO_ESSENCE_TARGET_TYPES = (
-    "Sword",
-    "Claymore",
-    "Pistol",
-    "Wand",
-    "Lance",
-)
-"""MaaEnd 基质目标武器类型"""
-
 MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
     "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
     "WeaponProgression": ("WeaponEXP", "WeaponTune"),

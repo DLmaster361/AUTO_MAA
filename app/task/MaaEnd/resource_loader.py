@@ -34,13 +34,7 @@ logger = get_logger("MaaEnd 资源加载器")
 SUPPORTED_CONTROLLER_PROTOCOLS = frozenset({"Adb", "Win32"})
 LEGACY_CONTROLLER_PROTOCOLS = {"ADB": "Adb", "Win32-Front": "Win32"}
 
-_AUTO_ESSENCE_TARGET_GROUPS = (
-    ("Sword", "单手剑"),
-    ("Claymore", "大剑"),
-    ("Pistol", "铳械"),
-    ("Wand", "法杖"),
-    ("Lance", "长柄武器"),
-)
+AUTO_ESSENCE_WEAPONS_PREFIX = "AutoEssenceWeapons"
 
 
 def _normalize_language(language: str) -> str:
@@ -364,21 +358,23 @@ class MaaEndResourceLoader:
             else []
         )
 
+        # 分组完整来自资源声明：上游增删武器类型时这里无需改动。
         target_groups: list[dict[str, Any]] = []
-        for group_value, fallback_label in _AUTO_ESSENCE_TARGET_GROUPS:
-            option_name = f"AutoEssenceWeapons{group_value}"
-            option = essence_options.get(option_name)
+        for option_name, option in essence_options.items():
+            if not option_name.startswith(AUTO_ESSENCE_WEAPONS_PREFIX):
+                continue
+            group_value = option_name[len(AUTO_ESSENCE_WEAPONS_PREFIX) :]
             cases = option.get("cases") if isinstance(option, dict) else None
-            if not isinstance(cases, list):
+            if not group_value or not isinstance(cases, list):
                 continue
             switch = essence_options.get(f"AutoEssenceWeaponType{group_value}")
             switch_label = switch.get("label") if isinstance(switch, dict) else None
             if isinstance(switch_label, str) and switch_label.startswith("$"):
-                switch_label = locale.get(switch_label[1:], fallback_label)
+                switch_label = locale.get(switch_label[1:], group_value)
             target_groups.append(
                 {
                     "value": group_value,
-                    "label": switch_label or fallback_label,
+                    "label": switch_label or group_value,
                     "options": self._localize_options(cases, locale),
                 }
             )

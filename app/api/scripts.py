@@ -552,7 +552,9 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
             essenceLocations=[
                 ComboBoxItem(**item) for item in data["essenceLocations"]
             ],
-            essenceMenus=[ComboBoxItem(**item) for item in data.get("essenceMenus", [])],
+            essenceMenus=[
+                ComboBoxItem(**item) for item in data.get("essenceMenus", [])
+            ],
             essenceTargetWeaponGroups=[
                 MaaEndEssenceTargetGroup(
                     value=item["value"],

@@ -10,6 +10,7 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 export type { ADBScreenshotIn } from './models/ADBScreenshotIn';
 export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
 export type { BAAHConfig } from './models/BAAHConfig';
+export type { BAAHConfig_Emulator } from './models/BAAHConfig_Emulator';
 export type { BAAHConfig_Info } from './models/BAAHConfig_Info';
 export type { BAAHConfig_Run } from './models/BAAHConfig_Run';
 export type { BAAHConfig_Script } from './models/BAAHConfig_Script';

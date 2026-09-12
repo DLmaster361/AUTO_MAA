@@ -1574,6 +1574,10 @@ export default {
       '开启后，本软件会在运行前自动写入 BAAH 运行所需的设置（运行结束自动退出、打开日志落盘），运行结束后恢复你的原值',
     baahPushLogEnabled: '展示任务节点详情',
     baahPushLogEnabledHint: '开启后，任务报告中会展示 BAAH 的任务节点详情',
+    baahEmulatorHint:
+      '选择本软件要调度的模拟器；运行前由本软件启动它并等待设备就绪，BAAH 只负责连接，无需在 BAAH 内填写模拟器路径与端口',
+    baahCloseEmulatorOnFinish: '结束后关闭模拟器',
+    baahCloseEmulatorOnFinishHint: '开启后，本次任务结束时由本软件关闭所选的模拟器实例',
     baahNotBaahScript: '脚本类型不是 BAAH',
     baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
     baahRunTimeLimitHint: '单次运行的最长等待时间（分钟）；超时按运行失败处理',

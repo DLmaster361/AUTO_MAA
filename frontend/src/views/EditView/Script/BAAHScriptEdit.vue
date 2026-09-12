@@ -258,6 +258,101 @@
           </a-row>
         </div>
 
+        <!-- 模拟器管理 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.emulators') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.emulator') }}
+                    <a-tooltip :title="t('edit.baahEmulatorHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="baahConfig.Emulator.Id"
+                  size="large"
+                  :placeholder="t('edit.pickEmulator')"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorSelectChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.emulatorInstance') }}
+                    <a-tooltip :title="t('edit.pickEmulatorInstance')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <!-- 当API返回空列表时显示输入框 -->
+                <a-input
+                  v-if="
+                    emulatorDeviceOptions.length === 0 &&
+                    !emulatorDeviceLoading &&
+                    baahConfig.Emulator.Id
+                  "
+                  v-model:value="baahConfig.Emulator.Index"
+                  size="large"
+                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  class="modern-input"
+                  @blur="handleChange('Emulator', 'Index', baahConfig.Emulator.Index)"
+                />
+                <!-- 正常情况下显示下拉框 -->
+                <a-select
+                  v-else
+                  v-model:value="baahConfig.Emulator.Index"
+                  size="large"
+                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!baahConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.baahCloseEmulatorOnFinish') }}
+                    <a-tooltip :title="t('edit.baahCloseEmulatorOnFinishHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-switch
+                  v-model:checked="baahConfig.Emulator.CloseOnFinish"
+                  @change="handleChange('Emulator', 'CloseOnFinish', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
@@ -323,12 +418,24 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
+import { Service, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BAAH脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const {
+  emulatorDeviceLoading,
+  emulatorDeviceOptions,
+  clearEmulatorDeviceOptions,
+  loadEmulatorDeviceOptions,
+} = useEmulatorDeviceOptions()
+
+// 模拟器相关状态：模拟器的启动与关闭由本软件调度，BAAH 只负责连接
+const emulatorLoading = ref(false)
+const emulatorOptions = ref<ComboBoxItem[]>([])
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -353,10 +460,17 @@ interface BAAHRunForm {
   RunTimeLimit: number
 }
 
+interface BAAHEmulatorForm {
+  Id: string
+  Index: string
+  CloseOnFinish: boolean
+}
+
 interface BAAHScriptConfigForm {
   Info: BAAHInfoForm
   Script: BAAHScriptForm
   Run: BAAHRunForm
+  Emulator: BAAHEmulatorForm
 }
 
 const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
@@ -374,6 +488,11 @@ const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
   Run: {
     RunTimesLimit: 2,
     RunTimeLimit: 60,
+  },
+  Emulator: {
+    Id: '',
+    Index: '',
+    CloseOnFinish: true,
   },
 })
 
@@ -458,6 +577,11 @@ const loadScript = async () => {
     Object.assign(baahConfig.Info, config.Info || {})
     Object.assign(baahConfig.Script, config.Script || {})
     Object.assign(baahConfig.Run, config.Run || {})
+    Object.assign(baahConfig.Emulator, config.Emulator || {})
+    // 已经选过模拟器时同步加载它的设备列表
+    if (baahConfig.Emulator.Id) {
+      void loadEmulatorDeviceOptions(baahConfig.Emulator.Id)
+    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
@@ -518,7 +642,38 @@ const clearLogDir = async () => {
   await handleChange('Script', 'LogDir', '')
 }
 
-onMounted(loadScript)
+// 模拟器相关方法
+const loadEmulatorOptions = async () => {
+  emulatorLoading.value = true
+  try {
+    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
+    emulatorOptions.value = response.data || []
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器选项失败: ${errorMsg}`)
+    message.error(t('edit.couldNotLoadEmulator'))
+  } finally {
+    emulatorLoading.value = false
+  }
+}
+
+const handleEmulatorSelectChange = async (emulatorId: string) => {
+  // 换模拟器后旧的实例索引不再有效
+  baahConfig.Emulator.Index = ''
+  if (emulatorId) {
+    void loadEmulatorDeviceOptions(emulatorId)
+  } else {
+    clearEmulatorDeviceOptions()
+  }
+
+  await handleChange('Emulator', 'Id', emulatorId)
+  await handleChange('Emulator', 'Index', '')
+}
+
+onMounted(() => {
+  void loadScript()
+  void loadEmulatorOptions()
+})
 </script>
 
 <style scoped>

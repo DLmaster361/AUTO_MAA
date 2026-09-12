@@ -38,6 +38,7 @@ from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import BAAHConfig, BAAHUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
@@ -86,7 +87,7 @@ class AutoProxyTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: BAAHConfig,
         user_config: MultipleConfig[BAAHUserConfig],
-        game_manager: ProcessManager | None,
+        emulator_manager: DeviceBase | None,
     ):
         super().__init__()
 
@@ -97,7 +98,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
-        self.game_manager = game_manager
+        self.emulator_manager = emulator_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -107,6 +108,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.process_manager: ProcessManager | None = None
         self.log_monitor: LogMonitor | None = None
         self.script_log_path: Path | None = None
+        self.emulator_adb_address: str = ""
 
         self._resolve_paths()
 
@@ -224,17 +226,66 @@ class AutoProxyTask(TaskExecuteBase):
             )
             await asyncio.sleep(3)
 
+    async def _ensure_emulator_online(self) -> bool:
+        """由本软件拉起模拟器并等待其在线。
+
+        模拟器的启动与关闭统一由 MAS 调度，BAAH 只负责连接；冷启动耗时较长，
+        在这里等它就绪，避免占用 BAAH 自身的等待窗口。
+        """
+
+        if self.emulator_manager is None:
+            return True
+
+        self.script_info.log = "正在启动模拟器"
+        self.cur_user_item.status = "运行 - 启动模拟器"
+
+        try:
+            device_info = await self.emulator_manager.open(
+                str(self.script_config.get("Emulator", "Index"))
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(f"启动模拟器失败: {e}")
+            await self.handle_pre_script_error("启动模拟器失败", e)
+            return False
+
+        self.emulator_adb_address = str(device_info.adb_address or "")
+        logger.success(f"模拟器已就绪, ADB 地址: {self.emulator_adb_address}")
+        return True
+
+    def _emulator_runtime_values(self) -> dict[str, object]:
+        """把模拟器调度结果折算成 BAAH 侧的托管项。
+
+        BAAH 的目标设备由 ``TARGET_IP_PATH`` 与 ``TARGET_PORT`` 拼成，
+        这里直接写入 MAS 解析出的地址，用户无需在 BAAH 侧维护端口。
+        """
+
+        address = self.emulator_adb_address.strip()
+        host, separator, port = address.rpartition(":")
+        if not separator or not host:
+            return {}
+
+        return {
+            "TARGET_IP_PATH": host,
+            "TARGET_PORT": int(port) if port.isdigit() else port,
+        }
+
     async def run_once(self) -> None:
         """执行一次 BAAH 运行。
 
-        写入托管配置、启动进程、等待日志判定，最后无论成功失败都恢复托管配置。
+        启动模拟器、写入托管配置、启动进程、等待日志判定，
+        最后无论成功失败都恢复托管配置。
         """
 
         self.wait_event.clear()
 
+        if not await self._ensure_emulator_online():
+            return
+
         try:
             self.managed_backup = apply_managed_config(
-                self.user_config_path, self.software_config_path
+                self.user_config_path,
+                self.software_config_path,
+                self._emulator_runtime_values(),
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败: {e}")

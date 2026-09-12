@@ -52,6 +52,11 @@ MANAGED_USER_VALUES: dict[str, Any] = {
     "CLOSE_EMULATOR_ERROR": False,
     "CLOSE_GAME_FINISH": False,
     "CLOSE_GAME_ERROR": False,
+    ## 模拟器由本软件拉起，不允许 BAAH 再自行启动：它的启动路径按实例编号走，
+    ## 配置与实际目标稍有出入就会拉起另一个实例，且冷启动耗时会吃掉它的等待窗口
+    "TARGET_EMULATOR_PATH": "",
+    ## ADB 目标改由 MAS 按所绑定的模拟器槽位推算，不再依赖 BAAH 侧手填
+    "ADB_DIRECT_USE_SERIAL_NUMBER": False,
     ## 脚本运行报错后自动重新运行脚本的次数
     "RETRY_WHEN_ERROR": 0,
     ## 正常运行结束与错误时的通知改由本软件发送
@@ -215,12 +220,15 @@ def resolve_log_dir(root_path: Path, configured: str) -> Path:
 def apply_managed_config(
     user_config_path: Path,
     software_config_path: Path | None,
+    runtime_values: dict[str, Any] | None = None,
 ) -> ManagedConfigBackup:
     """写入托管项并返回恢复所需的快照。
 
     Args:
         user_config_path: BAAH 用户配置文件路径。
         software_config_path: BAAH 软件配置文件路径，None 表示不托管软件配置。
+        runtime_values: 本次运行才确定的托管项，会覆盖同名静态托管项，
+            例如模拟器调度解析出的 ADB 地址。
 
     Returns:
         ManagedConfigBackup: 运行结束后交回 ``restore_managed_config`` 的快照。
@@ -232,8 +240,12 @@ def apply_managed_config(
     user_config = read_json(user_config_path)
     backup.user_config = dict(user_config)
 
+    managed_values = dict(MANAGED_USER_VALUES)
+    if runtime_values:
+        managed_values.update(runtime_values)
+
     changed = False
-    for key, value in MANAGED_USER_VALUES.items():
+    for key, value in managed_values.items():
         if user_config.get(key) != value:
             user_config[key] = value
             changed = True

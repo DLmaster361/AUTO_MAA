@@ -2168,10 +2168,21 @@ class BAAHConfig_Run(BaseModel):
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制")
 
 
+class BAAHConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器ID")
+    Index: Optional[str] = Field(default=None, description="模拟器多开实例索引")
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭模拟器"
+    )
+
+
 class BAAHConfig(BaseModel):
     Info: Optional[BAAHConfig_Info] = Field(default=None, description="脚本基础信息")
     Script: Optional[BAAHConfig_Script] = Field(default=None, description="脚本配置")
     Run: Optional[BAAHConfig_Run] = Field(default=None, description="运行配置")
+    Emulator: Optional[BAAHConfig_Emulator] = Field(
+        default=None, description="模拟器配置"
+    )
 
 
 class MaaEndUserConfig_Info(BaseModel):

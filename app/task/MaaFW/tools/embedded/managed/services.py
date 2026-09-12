@@ -631,7 +631,22 @@ class ManagedServiceGateway:
         *,
         current_version: str,
         source_config: Mapping[str, Any],
+        prefer_full_package: bool = True,
+        version_only: bool = False,
+        proxy: Any = None,
     ) -> dict[str, Any] | None:
+        """Discover a newer version for an immutable-store consumer.
+
+        ``prefer_full_package`` defaults to True here, unlike the in-place
+        updater: Project Store imports a whole tree as one new immutable
+        version, so a delta archive would import as a broken one.  A service
+        that cannot honour it is rejected rather than silently downgraded —
+        the failure mode is a version that installs and then does not run.
+
+        ``version_only`` and ``proxy`` degrade quietly: an older service just
+        answers without them.
+        """
+
         if self.project_update is None:
             raise ManagedServiceError(f"缺少服务 {PROJECT_UPDATE_SERVICE}")
         method = getattr(self.project_update, "discover_update", None)
@@ -639,15 +654,22 @@ class ManagedServiceGateway:
             raise ManagedServiceError(
                 f"{PROJECT_UPDATE_SERVICE} 未提供 discover_update"
             )
-        value = await _invoke(
-            method,
-            (dict(interface),),
-            {
-                "current_version": current_version,
-                "source_config": dict(source_config),
-            },
-            "发现 MaaFW 远程资源",
-        )
+        args = (dict(interface),)
+        kwargs: dict[str, Any] = {
+            "current_version": current_version,
+            "source_config": dict(source_config),
+            "prefer_full_package": prefer_full_package,
+        }
+        if not _signature_accepts(method, args, kwargs):
+            raise ManagedServiceError(
+                f"{PROJECT_UPDATE_SERVICE} 的 discover_update 不支持 "
+                "prefer_full_package；托管形态必须要整包，请升级 "
+                "automas-maafw-project-update"
+            )
+        for name, value in (("version_only", version_only), ("proxy", proxy)):
+            if _signature_accepts(method, args, kwargs | {name: value}):
+                kwargs[name] = value
+        value = await _invoke(method, args, kwargs, "发现 MaaFW 远程资源")
         if value is None:
             return None
         return _as_dict(value, "maafw.project_update.v1 discover_update")
@@ -658,6 +680,7 @@ class ManagedServiceGateway:
         candidate: Mapping[str, Any],
         *,
         progress: Any = None,
+        proxy: Any = None,
     ) -> dict[str, Any]:
         if self.project_update is None:
             raise ManagedServiceError(f"缺少服务 {PROJECT_UPDATE_SERVICE}")
@@ -667,11 +690,19 @@ class ManagedServiceGateway:
                 f"{PROJECT_UPDATE_SERVICE} 未提供 download_package；"
                 "请升级 automas-maafw-project-update"
             )
-        value = await _invoke(
-            method,
-            (Path(download_root), dict(candidate)),
-            {"progress": progress} if progress is not None else {},
-            "下载 MaaFW 远程资源包",
+        extra: dict[str, Any] = {}
+        if progress is not None:
+            extra["progress"] = progress
+        # 用户配了代理，托管的自动更新也得走代理，否则受限网络下会出现
+        # 「自选目录形态能更、托管形态不能更」这种没人猜得到的差异。
+        value = await _call_variants(
+            self.project_update,
+            ("download_package",),
+            (
+                ((Path(download_root), dict(candidate)), extra | {"proxy": proxy}),
+                ((Path(download_root), dict(candidate)), extra),
+            ),
+            operation="下载 MaaFW 远程资源包",
         )
         package = _as_dict(value, "maafw.project_update.v1 download_package")
         path = _required_text(package, "path", "远程下载包路径")
@@ -815,11 +846,13 @@ class ManagedServiceGateway:
             _optional_text(payload.get("currentVersion")),
         )
         current_version = _optional_text(current.get("version"))
-        runtime_constraint = (
-            _optional_text(payload.get("runtimeConstraint"))
-            or _optional_text(current.get("runtimeConstraint"))
-            or _manifest_runtime_constraint(current.get("manifest"))
-        )
+        # 只认调用方显式给的约束，**不从当前版本继承**。runtimeConstraint 描述的
+        # 是「这份载荷需要哪个 MaaFramework」，是载荷的属性而不是项目身份的属性；
+        # 套到另一份载荷上就是张冠李戴。继承过实测的后果：MaaYYs v3.10.2 自带
+        # 5.11.1、v3.15.2 自带 5.13.0b2，升级会被自己的一致性闸门拒成
+        # "==5.11.1 vs 5.13.0b2"——凡是顺带升了 MaaFramework 的项目都更新不了。
+        # 不给时由 Store 从新导入的包自行推导。
+        runtime_constraint = _optional_text(payload.get("runtimeConstraint"))
         project_reference = _project_script_reference(
             _optional_text(payload.get("projectReference"))
         )

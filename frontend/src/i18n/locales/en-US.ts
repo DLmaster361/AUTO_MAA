@@ -3039,6 +3039,7 @@ export default {
       MaaEnd: 'MaaEnd',
       M9A: 'M9A',
       MaaFW: 'MFW',
+      MaaFWManaged: 'MFW (managed)',
       Okww: 'ok-ww',
       OkNte: 'ok-nte',
       HSR: 'HSR',

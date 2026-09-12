@@ -20,6 +20,7 @@ const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
   MaaEnd: maaEndIcon,
   M9A: m9aIcon,
   MaaFW: maafwIcon,
+  MaaFWManaged: maafwIcon,
   HSR: hsrIcon,
   BetterGI: bettergiIcon,
   ZzzOd: zzzOdIcon,

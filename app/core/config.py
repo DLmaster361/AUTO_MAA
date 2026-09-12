@@ -30,6 +30,8 @@ import sys
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
@@ -251,6 +253,31 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     return all_stage_drops
 
 
+_SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+"""配置类名 → `CLASS_BOOK` 键。托管环境服务按后者判断脚本类型。"""
+
+_MANAGED_JSON_FIELDS = {
+    "Managed": ("ProjectManifest", "PendingUpgrade", "LastOperation"),
+    "ManagedRuntime": ("RuntimeBinding",),
+}
+"""这些字段在配置里存的是 JSON 字符串，托管环境服务却按 Mapping 读。"""
+
+
+def _as_json_mapping(raw: Any) -> dict[str, Any]:
+    """把配置里的 JSON 字符串字段解析成 dict；坏值一律退化成空 dict。"""
+
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
 class AppConfig(GlobalConfig):
     VERSION = "v5.5.0-beta.4"
 
@@ -263,6 +290,9 @@ class AppConfig(GlobalConfig):
         logger.info(f"版本号:  {self.VERSION}")
         logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
+
+        ## 按脚本串行化配置写入者，见 `script_config_transaction`
+        self._script_config_locks: dict[str, asyncio.Lock] = {}
 
         self.log_path = Path.cwd() / "debug/app.log"
         self.database_path = Path.cwd() / "data/data.db"
@@ -764,6 +794,26 @@ class AppConfig(GlobalConfig):
         )
         return is_latest or supervised, commit_hash, commit_time
 
+    async def convert_script(
+        self,
+        script_id: str,
+        script: Literal["MaaFW", "MaaFWManaged"],
+    ) -> Any:
+        """原地转换脚本类型，保留脚本 ID 与全部用户数据。
+
+        目前只用于 MFW 自选目录形态与托管形态之间的迁移：两者共用同一个
+        manager 与同一份用户配置，差别只在项目载荷从哪来。限制在这一对之间是
+        故意的——跨脚本类型转换会丢掉大半配置项，那不是"迁移"而是"清空"。
+        """
+
+        logger.info(f"转换脚本类型: {script_id} -> {script}")
+
+        script_uid = uuid.UUID(script_id)
+        if not isinstance(self.ScriptConfig[script_uid], MaaFWConfig):
+            raise TypeError(f"脚本配置类型不支持转换: {script_id}")
+
+        return await self.ScriptConfig.convert(script_uid, CLASS_BOOK[script])
+
     async def add_script(
         self,
         script: Literal[
@@ -773,6 +823,7 @@ class AppConfig(GlobalConfig):
             "MaaEnd",
             "M9A",
             "MaaFW",
+            "MaaFWManaged",
             "Okww",
             "OkNte",
             "HSR",
@@ -844,6 +895,60 @@ class AppConfig(GlobalConfig):
 
         index = data.pop("instances", [])
         return list(index), data
+
+    async def get_script_records(self, script_id: str) -> list[dict[str, Any]]:
+        """按托管环境服务的契约返回单条脚本记录。
+
+        与 `get_script` 的三点差别都是调用方要求的：`type` 给的是 `CLASS_BOOK`
+        的键而不是类名；`Managed` / `ManagedRuntime` 里的 JSON 字段解析成 dict
+        —— 调用方按 Mapping 读，留成字符串会被当作空；找不到脚本时返回空列表，
+        由调用方去判定「不是唯一脚本」。
+        """
+
+        try:
+            uid = uuid.UUID(script_id)
+        except (AttributeError, TypeError, ValueError):
+            return []
+
+        try:
+            script_config = self.ScriptConfig[uid]
+        except (IndexError, KeyError, TypeError):
+            return []
+
+        data = await script_config.toDict()
+        for section, fields in _MANAGED_JSON_FIELDS.items():
+            group = data.get(section)
+            if not isinstance(group, dict):
+                continue
+            for field in fields:
+                group[field] = _as_json_mapping(group.get(field))
+
+        return [
+            {
+                "id": script_id,
+                "type": _SCRIPT_TYPE_BY_CLASS.get(type(script_config).__name__, ""),
+                "config": data,
+            }
+        ]
+
+    @asynccontextmanager
+    async def script_config_transaction(
+        self, script_id: str, *, owner: str = ""
+    ) -> AsyncIterator[None]:
+        """串行化同一脚本配置的写入者。
+
+        只负责互斥，不做提交或回滚 —— 写入仍由事务体内各自的 `update_script`
+        落盘。**不能复用 `ScriptConfig[uid].lock()`**：那是运行期禁止界面改配置
+        的闸门，事务体内自己的 `update_script` 反而会被它拒掉。
+        """
+
+        lock = self._script_config_locks.setdefault(script_id, asyncio.Lock())
+        async with lock:
+            logger.debug(f"进入脚本配置事务: {script_id} (持有者: {owner or '未署名'})")
+            try:
+                yield
+            finally:
+                logger.debug(f"离开脚本配置事务: {script_id}")
 
     async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
         """读取指定 MaaEnd 安装目录中的动态选项。"""

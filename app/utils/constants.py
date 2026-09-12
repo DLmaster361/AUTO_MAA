@@ -42,6 +42,7 @@ TYPE_BOOK = {
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
     "MaaFWConfig": "MFW",
+    "MaaFWManagedConfig": "MFW托管",
     "HSRConfig": "HSR",
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",

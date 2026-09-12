@@ -1279,6 +1279,7 @@ class ScriptIndexItem(BaseModel):
         "MaaEndConfig",
         "M9AConfig",
         "MaaFWConfig",
+        "MaaFWManagedConfig",
         "HSRConfig",
         "BetterGIConfig",
         "ZzzOdConfig",
@@ -3253,6 +3254,13 @@ class MaaFWConfig_Managed(BaseModel):
         default=None, description="待确认升级事务 JSON"
     )
     LastOperation: Optional[str] = Field(default=None, description="最近资源操作 JSON")
+    ImportProjectId: Optional[str] = Field(
+        default=None, description="导入来源的项目 ID"
+    )
+    RunRootId: Optional[str] = Field(
+        default=None, description="checkout 所属 run root 身份"
+    )
+    Status: Optional[str] = Field(default=None, description="最近一次环境解析状态")
 
 
 class MaaFWConfig_ManagedRuntime(BaseModel):
@@ -3624,6 +3632,139 @@ class MaaFWAgentEnvPrepareOut(OutBase):
     )
 
 
+## MaaFW 托管（Project Store）------------------------------------------------
+
+
+class MaaFWManagedProjection(BaseModel):
+    """脱壳报告。数值全部取自 Store manifest，界面直接展示，不要另算。"""
+
+    sourceSizeBytes: int = Field(default=0, description="导入源的体积")
+    payloadSizeBytes: int = Field(default=0, description="脱壳后落盘的体积")
+    savedBytes: int = Field(default=0, description="脱壳省下的体积")
+    savedPercent: float = Field(default=0.0, description="脱壳省下的比例（百分数）")
+    excludedCount: int = Field(default=0, description="被排除的路径条数")
+    shellFamilies: List[str] = Field(
+        default_factory=list, description="识别到的外壳家族，如 MFAAvalonia / MXU"
+    )
+    excludedReasons: Dict[str, str] = Field(
+        default_factory=dict, description="被排除路径 → 原因（截断到前 128 条）"
+    )
+
+
+class MaaFWManagedImportIn(BaseModel):
+    sourcePath: str = Field(..., description="本地项目目录或 ZIP 发行包路径")
+    scriptId: Optional[str] = Field(
+        default=None, description="导入后绑定到该托管脚本；留空则只入库不绑定"
+    )
+    activate: bool = Field(default=True, description="导入后设为该项目的当前版本")
+
+
+class MaaFWManagedImportData(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    version: str = Field(..., description="版本号")
+    storeId: str = Field(..., description="Project Store 实例身份")
+    dataPath: str = Field(..., description="不可变版本载荷目录")
+    bound: bool = Field(default=False, description="是否已绑定到脚本")
+    projection: MaaFWManagedProjection = Field(..., description="脱壳报告")
+
+
+class MaaFWManagedImportOut(OutBase):
+    data: Optional[MaaFWManagedImportData] = Field(default=None, description="导入结果")
+
+
+class MaaFWManagedMigrateIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="要迁移的 MFW 脚本 ID")
+
+
+class MaaFWManagedMigrateData(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    version: str = Field(..., description="版本号")
+    storeId: str = Field(..., description="Project Store 实例身份")
+    dataPath: str = Field(..., description="不可变版本载荷目录")
+    sourcePath: str = Field(
+        ..., description="迁移前的原项目目录；AUTO-MAS 不会动它，由用户自行决定是否删除"
+    )
+    projection: MaaFWManagedProjection = Field(..., description="脱壳报告")
+
+
+class MaaFWManagedMigrateOut(OutBase):
+    data: Optional[MaaFWManagedMigrateData] = Field(
+        default=None, description="迁移结果"
+    )
+
+
+class MaaFWManagedVersionItem(BaseModel):
+    version: str = Field(..., description="版本号")
+    createdAt: Optional[str] = Field(default=None, description="导入时间")
+    lastUsedAt: Optional[str] = Field(default=None, description="最近使用时间")
+    current: bool = Field(default=False, description="是否为当前版本")
+    pinned: bool = Field(default=False, description="是否被钉住")
+    references: List[str] = Field(default_factory=list, description="引用者")
+    sizeBytes: int = Field(default=0, description="该版本载荷体积")
+
+
+class MaaFWManagedVersionsIn(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+
+
+class MaaFWManagedVersionsData(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    current: Optional[str] = Field(default=None, description="当前版本")
+    versions: List[MaaFWManagedVersionItem] = Field(
+        default_factory=list, description="版本列表，按导入时间倒序"
+    )
+
+
+class MaaFWManagedVersionsOut(OutBase):
+    data: Optional[MaaFWManagedVersionsData] = Field(
+        default=None, description="版本列表"
+    )
+
+
+class MaaFWManagedSwitchIn(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    version: str = Field(..., description="要切换到的版本")
+    scriptId: Optional[str] = Field(
+        default=None, description="同时更新该脚本的绑定版本"
+    )
+
+
+class MaaFWManagedVersionDeleteIn(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    version: str = Field(..., description="要删除的版本")
+
+
+class MaaFWManagedProjectItem(BaseModel):
+    projectId: str = Field(..., description="项目 ID")
+    current: Optional[str] = Field(default=None, description="当前版本")
+    versionCount: int = Field(default=0, description="版本数")
+    sizeBytes: int = Field(default=0, description="该项目占用合计")
+
+
+class MaaFWManagedInventoryData(BaseModel):
+    storeId: str = Field(..., description="Project Store 实例身份")
+    root: str = Field(..., description="Store 根目录")
+    runRoot: str = Field(..., description="脚本 checkout 根目录")
+    totalBytes: int = Field(default=0, description="Store 占用合计")
+    projects: List[MaaFWManagedProjectItem] = Field(
+        default_factory=list, description="项目列表"
+    )
+
+
+class MaaFWManagedInventoryOut(OutBase):
+    data: Optional[MaaFWManagedInventoryData] = Field(
+        default=None, description="Store 库存"
+    )
+
+
+class MaaFWManagedGcIn(BaseModel):
+    dryRun: bool = Field(default=True, description="只预览不删除")
+
+
+class MaaFWManagedGcOut(OutBase):
+    data: Optional[Dict[str, Any]] = Field(default=None, description="回收结果")
+
+
 PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
 PlanComboxConsumer = Literal["maa", "maaend"]
 
@@ -3788,12 +3929,13 @@ class ScriptCreateIn(BaseModel):
         "MaaEnd",
         "M9A",
         "MaaFW",
+        "MaaFWManaged",
         "HSR",
         "BetterGI",
         "ZzzOd",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, MaaFW托管脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"

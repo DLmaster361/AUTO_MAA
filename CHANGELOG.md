@@ -32,6 +32,23 @@
 
 ### 新增
 
+- 模拟器管理 新增「Emulator 2.0」配置类型：一条配置可纳管多个雷电 14 / MuMu 6 安装路径，两家的实例合并成一张设备表统一编号；支持新建与删除实例，分辨率（含 DPI）、CPU、内存、帧率的单台与批量设置，以及一键「稳定模式」关掉高帧率、后台保活等会干扰截图识别的功能；另有「配置守卫」，把你定的设置记成基准，启动前与关闭后各核验一次，被模拟器改掉就还原回来 by [@qiyinxi](https://github.com/qiyinxi)
+- MaaEnd专项 新增脚本直控模式，抢委托送货与自动采集独立为可单独配置的阶段，用户配置页改为锚点导航加分区卡片布局 by [@HarcoChen](https://github.com/HarcoChen) by [@qiyinxi](https://github.com/qiyinxi)
+- MaaEnd专项 支持为指定任务设置每日仅执行一次以缩短后续运行，并修复仅启用自动采集时任务无法启动 by [@HarcoChen](https://github.com/HarcoChen) by [@qiyinxi](https://github.com/qiyinxi)
+- MFW 项目支持在脚本运行前或运行后自动更新，可在项目配置中选择时机；升级后已有脚本默认为「运行前更新」，不需要可在项目配置中改为「不更新」 by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 新增绿票商店开关：开启后每月单独启动一次 MAA 自动购买绿票商店，用户配置页可查看本月状态并手动重置 by [@qiyinxi](https://github.com/qiyinxi)
+- 新增绝区零一条龙（ZZZ-OD）专项适配：支持用户独立模式与直控模式 by [@AthenaHibou](https://github.com/AthenaHibou) by [@qiyinxi](https://github.com/qiyinxi)
+- 调度队列 新增循环队列：队列里的每个任务可单独设定固定时间或间隔重复运行，在调度台以「循环运行」启动后会按各自的周期一直跑下去，并显示接下来要运行的任务与时间 by [@qiyinxi](https://github.com/qiyinxi)
+- OK-NTE专项 支持启动后按用户手机号后 4 位强制切换登录账号，并支持由 MAS 经启动器拉起异环游戏、避免卡界面，新增问题包一键导出便于反馈登录失败 by [@AthenaHibou](https://github.com/AthenaHibou) by [@qiyinxi](https://github.com/qiyinxi)
+- MFW 项目更新可自行选择下载源（Mirror 酱 / GitHub）与更新通道（稳定版 / 测试版） by [@qiyinxi](https://github.com/qiyinxi)
+- 调度中心 选中脚本后可再指定一个用户单独运行，只代理该用户而不跑该脚本下的其他用户 by [@qiyinxi](https://github.com/qiyinxi)
+- 调度队列 完成后操作可单独设定延时，关机、休眠等操作会在队列结束后先静默等待设定的时长，再照常弹出 60 秒倒计时 by [@qiyinxi](https://github.com/qiyinxi)
+- 通知系统 支持扫码绑定微信 Claw 和 QQ 官方机器人并接收任务通知，绑定与启用状态保持独立，绑定失效或推送失败时会明确提示 by [@HarcoChen](https://github.com/HarcoChen) by [@qiyinxi](https://github.com/qiyinxi)
+- HSR专项 用户配置页新增「额外脚本」，可在该用户任务开始前与结束后各执行一个自定义脚本（exe / bat / cmd / py 等），MAS 管控与脚本直控两种模式均生效 by [@qiyinxi](https://github.com/qiyinxi)
+- 首页 快速启动支持多选并记住上次选择，可一次启动多个任务 by [@Craun718](https://github.com/Craun718) by [@qiyinxi](https://github.com/qiyinxi)
+- MAA专项 托管结束后保存 MAA 写入配置文件的每日状态（如借战赚信用与访问好友的当天执行记录），同一天多次托管不再重复执行 by [@1w1w11w1](https://github.com/1w1w11w1) by [@qiyinxi](https://github.com/qiyinxi)
+- 全局设置 新增「虚拟显示器」：显示器断开或关闭后 Windows 只保留一块占位的幻影屏，它照旧上报一个看着正常的分辨率，但背后没有任何输出，游戏渲染与截图都可能不可靠；冷启动时更会直接起在很小的分辨率上，把游戏窗口压小并被游戏自己记住。开启后 MAS 在检测到没有任何真实显示输出时临时挂一块 1920x1080 的虚拟显示器，任务结束即拆除；程序若被强制结束，下次启动会自动清理上次遗留的虚拟显示器。刷新率可选 60Hz 或更省 GPU 的 30Hz，并提供驱动检测（需自行安装 Parsec 虚拟显示驱动，MAS 不附带驱动） by [@qiyinxi](https://github.com/qiyinxi)
+- 更新提示改为按版本分区块展示，「重要变更」与「本次亮点」置顶，并可在设置页随时查看当前版本的更新日志 by [@qiyinxi](https://github.com/qiyinxi)
 - 绝区零一条龙专项 用户卡片新增「用户模式/直控模式」来源、区服、账号尾号与一条龙任务数标签，并修复 MaaFW 专项用户卡片不显示任何标签的问题 by [@AthenaHibou](https://github.com/AthenaHibou)
 - MFW专项 使用模拟器时可顺带把游戏一起打开（包名自动识别或手动填写），任务前后自定义脚本改为每用户各跑一次、不再随重试重复
 - MFW专项 同一个任务可以重复加入任务队列，每一份各自配置选项与排序；设了「每日/每周/每月仅一次」的任务仍按任务计，一轮只跑一次 by [@qiyinxi](https://github.com/qiyinxi)
@@ -74,6 +91,7 @@
 
 ### 开发流程
 
+- MFW 托管形态（资源导入脱壳、共用运行环境、版本管理、远程更新、迁移）后端链路接通并提供 API，界面暂不接入，仅供小范围试用
 - 首页卫星图标改从全局图标表取，新增专项时不再漏掉主页卫星
 
 ## [v5.5.0-beta.3] - 2026-09-09

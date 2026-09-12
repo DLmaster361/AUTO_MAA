@@ -39,5 +39,17 @@ export type MaaFWConfig_Managed = {
      * 最近资源操作 JSON
      */
     LastOperation?: (string | null);
+    /**
+     * 导入来源的项目 ID
+     */
+    ImportProjectId?: (string | null);
+    /**
+     * checkout 所属 run root 身份
+     */
+    RunRootId?: (string | null);
+    /**
+     * 最近一次环境解析状态
+     */
+    Status?: (string | null);
 };
 

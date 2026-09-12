@@ -6,12 +6,162 @@ import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWManagedGcIn } from '../models/MaaFWManagedGcIn';
+import type { MaaFWManagedGcOut } from '../models/MaaFWManagedGcOut';
+import type { MaaFWManagedImportIn } from '../models/MaaFWManagedImportIn';
+import type { MaaFWManagedImportOut } from '../models/MaaFWManagedImportOut';
+import type { MaaFWManagedInventoryOut } from '../models/MaaFWManagedInventoryOut';
+import type { MaaFWManagedMigrateIn } from '../models/MaaFWManagedMigrateIn';
+import type { MaaFWManagedMigrateOut } from '../models/MaaFWManagedMigrateOut';
+import type { MaaFWManagedSwitchIn } from '../models/MaaFWManagedSwitchIn';
+import type { MaaFWManagedVersionDeleteIn } from '../models/MaaFWManagedVersionDeleteIn';
+import type { MaaFWManagedVersionsIn } from '../models/MaaFWManagedVersionsIn';
+import type { MaaFWManagedVersionsOut } from '../models/MaaFWManagedVersionsOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
+import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class MaaFwService {
+    /**
+     * 导入 MFW 项目到托管 Store
+     * 把本地目录或 ZIP 发行包导入不可变 Store，并可选地绑定到一个托管脚本。
+     *
+     * 绑定不是可有可无的一步：只写 projectId/version 而不带 Store 身份，运行时会被
+     * 「脚本缺少可验证的 Project Store 身份」直接拒掉。
+     * @param requestBody
+     * @returns MaaFWManagedImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importManagedMaafwProjectApiScriptsMaafwManagedImportPost(
+        requestBody: MaaFWManagedImportIn,
+    ): CancelablePromise<MaaFWManagedImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把自选目录的 MFW 脚本转为托管
+     * 导入现有项目目录、原地把脚本换成托管类型。**原目录一个字节都不动。**
+     *
+     * 转换是**原地**的：脚本 ID 不变，队列成员、计划表、通知绑定和 ``data/<uid>/``
+     * 下的用户数据全都留着。新建一个托管脚本再删旧的会把这些一并丢掉。
+     *
+     * 不提供"顺便删掉原目录"：投影是白名单式的，万一漏了某个项目运行时才需要、但
+     * interface.json 没声明的文件，原目录是唯一的退路。删不删由用户在资源管理器里
+     * 自己做，且应当等托管版本证明能跑之后再做——返回值里把原目录路径原样告诉他。
+     * @param requestBody
+     * @returns MaaFWManagedMigrateOut Successful Response
+     * @throws ApiError
+     */
+    public static migrateMaafwScriptToManagedApiScriptsMaafwManagedMigratePost(
+        requestBody: MaaFWManagedMigrateIn,
+    ): CancelablePromise<MaaFWManagedMigrateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/migrate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出托管项目的版本
+     * @param requestBody
+     * @returns MaaFWManagedVersionsOut Successful Response
+     * @throws ApiError
+     */
+    public static listManagedMaafwVersionsApiScriptsMaafwManagedVersionsPost(
+        requestBody: MaaFWManagedVersionsIn,
+    ): CancelablePromise<MaaFWManagedVersionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/versions',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 切换托管项目的当前版本
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static switchManagedMaafwVersionApiScriptsMaafwManagedSwitchPost(
+        requestBody: MaaFWManagedSwitchIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/switch',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除托管项目的一个版本
+     * 删除受 current / pinned / references / lease 阻断——阻断理由原样返回。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteManagedMaafwVersionApiScriptsMaafwManagedVersionDeletePost(
+        requestBody: MaaFWManagedVersionDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/version/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查看托管 Store 的占用
+     * @returns MaaFWManagedInventoryOut Successful Response
+     * @throws ApiError
+     */
+    public static getManagedMaafwInventoryApiScriptsMaafwManagedInventoryPost(): CancelablePromise<MaaFWManagedInventoryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/inventory',
+        });
+    }
+    /**
+     * 回收托管 Store 中无人引用的版本
+     * @param requestBody
+     * @returns MaaFWManagedGcOut Successful Response
+     * @throws ApiError
+     */
+    public static collectManagedMaafwGarbageApiScriptsMaafwManagedGcPost(
+        requestBody: MaaFWManagedGcIn,
+    ): CancelablePromise<MaaFWManagedGcOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/managed/gc',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 预览 MFW interface
      * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。

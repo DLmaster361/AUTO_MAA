@@ -2762,6 +2762,7 @@ export default {
       MaaEnd: 'MaaEnd',
       M9A: 'M9A',
       MaaFW: 'MFW',
+      MaaFWManaged: 'MFW（管理）',
       Okww: 'ok-ww',
       OkNte: 'ok-nte',
       HSR: 'HSR',

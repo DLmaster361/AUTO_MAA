@@ -165,6 +165,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   MaaEnd: 'maaend',
   M9A: 'm9a',
   MaaFW: 'maafw',
+  MaaFWManaged: 'maafw',
   Okww: 'okww',
   OkNte: 'oknte',
   HSR: 'hsr',

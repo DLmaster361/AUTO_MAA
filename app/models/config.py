@@ -64,6 +64,7 @@ from .ConfigBase import (
     EncryptValidator,
     FileValidator,
     FolderValidator,
+    ManagedFolderValidator,
     JSONValidator,
     KeyValidator,
     MultipleConfig,
@@ -2446,6 +2447,12 @@ class MaaFWConfig(ConfigBase):
 
     related_config: dict[str, MultipleConfig] = {}
 
+    @staticmethod
+    def _project_path_validator() -> FolderValidator:
+        """`Info.Path` 用的校验器。托管子类要换成允许工作目录内路径的那个。"""
+
+        return FolderValidator()
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -2454,7 +2461,7 @@ class MaaFWConfig(ConfigBase):
         ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
         self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
         ## MaaFW 项目根目录，应包含 interface.json
-        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", self._project_path_validator())
         ## MaaFW controller 名称，留空时按 interface 和设备配置自动选择
         self.Info_Controller = ConfigItem("Info", "Controller", "")
         ## MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
@@ -2690,6 +2697,40 @@ class MaaFWConfig(ConfigBase):
     async def load(self, data: dict) -> bool:
         """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
         return await super().load(_migrate_maafw_auto_update_mode(data))
+
+
+class MaaFWManagedConfig(MaaFWConfig):
+    """MaaFW 托管形态配置（三层规划第三层）。
+
+    与自选目录形态的唯一区别是**项目载荷从哪来**：托管脚本的资源由 Project
+    Store 导入并脱壳，``Info.Path`` 指向该脚本自己的 checkout，而不是用户
+    手选的目录。运行链路两者共用 ``MaaFWEmbeddedManager`` —— 本类是
+    ``MaaFWConfig`` 的子类，正是为了让既有的 ``isinstance`` 分发继续命中。
+
+    这里只补父类没有、而托管解析结果需要落盘的三个键。
+    """
+
+    @staticmethod
+    def _project_path_validator() -> FolderValidator:
+        """托管的 `Info.Path` 指向 MAS 自己产出的 checkout，就在工作目录之下。
+
+        用父类那个禁止工作目录的校验器会让绑定持久化直接失败——托管形态本身
+        就跑不起来。
+        """
+
+        return ManagedFolderValidator()
+
+    def __init__(self) -> None:
+
+        ## Managed（仅托管形态写入）----------------------------------------
+        ## 导入来源的项目 id：记录「从哪导入的」，与解析后的 ProjectId 分开
+        self.Managed_ImportProjectId = ConfigItem("Managed", "ImportProjectId", "")
+        ## 该脚本 checkout 所属 run root 的身份，用于校验绑定是否仍然有效
+        self.Managed_RunRootId = ConfigItem("Managed", "RunRootId", "")
+        ## 最近一次环境解析的状态标记
+        self.Managed_Status = ConfigItem("Managed", "Status", "")
+
+        super().__init__()
 
 
 class MaaPlanConfig(ConfigBase):
@@ -4498,6 +4539,7 @@ class GlobalConfig(ConfigBase):
                 SrcConfig,
                 M9AConfig,
                 MaaFWConfig,
+                MaaFWManagedConfig,
                 GeneralConfig,
                 OkwwConfig,
                 OkNteConfig,
@@ -4607,6 +4649,7 @@ CLASS_BOOK = {
     "MaaEnd": MaaEndConfig,
     "M9A": M9AConfig,
     "MaaFW": MaaFWConfig,
+    "MaaFWManaged": MaaFWManagedConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,

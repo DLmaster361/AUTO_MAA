@@ -2923,6 +2923,7 @@ export default {
       MaaEnd: 'MaaEnd脚本',
       M9A: 'M9A脚本',
       MaaFW: 'MFW脚本',
+      MaaFWManaged: 'MFW托管脚本',
       Okww: 'ok-ww脚本',
       OkNte: 'ok-nte脚本',
       HSR: 'HSR脚本',

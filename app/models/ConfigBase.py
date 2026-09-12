@@ -248,6 +248,13 @@ class JSONValidator(ValidatorBase):
             return False
 
     def correct(self, value):
+        if isinstance(value, self.type):
+            # 调用方直接给结构化数据是自然的期望（托管环境服务就是写 dict），
+            # 存储形式仍是 JSON 字符串，这里补上序列化——否则值会被静默丢成空。
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except (TypeError, ValueError):
+                pass
         return (
             value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
         )
@@ -371,6 +378,15 @@ class FileValidator(ValidatorBase):
 class FolderValidator(ValidatorBase):
     """文件夹路径验证器"""
 
+    def _forbidden_paths(self) -> tuple[Path, ...]:
+        """不允许作为配置路径的目录。
+
+        工作目录也在内：这条规则防的是用户手选目录时指到 AUTO-MAS 自己头上，
+        两边会互相污染。子类可以按自己的语义收窄这个集合。
+        """
+
+        return (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve())
+
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -386,7 +402,7 @@ class FolderValidator(ValidatorBase):
             return False
         if len(resolved.parts) == 1:
             return False
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+        for forbidden in self._forbidden_paths():
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
@@ -412,7 +428,7 @@ class FolderValidator(ValidatorBase):
             return ""
         if len(resolved.parts) == 1:
             raise ValueError("不允许将驱动器根目录作为配置路径")
-        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+        for forbidden in self._forbidden_paths():
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
@@ -422,6 +438,19 @@ class FolderValidator(ValidatorBase):
         if resolved in FORBIDDEN_PATH_EXACT:
             raise ValueError(f"不允许将系统程序目录作为配置路径: {value}")
         return resolved.as_posix()
+
+
+class ManagedFolderValidator(FolderValidator):
+    """托管形态的项目目录验证器。
+
+    与 `FolderValidator` 的唯一区别是**允许工作目录内的路径**。托管 checkout
+    由 AUTO-MAS 自己产出在 `data/maafw_project_runs/` 下，用「不许指向工作
+    目录」那条规则去卡它等于禁掉托管形态本身——而那条规则本来防的是用户手选
+    目录时指到 MAS 自己头上。系统目录与驱动器根目录仍然禁止。
+    """
+
+    def _forbidden_paths(self) -> tuple[Path, ...]:
+        return tuple(FORBIDDEN_PATH_PREFIXES)
 
 
 class EmulatorPathValidator(FileValidator):
@@ -1411,6 +1440,57 @@ class MultipleConfig(Generic[T]):
         await self._commit_changes()
 
         return uid, self.data[uid]
+
+    async def convert(self, uid: uuid.UUID, config_type: Type[T]) -> T:
+        """把一个已存在的配置项原地换成另一种类型，uid 与顺序都不变。
+
+        类型不是单独存的字段，而是 ``type(self.data[uid]).__name__``（见
+        :meth:`toDict`），所以换类型就是换掉这个对象本身。
+
+        **保住 uid 是这个方法存在的理由**：队列成员、计划表、通知绑定，以及
+        ``data/<uid>/`` 下的用户数据全都按它索引。走「新建一个再删旧的」那条路
+        会把这些一并丢掉，而用户看到的只是「转换后脚本从队列里消失了」。
+
+        Parameters
+        ----------
+        uid: uuid.UUID
+            要转换的配置项
+        config_type: type
+            目标类型, 必须是初始化时已声明的 ConfigBase 子类
+
+        Returns
+        -------
+        ConfigBase
+            转换后的新实例
+        """
+
+        if config_type not in self.sub_config_type.values():
+            raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
+
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法修改")
+
+        if uid not in self.data:
+            raise ValueError(f"配置项 '{uid}' 不存在")
+
+        if self.data[uid].is_locked:
+            raise ValueError(f"配置项 '{uid}' 已锁定, 无法转换")
+
+        converted = config_type()
+        # 不重新生成用户 uuid：data/<script>/<user> 目录按它命名，换了就对不上。
+        # 目标类型没有的键在 load 里被忽略，多出来的键保持默认值。
+        await converted.load(await self.data[uid].toDict())
+
+        for save_method in self._save_methods:
+            await converted.add_save_method(save_method)
+
+        if self.file:
+            await converted.add_save_method(self.save)
+
+        self.data[uid] = converted
+        await self._commit_changes()
+
+        return converted
 
     async def remove(self, uid: uuid.UUID):
         """

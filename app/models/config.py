@@ -64,9 +64,9 @@ from .ConfigBase import (
     EncryptValidator,
     FileValidator,
     FolderValidator,
-    ManagedFolderValidator,
     JSONValidator,
     KeyValidator,
+    ManagedFolderValidator,
     MultipleConfig,
     MultipleOptionsValidator,
     MultipleUIDValidator,
@@ -4306,6 +4306,13 @@ class GlobalConfig(ConfigBase):
         ## 是否启用匿名遥测
         self.Function_IfEnableTelemetry = ConfigItem(
             "Function", "IfEnableTelemetry", True, BoolValidator()
+        )
+        ## MFW 托管的小范围试用开关。**故意不在设置界面里露出**：谁能用由维护者
+        ## 逐个告知，改 config/Config.json 打开。只锁「进门」（建托管脚本、导入、
+        ## 迁移），已经建好的托管脚本关掉开关后照常运行、切版本——否则哪天关掉
+        ## 开关，试用者的脚本就全瘫了。
+        self.Function_MaaFWManagedPreview = ConfigItem(
+            "Function", "MaaFWManagedPreview", False, BoolValidator()
         )
 
         ## Display ----------------------------------------------------------

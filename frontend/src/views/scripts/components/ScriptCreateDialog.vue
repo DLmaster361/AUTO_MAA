@@ -248,6 +248,7 @@ import MarkdownIt from 'markdown-it'
 import type { ScriptType } from '@/types/script'
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import { openExternalUrl } from '@/utils/openExternal'
+import { useMaaFWManagedPreview } from '@/composables/useMaaFWManagedPreview'
 import {
   buildCreateRequest,
   buildCreateSteps,
@@ -305,8 +306,12 @@ const canGoBack = computed(
     (currentStep.value === 'config' && configView.value === 'templates')
 )
 // title/description 随语言变，先解析再过滤，别名匹配仍走 keywords
+// 托管形态处于小范围试用：开关没开就不列出来，也不解释为什么没有。
+const { enabled: managedPreviewEnabled, load: loadManagedPreview } = useMaaFWManagedPreview()
 const typeOptions = computed(() =>
-  SCRIPT_TYPE_OPTIONS.map(option => ({
+  SCRIPT_TYPE_OPTIONS.filter(
+    option => option.value !== 'MaaFWManaged' || managedPreviewEnabled.value
+  ).map(option => ({
     ...option,
     title: t(option.titleKey),
     description: t(option.descriptionKey),
@@ -351,7 +356,10 @@ const primaryButtonText = computed(() => {
 watch(
   () => props.open,
   open => {
-    if (open) resetDialog()
+    if (open) {
+      resetDialog()
+      void loadManagedPreview()
+    }
   }
 )
 

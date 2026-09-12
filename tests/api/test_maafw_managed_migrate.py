@@ -90,6 +90,12 @@ class ConvertKeepsIdentityTest(unittest.IsolatedAsyncioTestCase):
 
 class MigrateRouteTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        # 这里测的是门里的迁移逻辑；门本身在 test_maafw_managed_preview_gate.py 里测。
+        gate = patch.object(
+            scripts_api.Config, "maafw_managed_preview_enabled", return_value=True
+        )
+        gate.start()
+        self.addCleanup(gate.stop)
         # 用真目录：FolderValidator 会把不存在的路径纠成空串，假路径根本存不进去。
         self.source = Path(tempfile.mkdtemp(prefix="mas-migrate-"))
         self.addCleanup(shutil.rmtree, self.source, ignore_errors=True)

@@ -794,6 +794,17 @@ class AppConfig(GlobalConfig):
         )
         return is_latest or supervised, commit_hash, commit_time
 
+    def maafw_managed_preview_enabled(self) -> bool:
+        """MFW 托管是否对本安装开放。读的是 Function.MaaFWManagedPreview。"""
+
+        return bool(self.get("Function", "MaaFWManagedPreview"))
+
+    def require_maafw_managed_preview(self) -> None:
+        """没开放就拒绝。文案里**不说怎么打开**：这是维护者逐个告知的事。"""
+
+        if not self.maafw_managed_preview_enabled():
+            raise PermissionError("MFW 托管功能尚未对本安装开放")
+
     async def convert_script(
         self,
         script_id: str,
@@ -807,6 +818,9 @@ class AppConfig(GlobalConfig):
         """
 
         logger.info(f"转换脚本类型: {script_id} -> {script}")
+
+        if script == "MaaFWManaged":
+            self.require_maafw_managed_preview()
 
         script_uid = uuid.UUID(script_id)
         if not isinstance(self.ScriptConfig[script_uid], MaaFWConfig):
@@ -848,6 +862,9 @@ class AppConfig(GlobalConfig):
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
+
+        if script == "MaaFWManaged":
+            self.require_maafw_managed_preview()
 
         if script_id is None:
             return await self.ScriptConfig.add(CLASS_BOOK[script])

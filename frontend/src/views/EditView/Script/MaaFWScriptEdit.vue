@@ -119,7 +119,7 @@
           />
         </div>
 
-        <div v-if="!isManagedScript && !isWizard">
+        <div v-if="!isManagedScript && !isWizard && managedPreviewEnabled">
           <MigrateToManagedSection
             :script-id="scriptId"
             :source-path="maafwConfig.Info.Path"
@@ -207,6 +207,7 @@ import {
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
+import { useMaaFWManagedPreview } from '@/composables/useMaaFWManagedPreview'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -274,6 +275,8 @@ const maafwConfig = reactive<MaaFWScriptConfig>(getDefaultMaaFWScriptConfig())
 
 // 托管形态与自选目录形态共用这个编辑页；托管专属区块只在前者出现。
 const isManagedScript = ref(false)
+// 「转为托管」只在小范围试用开关打开时出现；已是托管的脚本不看这个开关。
+const { enabled: managedPreviewEnabled, load: loadManagedPreview } = useMaaFWManagedPreview()
 const managedSection = computed(
   () => (maafwConfig as unknown as Record<string, Record<string, unknown>>).Managed ?? null
 )
@@ -646,6 +649,7 @@ const reloadAfterManagedChange = async () => {
 }
 
 onMounted(async () => {
+  void loadManagedPreview()
   pageLoading.value = true
   try {
     const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])

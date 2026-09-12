@@ -27,5 +27,9 @@ export type GlobalConfig_Function = {
      * 启用匿名错误与性能遥测
      */
     IfEnableTelemetry?: (boolean | null);
+    /**
+     * MFW 托管小范围试用开关；不在设置界面展示
+     */
+    MaaFWManagedPreview?: (boolean | null);
 };
 

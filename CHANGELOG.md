@@ -78,6 +78,7 @@
 - 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 - OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 - 调度台 修复任务运行期间日志被大量「订阅已存在，跳过重复订阅」记录刷屏的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
+- MAA专项 修复在配置检查通过后、任务正式开始前停止任务时被报成「MAA任务出现异常」的问题 by [@1w1w11w1](https://github.com/1w1w11w1) by [@HarcoChen](https://github.com/HarcoChen)
 
 ### 开发流程
 

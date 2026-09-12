@@ -58,6 +58,7 @@ class MaaManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.prepared = False
 
     async def check(self) -> str:
         """校验MAA配置是否可用"""
@@ -175,6 +176,9 @@ class MaaManager(TaskExecuteBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+        # prepare() 内每次 await 都可能被中止。只有它整体返回后，收尾依赖的
+        # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
+        self.prepared = True
 
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
@@ -190,6 +194,14 @@ class MaaManager(TaskExecuteBase):
 
     async def final_task(self):
         """运行结束后的收尾工作"""
+
+        if not self.prepared:
+            # prepare() 未走完就结束：配置锁、备份目录与模拟器实例都还没建立，
+            # 没有可收尾的资源。此时收尾只应回报状态——主动停止不算异常，
+            # 而 prepare() 自身的失败则要保留异常
+            if not self.stopped_manually:
+                self.script_info.status = "异常"
+            return self.check_result
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"

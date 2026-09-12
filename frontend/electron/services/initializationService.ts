@@ -39,6 +39,14 @@ export interface InitializationProgress {
   runtimeMode?: RuntimeLaunchMode
   /** 当前阶段没有可靠总量，界面应展示持续活动状态而不是精确百分比。 */
   indeterminate?: boolean
+  /** 以下七项只有 Runtime 链路产生，原样透传 `BootstrapProgressUpdate` 的同名字段。 */
+  runtimeStage?: string
+  runtimeStatus?: string
+  item?: string
+  source?: string
+  bytesPerSecond?: number
+  current?: number
+  total?: number
   details?: {
     checkInfo?: unknown // 可以是 EnvironmentCheckResult, RepositoryCheckResult, 或 DependencyCheckResult
     currentMirror?: string
@@ -384,6 +392,13 @@ export class InitializationService {
         status: update.status,
         runtimeMode,
         indeterminate: update.indeterminate,
+        runtimeStage: update.runtimeStage,
+        runtimeStatus: update.runtimeStatus,
+        item: update.item,
+        source: update.source,
+        bytesPerSecond: update.bytesPerSecond,
+        current: update.current,
+        total: update.total,
       })
   }
 

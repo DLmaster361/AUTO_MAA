@@ -43,6 +43,8 @@
 
 - 全局设置 虚拟显示器改为常驻监测：运行期间检测不到真实显示输出自动挂上，恢复后自动拆掉（任务运行中等结束再拆）；说明里可直接点开 Parsec 驱动下载页 by [@qiyinxi](https://github.com/qiyinxi)
 - 日志清理 MFW 项目的 MaaFramework 原生日志备份改为按保留天数一并清理，不再无限堆积
+- BetterGI专项 一条龙相关按钮与目录文案统一改为「配置组」口径，并新增「录制」标签页，可直接选用 BetterGI 键鼠脚本、打开录制目录
+- BetterGI专项 一条龙队列里的自定义配置组可自定义显示名称与名称备注，仅改变界面显示、不影响实际执行；默认与专项配置组的名称保持不可修改
 
 ### 修复
 
@@ -62,6 +64,9 @@
 - 修复后端就绪前退出时只能反复重试的问题，现同时提供「重建运行环境」入口 by [@qiyinxi](https://github.com/qiyinxi)
 - MAA专项 修复未返回分服关卡数据时用户配置页打不开的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 模拟器管理 修复部分 MuMu 因命令输出混有日志而无法读取信息的问题 by [@qiyinxi](https://github.com/qiyinxi)
+- BetterGI专项 修复一条龙队列加入「录制」键鼠脚本后重复出现一条同名「自定义」配置组项的问题：录制现已与 JS 脚本、地图追踪同样作为独立队列项按名字识别，不再额外生成配置组
+- BetterGI专项 修复一条龙加入「录制」键鼠脚本后运行时「没有内容」的问题：录制在 BetterGI 一条龙里只能作为配置组的 `type=KeyMouse` 项目执行，现已为每个加入队列的录制自动生成含该录制项目的 per-user 配置组副本并物化引用，右栏也改回「配置组项目编辑」可查看录制项目、双击打开录制目录
+- BetterGI专项 修复直控模式仍会执行 MAS 流程、一条龙名称无法修改、首次启动切号失败，以及单日代理次数达上限后次日被跳过的问题
 - MFW专项 修复运行环境准备时 Agent 依赖不走镜像、直连 PyPI 导致「隔离 venv 依赖安装失败」的问题，现按镜像依次重试；失败原因也会写进日志并显示在提示条上，不再只有一句准备失败 by [@qiyinxi](https://github.com/qiyinxi)
 - MFW专项 修复 beta.4 下 MFW 脚本完全无法运行、一开跑就报「MaaFW runner worker exited without result」并提示缺少 loguru 的问题
 - MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次

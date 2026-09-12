@@ -5,7 +5,7 @@
     @click.capture="handleBlankClick"
   >
     <!-- 工具栏：添加脚本 / 删除脚本（仅配置组可编辑且非单项目虚拟组） -->
-    <div v-if="isScriptGroup && editable" class="bgi-project-toolbar">
+    <div v-if="isScriptGroup && editable && !isKeyMouse" class="bgi-project-toolbar">
       <a-space size="small">
         <a-button size="small" type="primary" ghost :disabled="!editable" @click="emit('add-script')">
           <template #icon><PlusOutlined /></template>
@@ -127,38 +127,38 @@
                 <template v-for="(item, idx) in settingsModal.items" :key="item.name || idx">
                   <!-- 分隔线 -->
                   <div
-                    v-if="item.type === 'separator'"
+                    v-if="controlTypeOf(item) === 'separator'"
                     class="bgi-project-separator"
                     :class="{ 'bgi-project-separator-first': idx === 0 }"
                   >
                     {{ item.label || '' }}
                   </div>
                   <!-- checkbox -->
-                  <div v-else-if="item.type === 'checkbox'" class="bgi-project-setting-row">
+                  <div v-else-if="controlTypeOf(item) === 'checkbox'" class="bgi-project-setting-row">
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-switch
-                      :checked="Boolean(fieldValue(item.name))"
+                      :checked="isTruthy(fieldValue(item.name))"
                       @change="(v: boolean | string | number) => setField(item.name, Boolean(v))"
                     />
                   </div>
                   <!-- select -->
-                  <div v-else-if="item.type === 'select'" class="bgi-project-setting-row">
+                  <div v-else-if="controlTypeOf(item) === 'select'" class="bgi-project-setting-row">
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-select
                       :value="String(fieldValue(item.name) ?? '')"
-                      :options="item.options?.map((o: string) => ({ label: o, value: o })) || []"
+                      :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
                       allow-clear
                       @change="(v: unknown) => setField(item.name, v == null ? '' : String(v))"
                     />
                   </div>
                   <!-- multi-checkbox -->
-                  <div v-else-if="item.type === 'multi-checkbox'" class="bgi-project-setting-row">
+                  <div v-else-if="controlTypeOf(item) === 'multi-checkbox'" class="bgi-project-setting-row">
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-select
                       mode="multiple"
                       :value="fieldListValue(item.name)"
-                      :options="item.options?.map((o: string) => ({ label: o, value: o })) || []"
+                      :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
                       @change="(v: unknown) => setField(item.name, Array.isArray(v) ? v : [])"
                     />
@@ -239,16 +239,24 @@ const props = withDefaults(
   }
 )
 
-const emit = defineEmits<{ (e: 'add-script'): void }>()
+const emit = defineEmits<{
+  (e: 'add-script'): void
+}>()
 
 const logger = window.electronAPI.getLogger('BetterGI配置组项目编辑')
 
 const loading = ref(false)
 const saving = ref(false)
 
-const isScriptGroup = computed<boolean>(() => props.kind === 'scriptgroup')
-// 可选择（Shift/Ctrl 多选）：仅可编辑配置组
-const selectable = computed<boolean>(() => isScriptGroup.value && props.editable)
+const isKeyMouse = computed<boolean>(() => props.kind === 'keymouse')
+// 可读取项目列表：配置组 或 录制（录制以「含单 KeyMouse 项目的配置组」形式读取）
+const isScriptGroup = computed<boolean>(
+  () => props.kind === 'scriptgroup' || isKeyMouse.value
+)
+// 可选择（Shift/Ctrl 多选）/可增删：仅可编辑配置组；录制为只读展示（避免误清空导致无内容）
+const selectable = computed<boolean>(
+  () => isScriptGroup.value && props.editable && !isKeyMouse.value
+)
 // 可拖拽排序：配置组 json 且至少两个项目
 const isSortable = computed<boolean>(
   () => selectable.value && projects.value.length > 1
@@ -328,7 +336,7 @@ const handleBlankClick = (event: MouseEvent) => {
 // Ctrl/Cmd=逐个切换多选；Shift=从锚点行到当前行区间多选。
 // 双击（打开设置弹窗）由 dblclick 独立处理，不参与多选。
 const handleRowClick = (row: ProjectRow, index: number, event: MouseEvent) => {
-  if (!props.editable || !isScriptGroup.value) return
+  if (!props.editable || !isScriptGroup.value || isKeyMouse.value) return
   const uid = row._uid
   if (typeof uid !== 'number') return
   if (event.shiftKey) {
@@ -477,7 +485,8 @@ const projRowKey = (proj: ProjectRow, index: number): string => {
 
 // 双击项目：并行读取 settings.json UI 定义 + README，打开弹窗（两标签）
 const openProjectSettings = async (proj: ProjectRow, index: number) => {
-  if (!props.editable) return
+  // 录制（KeyMouse）也以「脚本弹窗」展示，与 JS/路径一致；不要求实际有设置内容
+  if (!props.editable && !isKeyMouse.value) return
   const folder = (proj.folderName || props.folderName || '').trim()
   settingsTab.value = 'config'
   settingsModal.projectIndex = index
@@ -539,10 +548,70 @@ const fieldListValue = (name: string): string[] => {
   const v = fieldValue(name)
   if (Array.isArray(v)) return v.map(String)
   if (typeof v === 'string' && v.trim()) {
-    // BetterGI multi-checkbox 可能以分隔符存字符串
-    return v.split(/[;,；、]/).map(s => s.trim()).filter(Boolean)
+    // BetterGI multi-checkbox 可能以分隔符存字符串。
+    // 必须包含全角逗号「，」：实际脚本（如锄地一条龙的 excludeTags）就用它分隔，
+    // 漏掉会导致整串被当成一个选项、已存值无法回显。
+    return v
+      .split(/[,;，；、｜|]/)
+      .map(s => s.trim())
+      .filter(Boolean)
   }
   return []
+}
+
+// 复选框取值容错：脚本实际存储形态不统一（布尔 / "false" / "0" / "否" 皆有），
+// 直接 Boolean(v) 会把字符串 "false"、"否" 误判为已勾选。
+const isTruthy = (v: unknown): boolean => {
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'number') return v !== 0
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase()
+    if (!s || s === 'false' || s === '0' || s === '否' || s === 'no' || s === 'off') {
+      return false
+    }
+  }
+  return Boolean(v)
+}
+
+// 控件类型归一：脚本 settings.json 的 type 写法并不统一（也可能缺失），
+// 仅按字面量判断会把「该是下拉/开关」的项退化成纯文本框。这里做两层兜底：
+// 1) 常见别名归一（switch/bool/combo/multi_select 等）；
+// 2) 仍未知时按结构推断——有 options 必为下拉，default 为布尔必为开关。
+const controlTypeOf = (item: Record<string, any>): string => {
+  const raw = String(item?.type ?? '').trim().toLowerCase()
+  if (raw === 'separator') return 'separator'
+  if (raw === 'multi-checkbox' || raw === 'multicheckbox' || raw === 'multi_select') {
+    return 'multi-checkbox'
+  }
+  if (raw === 'checkbox' || raw === 'switch' || raw === 'bool' || raw === 'boolean') {
+    return 'checkbox'
+  }
+  if (raw === 'select' || raw === 'dropdown' || raw === 'combo' || raw === 'combobox') {
+    return 'select'
+  }
+  if (Array.isArray(item?.options) && item.options.length > 0) return 'select'
+  if (typeof item?.default === 'boolean') return 'checkbox'
+  return 'input-text'
+}
+
+// 候选项归一：兼容字符串数组与对象数组（{label,value}/{name,value} 等）
+const optionList = (
+  item: Record<string, any>
+): Array<{ label: string; value: string }> => {
+  const raw = item?.options
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((o: unknown) => {
+      if (typeof o === 'string') return { label: o, value: o }
+      if (o && typeof o === 'object') {
+        const r = o as Record<string, unknown>
+        const label = String(r.label ?? r.name ?? r.text ?? r.value ?? '')
+        const value = String(r.value ?? r.key ?? r.name ?? label)
+        return { label, value }
+      }
+      return { label: String(o ?? ''), value: String(o ?? '') }
+    })
+    .filter(o => o.value !== '')
 }
 
 const setField = (name: string, value: unknown) => {

@@ -299,6 +299,9 @@ export default {
     maaCustomInfrastPlan: '自定义基建排班',
     maaCustomInfrastPlanHint: '从已导入的配置中选择当前使用的排班',
     maaDaily: '日常任务',
+    maaSwitchTheme: '更换主题',
+    maaSwitchThemeHint:
+      '主题名称在 MAA 的「更换主题」任务里配置，可填多个，每次运行随机切换一个，为空时自动跳过；需要 MAA v6.17.3 及以上版本',
     maaRoguelike: '自动肉鸽',
     maaRoguelikeHint: '长时间运行可能被误判超时',
     maaGreenTicketStore: '绿票商店',

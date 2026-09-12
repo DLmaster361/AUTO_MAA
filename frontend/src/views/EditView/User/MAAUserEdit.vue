@@ -497,6 +497,7 @@ const getDefaultMAAUserData = () => ({
     IfFight: true,
     IfMall: true,
     IfAward: true,
+    IfSwitchTheme: false,
     IfRecruit: true,
     IfReclamation: false,
     IfRoguelike: false,

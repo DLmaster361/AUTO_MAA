@@ -13,6 +13,7 @@ import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/us
 import type { ScriptType } from '@/types/script'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
+import { connectionState, onConnected } from '@/services/websocket/connection'
 import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
 import {
   createExplosionFragmentMotion,
@@ -154,6 +155,20 @@ function startStatusPolling() {
   updateInterval = setInterval(() => void refreshSatelliteStatuses(), CONFIG.statusUpdateInterval)
 }
 
+// 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
+// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+let disposeBackendReadyListener: (() => void) | null = null
+
+function waitBackendReady(): Promise<void> {
+  if (connectionState().value === 'open') return Promise.resolve()
+  return new Promise(resolve => {
+    disposeBackendReadyListener = onConnected(() => {
+      disposeBackendReadyListener = null
+      resolve()
+    })
+  })
+}
+
 function showCardsImmediately() {
   if (centerCard) {
     const frontMaterial = getCardFrontMaterial(centerCard)
@@ -233,6 +248,7 @@ function disposeCardMesh(card: CardMesh) {
 
 onUnmounted(() => {
   isUnmounted = true
+  disposeBackendReadyListener?.()
   window.removeEventListener('resize', handleResize)
   disposeScene()
 })
@@ -1297,13 +1313,18 @@ watch(
       startAnimation()
     }
     updateSatelliteStates()
-    void refreshSatelliteStatuses()
-    startStatusPolling()
+    void waitBackendReady().then(() => {
+      if (isUnmounted || performanceStore.isBackgrounded) return
+      void refreshSatelliteStatuses()
+      startStatusPolling()
+    })
   }
 )
 
 onMounted(async () => {
   isUnmounted = false
+  await waitBackendReady()
+  if (isUnmounted) return
   try {
     await initScene()
   } catch (e) {

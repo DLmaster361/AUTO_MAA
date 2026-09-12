@@ -135,7 +135,7 @@ class MaaFWRunnerService:
         resource_name: str | None = None,
         selected_preset: str | None = None,
         task_snapshot: dict[str, Any] | None = None,
-        task_names: list[str] | None = None,
+        task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
     ) -> MaaFWRunPlan:
@@ -146,7 +146,7 @@ class MaaFWRunnerService:
             resource_name=resource_name,
             selected_preset=selected_preset,
             task_snapshot=task_snapshot,
-            task_names=task_names,
+            task_ids=task_ids,
             task_options=task_options,
             managed_env_root=managed_env_root,
         )

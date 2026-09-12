@@ -2298,7 +2298,8 @@ class MaaFWUserConfig(ConfigBase):
         ## Task ------------------------------------------------------------
         ## 当前选中的 interface preset 名称，留空时使用 interface 默认逻辑
         self.Task_SelectedPreset = ConfigItem("Task", "SelectedPreset", "")
-        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions
+        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions；
+        ## 三者的键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）
         self.Task_TaskSnapshot = ConfigItem(
             "Task", "TaskSnapshot", "{ }", JSONValidator(dict)
         )

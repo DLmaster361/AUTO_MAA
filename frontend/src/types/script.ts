@@ -315,10 +315,23 @@ export interface MaaFWScriptConfig {
 
 export type MaaFWTaskOptionValue = string | string[] | Record<string, string>
 
+/**
+ * 三个字段的 key 都是「任务实例 id」而不是任务名：同一个任务可以被重复加入队列，
+ * 首份的 id 就是裸任务名，第二份起是 `<任务名>__MAS_DUP__<随机后缀>`。
+ */
 export interface MaaFWTaskSnapshot {
   taskOrder: string[]
   taskChecked: Record<string, boolean>
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
+}
+
+/** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */
+export interface MaaFWQueuedTaskItem {
+  id: string
+  task: MaaFWTaskInfo
+  /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
+  copyIndex: number
+  copyTotal: number
 }
 
 export interface MaaFWUserConfig {

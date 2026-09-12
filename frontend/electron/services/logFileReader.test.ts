@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { readLogContent, readLogIncrement } from './logFileReader'
+import { incompleteUtf8TailLength, readLogContent, readLogIncrement } from './logFileReader'
 
 let dir: string
 let logPath: string
@@ -66,6 +66,16 @@ describe('readLogIncrement', () => {
     })
   })
 
+  it('多字节字符被拆成两次写时不产生乱码', async () => {
+    const bytes = Buffer.from('日志\n', 'utf-8')
+    writeFileSync(logPath, bytes.subarray(0, 4))
+    const first = await readLogIncrement(logPath, 0)
+    expect(first).toEqual({ content: '日', size: 3, reset: false })
+    appendFileSync(logPath, bytes.subarray(4))
+    const second = await readLogIncrement(logPath, first.size)
+    expect(second).toEqual({ content: '志\n', size: bytes.length, reset: false })
+  })
+
   it('文件变小（轮转）时返回全文并标记 reset', async () => {
     writeFileSync(logPath, 'a'.repeat(100), 'utf-8')
     const first = await readLogIncrement(logPath, 0)
@@ -86,5 +96,22 @@ describe('readLogContent', () => {
     await expect(readLogContent(logPath)).resolves.toBe('a\nb\nc')
     await expect(readLogContent(logPath, 0)).resolves.toBe('a\nb\nc')
     await expect(readLogContent(logPath, 2)).resolves.toBe('b\nc')
+  })
+})
+
+describe('incompleteUtf8TailLength', () => {
+  it('完整序列与 ASCII 结尾返回 0', () => {
+    expect(incompleteUtf8TailLength(Buffer.from('abc', 'utf-8'), 3)).toBe(0)
+    expect(incompleteUtf8TailLength(Buffer.from('日志', 'utf-8'), 6)).toBe(0)
+    expect(incompleteUtf8TailLength(Buffer.alloc(0), 0)).toBe(0)
+  })
+
+  it('被截断的两字节、三字节、四字节序列返回已读到的字节数', () => {
+    expect(incompleteUtf8TailLength(Buffer.from([0xc3]), 1)).toBe(1)
+    const cjk = Buffer.from('日', 'utf-8')
+    expect(incompleteUtf8TailLength(cjk, 1)).toBe(1)
+    expect(incompleteUtf8TailLength(cjk, 2)).toBe(2)
+    const emoji = Buffer.from('😀', 'utf-8')
+    expect(incompleteUtf8TailLength(emoji, 3)).toBe(3)
   })
 })

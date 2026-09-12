@@ -463,6 +463,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_LOG_UPDATED,
@@ -648,9 +649,26 @@ const handleCheckUpdate = async () => {
 }
 
 // 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
-// 否则视为失步：本地 seq 置空、保留已有内容并追加。缓冲上限 200,000 字符，丢头留尾。
+// 否则视为失步（订阅登记前已经错过首条整体替换、或漏了消息）：丢弃本条，拉一次运行
+// 快照用它的 log/logSeq 重建，重建期间到达的增量一并丢弃。缓冲上限 200,000 字符。
 const UPDATE_LOG_MAX_CHARS = 200_000
 let updateLogSeq: number | null = null
+let updateLogResyncing = false
+const resyncUpdateLog = async () => {
+  if (updateLogResyncing || !updateSession.taskId) return
+  updateLogResyncing = true
+  try {
+    const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
+    const item = (snapshot.tasks ?? []).find(task => task.taskId === updateSession.taskId)
+    if (!item) return
+    updateModal.log = item.log ?? ''
+    updateLogSeq = item.logSeq ?? null
+  } catch (e) {
+    logger.warn(`重建鸣潮更新日志失败: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    updateLogResyncing = false
+  }
+}
 const applyUpdateLog = (data: { log: string; seq?: number; append?: boolean }) => {
   if (!data.append) {
     updateModal.log = data.log
@@ -660,7 +678,8 @@ const applyUpdateLog = (data: { log: string; seq?: number; append?: boolean }) =
     updateLogSeq = data.seq
   } else {
     updateLogSeq = null
-    updateModal.log += data.log
+    void resyncUpdateLog()
+    return
   }
   if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
     updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)

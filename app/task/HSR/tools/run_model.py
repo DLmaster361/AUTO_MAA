@@ -91,6 +91,9 @@ class HSRRunItem:
     on_success: Callable[[object], None] | None = None
     last_error: str = ""
     attempts: int = 0
+    # 非 HSRRetryableTaskError 的异常（配置或代码错误）补跑也不会变好，置 False 后
+    # 只记失败、不进补跑队列
+    retryable: bool = True
 
 
 class HSRRetryableTaskError(RuntimeError):

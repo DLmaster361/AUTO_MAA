@@ -346,6 +346,10 @@ const handleFieldSave = async (key: string, value: any) => {
 
       await updateUser(scriptId, userId, userData)
       logger.info(`用户配置已保存: ${key}`)
+      // 任务前后脚本路径会被后端规范化（相对转绝对、解析 .lnk 等），保存后回读该字段
+      if (key === 'Info.ScriptBeforeTask' || key === 'Info.ScriptAfterTask') {
+        await refreshNormalizedUserField(key)
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`保存失败: ${errorMsg}`)
@@ -440,6 +444,16 @@ const createUserImmediately = async () => {
 }
 
 // 加载用户数据
+const refreshNormalizedUserField = async (key: string) => {
+  const userResponse = await getUsers(scriptId, userId)
+  const userData = userResponse?.code === 200 ? (userResponse.data[userId] as any) : undefined
+  const [group, field] = key.split('.')
+  const normalized = userData?.[group]?.[field]
+  if (normalized !== undefined) {
+    ;(formData as Record<string, any>)[group][field] = normalized
+  }
+}
+
 const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)

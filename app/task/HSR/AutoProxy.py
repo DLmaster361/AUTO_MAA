@@ -1372,8 +1372,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     continue
                 except Exception as e:  # noqa: BLE001
                     # 非 HSRRetryableTaskError 的异常是配置或代码错误, 补跑也不会
-                    # 变好, 记录堆栈后按当前用户失败处理, 不进入补跑循环
+                    # 变好: 记录堆栈、记为失败但标记不可重试, 后续模块照常继续
                     item.last_error = str(e)
+                    item.retryable = False
+                    failures.append(item)
                     logger.opt(exception=True).warning(
                         f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
@@ -1382,17 +1384,26 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
                     )
-                    if item.module_key != "StartGame":
-                        self._record_module_result(
-                            user_id=item.user_id,
-                            user_name=item.user_name,
-                            module_key=item.module_key,
-                            module_name=item.module_name,
-                            script=item.script,
-                            status="failed",
-                            reason=item.last_error,
+                    if item.module_key == "StartGame":
+                        remaining = self._remaining_items_after(
+                            items,
+                            phases=phases,
+                            phase_index=phase_index,
+                            phase_items=phase_items,
+                            item_index=item_index,
+                            failures=failures,
+                            reason=HSR_ABORT_REASON_LOGIN_FAILED,
                         )
-                    raise
+                        for skipped in remaining:
+                            skipped.retryable = False
+                        if remaining:
+                            self._append_log(
+                                f"用户「{item.user_name}」{HSR_ABORT_REASON_LOGIN_FAILED}"
+                                f"（共 {len(remaining)} 项）"
+                            )
+                        failures.extend(remaining)
+                        return failures
+                    continue
 
                 if bool(getattr(result, "success", False)):
                     if item.on_success is not None:
@@ -1592,6 +1603,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await run_script_before_task(user_cfg)
 
         failed_items: list[HSRRunItem] = []
+        permanent_failures: list[HSRRunItem] = []
         current_items = full_queue
         for attempt in range(1, retry_limit + 1):
             if not current_items:
@@ -1650,7 +1662,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 await run_script_after_task(user_cfg)
                 return
 
-            if attempt < retry_limit:
+            # 不可重试的失败（配置或代码错误）只记结果, 不进补跑队列
+            permanent_failures.extend(i for i in failed_items if not i.retryable)
+            retryable_failures = [i for i in failed_items if i.retryable]
+            if attempt < retry_limit and retryable_failures:
                 retry_action = (
                     "将重新启动游戏后补跑"
                     if is_game_management_enabled(self.script_config)
@@ -1658,11 +1673,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
-                    f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
+                    f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"
                 )
                 self._finish_current_user_log(status, user_status="运行")
                 current_items = self._build_retry_queue_items(
-                    failed_items,
+                    retryable_failures,
                     user_item=user_item,
                     user_cfg=user_cfg,
                     user_name=user_name,
@@ -1673,6 +1688,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
             else:
                 self._finish_current_user_log(status, user_status="异常")
+                failed_items = permanent_failures + retryable_failures
                 for failed_item in failed_items:
                     if failed_item.module_key == "StartGame":
                         continue

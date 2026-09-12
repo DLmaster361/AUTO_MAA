@@ -354,6 +354,18 @@ const emulatorLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path'])
+
+const refreshNormalizedField = async (category: string, key: string) => {
+  const scriptDetail = await getScript(scriptId)
+  const normalized = (scriptDetail?.config as Record<string, any> | undefined)?.[category]?.[key]
+  if (normalized !== undefined) {
+    ;(srcConfig as Record<string, any>)[category][key] = normalized
+  }
+}
+
 const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value) return
 
@@ -365,6 +377,9 @@ const handleChange = async (category: string, key: string, value: any) => {
       const success = await updateScript(scriptId, updateData)
       if (success) {
         logger.info(`配置已保存: ${category}.${key}`)
+        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+          await refreshNormalizedField(category, key)
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)

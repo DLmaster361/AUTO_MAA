@@ -42,14 +42,34 @@ export async function readLogIncrement(logPath: string, fromOffset: number): Pro
     }
     const buffer = Buffer.alloc(length)
     const { bytesRead } = await handle.read(buffer, 0, length, position)
+    // 写入方可能正把一个多字节字符拆成两次写，读到一半会解码成替换符且偏移落在字符
+    // 中间；把不完整的尾部留到下一次再读
+    const usable = bytesRead - incompleteUtf8TailLength(buffer, bytesRead)
     return {
-      content: buffer.toString('utf-8', 0, bytesRead),
-      size: position + bytesRead,
+      content: buffer.toString('utf-8', 0, usable),
+      size: position + usable,
       reset,
     }
   } finally {
     await handle.close()
   }
+}
+
+/**
+ * 末尾若是被截断的 UTF-8 多字节序列，返回已读到的那几个字节数；完整时返回 0。
+ */
+export function incompleteUtf8TailLength(buffer: Buffer, length: number): number {
+  // 从末尾最多回看 3 个字节找起始字节；续字节形如 10xxxxxx
+  for (let back = 1; back <= 3 && back <= length; back++) {
+    const byte = buffer[length - back]
+    if ((byte & 0xc0) === 0x80) continue
+    let expected = 1
+    if ((byte & 0xe0) === 0xc0) expected = 2
+    else if ((byte & 0xf0) === 0xe0) expected = 3
+    else if ((byte & 0xf8) === 0xf0) expected = 4
+    return back < expected ? back : 0
+  }
+  return 0
 }
 
 /**

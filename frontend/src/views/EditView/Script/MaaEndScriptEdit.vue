@@ -538,16 +538,22 @@ const showManualEmulatorIndexInput = computed(
     Boolean(maaEndConfig.Game.EmulatorId)
 )
 
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path', 'Game.Path'])
+
 const handleChange = async (category: string, key: string, value: unknown) => {
   if (isInitializing.value) return
 
-  await enqueue(
-    () =>
-      updateScript(scriptId, {
-        [category]: { [key]: value },
-      }),
-    `${category}.${key}`
-  )
+  await enqueue(async () => {
+    const success = await updateScript(scriptId, {
+      [category]: { [key]: value },
+    })
+    if (success && FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshScript()
+    }
+    return success
+  }, `${category}.${key}`)
 }
 
 const applyMaaEndConfig = (config: MaaEndScriptConfig) => {

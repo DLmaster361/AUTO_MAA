@@ -19,7 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 import re
-from pathlib import Path
 
 from app.core import Config
 from app.core.notify import (
@@ -83,10 +82,6 @@ class M9ALogAnalyzer:
         return None
 
     @staticmethod
-    def _is_task_start(line: str) -> bool:
-        return "队列任务开始（异步）" in line
-
-    @staticmethod
     def _is_task_complete(line: str) -> bool:
         return "队列任务完成（异步）" in line
 
@@ -101,44 +96,6 @@ class M9ALogAnalyzer:
     @staticmethod
     def _is_supported_source(line: str) -> bool:
         return any(tag in line for tag in M9ALogAnalyzer.SOURCE_TAGS)
-
-    @staticmethod
-    def parse_log(log_path: Path) -> dict:
-        """解析 M9A 运行日志文件
-
-        Args:
-            log_path: 日志文件路径
-
-        Returns:
-            解析结果字典，结构如下：
-            {
-                "tasks": [
-                    {
-                        "name": "启动游戏",
-                        "status": "完成" | "失败" | "开始",
-                        "details": ["文本内容", ...],
-                        "extra": {
-                            "stage": "12-5, 难度：Hard",
-                            "count": "1",
-                            "drops": ["物品 x1", ...]
-                        }
-                    },
-                    ...
-                ],
-                "overall_status": "成功" | "失败",
-                "duration": "00:05:30"
-            }
-        """
-        try:
-            return M9ALogAnalyzer.parse_lines(
-                log_path.read_text(encoding="utf-8").splitlines()
-            )
-        except Exception:
-            return {
-                "tasks": [],
-                "overall_status": "解析失败",
-                "duration": "",
-            }
 
     @staticmethod
     def parse_lines(lines: list[str]) -> dict:

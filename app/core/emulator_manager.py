@@ -23,7 +23,6 @@
 import asyncio
 import shutil
 import uuid
-from contextlib import suppress
 from pathlib import Path
 from typing import Dict, Literal
 
@@ -51,8 +50,8 @@ class _EmulatorManager:
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
         if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
-            # 设置模拟器广告
-            with suppress(Exception):
+            # 设置模拟器广告, 失败不影响模拟器实例创建, 但要留下原因
+            try:
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
                     ads_paths = EMULATOR_SPLASH_ADS_PATH_BOOK[
                         config.get("Info", "Type")
@@ -60,7 +59,7 @@ class _EmulatorManager:
                     if Config.get("Function", "IfBlockAd"):
                         for ads_path in ads_paths:
                             if ads_path.is_dir():
-                                shutil.rmtree(ads_path)
+                                await asyncio.to_thread(shutil.rmtree, ads_path)
                             ads_path.parent.mkdir(parents=True, exist_ok=True)
                             ads_path.touch()
                     else:
@@ -75,6 +74,8 @@ class _EmulatorManager:
                         "1" if Config.get("Function", "IfBlockAd") else "0",
                         timeout=config.get("Info", "MaxWaitTime"),
                     )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
 
             return EMULATOR_TYPE_BOOK[config.get("Info", "Type")](config)
         else:

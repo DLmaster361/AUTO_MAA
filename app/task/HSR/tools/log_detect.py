@@ -196,23 +196,6 @@ def find_m7a_self_game_stop(lines: list[str]) -> str | None:
     return None
 
 
-# ===== 模块级 final marker（审计 HSR-外部脚本日志语义审计.md §4.3）=====
-HSR_DAILY_FINAL_SUCCESS_M7A: tuple[str, ...] = (
-    "每日实训尚未刷新",  # daily.py:40/69
-    "每日实训未开启",  # daily.py:42/71
-    "清体力未开启，跳过历战余响和清体力",  # daily.py:63
-)
-HSR_DAILY_FINAL_SUCCESS_SRA: tuple[str, ...] = (
-    "任务完成：领取每日实训奖励",  # ReceiveRewardsTask.py:230
-    "任务完成：领取邮件",  # ReceiveRewardsTask.py:146
-    "任务完成：领取派遣奖励",  # ReceiveRewardsTask.py:198
-    "任务完成：巡星之礼",  # ReceiveRewardsTask.py:173
-    "任务完成：签证奖励",  # ReceiveRewardsTask.py:100
-    "任务完成：领取兑换码",  # ReceiveRewardsTask.py:132
-    "完成任务：领取无名勋礼奖励",  # ReceiveRewardsTask.py:255
-    "没有可领取的奖励",  # ReceiveRewardsTask.py:94/97/99
-)
-
 HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
     "已达到最高积分 12000，记录时间",  # divergent_universe.py:120
     "已达到最高积分 14000，记录时间",
@@ -439,44 +422,3 @@ def detect_weekly_completion(
             f"但本次调用方为 {upper_script}，拒绝跨脚本写完成态"
         )
     return True, f"{label} 日志命中周常完成 marker：{marker}"
-
-
-def detect_daily_completion(
-    result: object,
-    script: str,
-) -> tuple[bool, str]:
-    """根据 M7A/SRA 输出判断日常领取模块是否已完成。
-
-    当前仅定义检测函数骨架，**不**接入 ReceiveRewards on_success；
-    后续如需接入，由 on_success 决定是否走本判定。
-    """
-
-    text = result_text(result)
-    if not text:
-        return False, "外部脚本未返回可判断的日常日志"
-
-    upper_script = str(script).upper()
-    candidate_sets: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("M7A", HSR_DAILY_FINAL_SUCCESS_M7A),
-        ("SRA", HSR_DAILY_FINAL_SUCCESS_SRA),
-    )
-
-    matched = next(
-        (
-            (label, marker)
-            for label, markers in candidate_sets
-            for marker in markers
-            if marker in text
-        ),
-        None,
-    )
-    if matched is None:
-        return False, "未从外部脚本日志确认日常领取完成"
-
-    label, marker = matched
-    if upper_script != label:
-        return False, (
-            f"日志中出现 {label} 模块 final marker「{marker}」，"
-            f"但本次调用方为 {upper_script}，拒绝跨脚本写完成态"
-        )
-    return True, f"{label} 日志命中日常完成 marker：{marker}"

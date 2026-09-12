@@ -21,7 +21,7 @@ import re
 import time
 import uuid
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
@@ -107,8 +107,6 @@ _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
     "Genshin Impact Cloud Game",  # 云原神（国际）
     "Genshin Impact Cloud",  # 云原神（备用进程名）
 )
-# 优雅关闭游戏后等待退出时间（秒），超时未退出则强制结束
-_BGI_GAME_CLOSE_WAIT_SECONDS = 5
 
 
 def _one_dragon_sequence_done(log: str) -> bool:
@@ -127,20 +125,11 @@ def _one_dragon_sequence_done(log: str) -> bool:
     return _BGI_SEQUENCE_DONE_MARKER in log
 
 
-# 脚本仓库更新/下载进展消息（去重展示用）。BGI 把它打在不带方括号前缀的消息行。
-# 这些行若能转述给用户，切号/一条龙启动时「正在下载脚本」就不会被误认为卡死。
-_REPO_PROGRESS_CATEGORY = (
-    "浅克隆仓库",
-    "拉取对象",
-    "开始静默更新脚本仓库",
-    "自动更新订阅脚本完成",
-    "本地仓库已是最新",
-)
-
-
 def _latest_repo_progress(log: str) -> str | None:
     """从累计日志中提取最近一条值得转述的脚本仓库下载/更新进展行。
 
+    BGI 把仓库更新/下载进展打在不带方括号前缀的消息行；转述给用户后，切号/一条龙
+    启动时「正在下载脚本」就不会被误认为卡死。
     Serilog 每行消息在带 ``[HH:mm:ss]`` 前缀的头行之后另起一行，这里只匹配消息行。
     按时间从后往前找，命中即返回相干文案；无进展（或不在下载/更新阶段）返回 None。
     """
@@ -470,19 +459,26 @@ class AutoProxyTask(TaskExecuteBase):
         finally:
             self._reseed_global_config = None
 
-    def _native_one_dragon_has_tasks(self) -> bool:
+    def _native_one_dragon_has_tasks(self) -> bool | None:
         """原生一条龙（阶段2）是否还有任何启用任务。
 
         路径 B 下战斗组已被执行层接管并从原生副本剔除，若日常/自定义组也都关，
         启用任务数即为 0。此时再启动 ``startOneDragon`` 会让 BetterGI 空跑且不退出，
         导致任务挂死。读实际写好的原生配置，按 ``TaskEnabledList`` 判定是否有活可干。
+
+        Returns:
+            True/False 表示有无启用任务；配置读不出来时返回 None，由调用方按失败处理，
+            不与「真的没有启用任务」混为一谈。
         """
         try:
             cfg = one_dragon.load_one_dragon(
                 self.script_root_path, self.launch_config_name
             )
-        except Exception:
-            return False
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 一条龙配置读取失败: {e}"
+            )
+            return None
         enabled = cfg.get("TaskEnabledList") if isinstance(cfg, dict) else None
         if not isinstance(enabled, dict):
             return False
@@ -522,7 +518,13 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 原生一条龙（阶段2）无启用任务：不再启动 BetterGI，避免空一条龙进程不退出导致任务挂死。
         # 路径 B 下战斗组已被剔除，若日常/自定义组也都关，启用任务数即为 0。
-        if not self._native_one_dragon_has_tasks():
+        has_tasks = self._native_one_dragon_has_tasks()
+        if has_tasks is None:
+            # 配置读取失败：不是「无活可干」，按失败收尾（run_book 保持 False）
+            self.cur_user_item.status = "异常"
+            self.script_info.log = "一条龙配置读取失败，已中止任务"
+            return
+        if not has_tasks:
             if self.plan_mode and plan_combat_ok:
                 # 战斗已由执行层完成，日常一条龙无活可干：整体视为成功，直接收尾
                 self.run_book = True
@@ -954,8 +956,8 @@ class AutoProxyTask(TaskExecuteBase):
                 elif not await self.bettergi_process_manager.is_running():
                     log_status = "BetterGI 在完成任务前退出"
                     user_item_status = "异常"
-                elif "[ERR]" in log and datetime.now() - latest_time > timedelta(
-                    minutes=_BGI_ERR_STALL_MINUTES
+                elif "[ERR]" in log and self.is_log_stalled(
+                    latest_time, minutes=_BGI_ERR_STALL_MINUTES, key="err"
                 ):
                     # [ERR] 后长时间无任何新日志行：BGI 既没走完收尾、也没继续推进也没退出，
                     # 判定卡死提前失败（不等 RunTimeLimit）。仍在新行推进则不触发。
@@ -964,8 +966,8 @@ class AutoProxyTask(TaskExecuteBase):
                         "分钟无进展（疑似卡死）"
                     )
                     user_item_status = "异常"
-                elif datetime.now() - latest_time > timedelta(
-                    minutes=self.script_config.get("Run", "RunTimeLimit")
+                elif self.is_log_stalled(
+                    latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
                 ):
                     log_status = "BetterGI 运行超时"
                     user_item_status = "异常"

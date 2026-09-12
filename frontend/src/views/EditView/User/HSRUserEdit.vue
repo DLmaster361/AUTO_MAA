@@ -316,6 +316,7 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
@@ -371,7 +372,8 @@ const { getScript } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 
 // Initialize the reactive form before any computed/watch that can evaluate it
 // during setup.  Keeping this declaration first avoids a browser TDZ error.
@@ -395,7 +397,7 @@ const formData = reactive<HSRUserConfigData>({
     ScriptEchoOfWar: '{ }',
   },
   TaskSwitch: {
-    Daily: false,
+    Daily: true,
     ReceiveRewards: false,
     DivergentUniverse: false,
     CurrencyWars: false,
@@ -502,6 +504,9 @@ const getTaskMapping = (moduleKey: 'Daily'): HSREngine | undefined => {
   return resolveTaskMappingValue(mapping[moduleKey] ?? undefined, new Set(effectiveEngines.value))
 }
 
+// 同一组参数（引擎 + 用户）的在途请求只发一次，重复调用复用同一个 promise
+let hsrStageOptionsRequest: { key: string; promise: Promise<void> } | null = null
+
 const loadHsrStageOptions = async () => {
   if (!scriptId || !scriptConfig.value) return
   const engine = getTaskMapping('Daily')
@@ -511,6 +516,18 @@ const loadHsrStageOptions = async () => {
     hsrStageOptionsLoading.value = false
     return
   }
+  const requestKey = `${engine}|${userId || ''}`
+  if (hsrStageOptionsRequest?.key === requestKey) return hsrStageOptionsRequest.promise
+  const request = { key: requestKey, promise: fetchHsrStageOptions(engine) }
+  hsrStageOptionsRequest = request
+  try {
+    await request.promise
+  } finally {
+    if (hsrStageOptionsRequest === request) hsrStageOptionsRequest = null
+  }
+}
+
+const fetchHsrStageOptions = async (engine: HSREngine) => {
   hsrStageOptionsLoading.value = true
   hsrStageOptionsError.value = ''
   try {
@@ -550,8 +567,10 @@ const loadHsrStageOptions = async () => {
   }
 }
 
+// getter 返回字符串而不是新数组，否则 formData.Managed 每次整体赋值都会触发一次重拉
 watch(
-  () => [scriptConfig.value?.TaskMapping?.Daily, formData.Managed?.TaskMapping?.Daily],
+  () =>
+    `${scriptConfig.value?.TaskMapping?.Daily ?? ''}|${formData.Managed?.TaskMapping?.Daily ?? ''}`,
   () => {
     void loadHsrStageOptions()
   }
@@ -560,21 +579,20 @@ watch(
 const handleTaskSwitchToggle = async (moduleKey: string, enabled: boolean) => {
   ;(formData.TaskSwitch as Record<string, boolean | null | undefined>)[moduleKey] = enabled
   const userData: Record<string, unknown> = { TaskSwitch: { [moduleKey]: enabled } }
-  if (isInitializing.value || isSaving.value || !userId) return
-  isSaving.value = true
-  try {
-    const saved = await updateUser(scriptId, userId, userData)
-    if (saved) {
-      logger.info(`用户配置已保存: TaskSwitch.${moduleKey}=${enabled}`)
-    } else {
-      logger.error(`保存失败: TaskSwitch.${moduleKey}`)
+  if (isInitializing.value || !userId) return
+  await enqueue(async () => {
+    try {
+      const saved = await updateUser(scriptId, userId, userData)
+      if (saved) {
+        logger.info(`用户配置已保存: TaskSwitch.${moduleKey}=${enabled}`)
+      } else {
+        logger.error(`保存失败: TaskSwitch.${moduleKey}`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, `TaskSwitch.${moduleKey}`)
 }
 
 const controlMode = computed<'managed' | 'direct'>(() =>
@@ -595,7 +613,6 @@ const loadManagedConfig = async () => {
       },
       Options: formData.Managed?.Options ?? {},
     }
-    await loadHsrStageOptions()
   } catch (error) {
     managedConfigSnapshot.value = null
     logger.warn(`HSR 动态任务配置加载失败: ${String(error)}`)
@@ -607,7 +624,7 @@ const loadManagedConfig = async () => {
 // 「重置为源配置」：清空这个用户在 MAS 里的全部 Managed.Options 覆盖值，
 // 之后表单和运行都按 SRA / 三月七助手当前配置走。确认弹窗在子组件里。
 const handleManagedOverridesReset = async () => {
-  if (!userId || managedConfigLoading.value || isSaving.value) return
+  if (!userId || managedConfigLoading.value) return
   const saved = await handleFieldSave('Managed.Options', {})
   if (!saved) {
     message.error(t('edit.couldNotResetManagedOverrides'))
@@ -623,7 +640,7 @@ const handleManagedInvalidOverridesClear = async (
   task: string,
   keys: string[]
 ) => {
-  if (!userId || managedConfigLoading.value || isSaving.value || keys.length === 0) return
+  if (!userId || managedConfigLoading.value || keys.length === 0) return
   const options = { ...(formData.Managed?.Options ?? {}) }
   const engineOptions = { ...(options[engine] ?? {}) }
   const taskOptions = { ...(engineOptions[task] ?? {}) }
@@ -643,7 +660,7 @@ const handleManagedInvalidOverridesClear = async (
 }
 
 const handleControlModeChange = async (value: string | number) => {
-  if ((value !== 'managed' && value !== 'direct') || isSaving.value) return
+  if (value !== 'managed' && value !== 'direct') return
   const previousMode = formData.Control?.Mode
   if (!formData.Control) formData.Control = { Mode: 'managed' }
   formData.Control.Mode = value
@@ -854,40 +871,39 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
   }
   localTarget[parts[parts.length - 1]] = value
 
-  if (isInitializing.value || isSaving.value || !userId) return true
-  isSaving.value = true
-  try {
-    const userData: MutableRecord = {}
-    let current = userData
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]] as MutableRecord
-    }
-    const isManagedJsonField =
-      parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
-    const isStageJsonField =
-      parts[0] === 'Stage' && (parts[1] === 'ScriptStage' || parts[1] === 'ScriptEchoOfWar')
-    const persistedValue = isManagedJsonField
-      ? stringifyJsonRecord(value)
-      : isStageJsonField && typeof value !== 'string'
-        ? JSON.stringify(value ?? {})
-        : value
-    current[parts[parts.length - 1]] = persistedValue
-    const saved = await updateUser(scriptId, userId, userData)
-    if (saved) {
-      logger.info(`用户配置已保存: ${key}`)
-      return true
-    } else {
-      logger.error(`保存失败: ${key}`)
+  if (isInitializing.value || !userId) return false
+  return enqueue(async () => {
+    try {
+      const userData: MutableRecord = {}
+      let current = userData
+      for (let i = 0; i < parts.length - 1; i++) {
+        current[parts[i]] = {}
+        current = current[parts[i]] as MutableRecord
+      }
+      const isManagedJsonField =
+        parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
+      const isStageJsonField =
+        parts[0] === 'Stage' && (parts[1] === 'ScriptStage' || parts[1] === 'ScriptEchoOfWar')
+      const persistedValue = isManagedJsonField
+        ? stringifyJsonRecord(value)
+        : isStageJsonField && typeof value !== 'string'
+          ? JSON.stringify(value ?? {})
+          : value
+      current[parts[parts.length - 1]] = persistedValue
+      const saved = await updateUser(scriptId, userId, userData)
+      if (saved) {
+        logger.info(`用户配置已保存: ${key}`)
+        return true
+      } else {
+        logger.error(`保存失败: ${key}`)
+        return false
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
       return false
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-    return false
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 const handleCancel = () => router.push('/scripts')

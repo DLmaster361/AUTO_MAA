@@ -76,7 +76,6 @@ class M7ARunner:
     ):
         self._m7a_dir = Path(m7a_dir)
         self._m7a_exe = self._m7a_dir / "March7th Assistant.exe"
-        self._commands: list[str] = []
         self._process_manager = ProcessManager()
         self._log_callback = log_callback
         self._output_line_callback = output_line_callback
@@ -85,16 +84,8 @@ class M7ARunner:
         self._recent_output: deque[str] = deque(maxlen=RECENT_OUTPUT_LINES)
 
     @property
-    def exe_path(self) -> Path:
-        return self._m7a_exe
-
-    @property
     def root_path(self) -> Path:
         return self._m7a_dir
-
-    @property
-    def command_log(self) -> list[str]:
-        return list(self._commands)
 
     @property
     def recent_output_lines(self) -> list[str]:
@@ -300,7 +291,6 @@ class M7ARunner:
         """执行一条 M7A 命令。"""
 
         started_at = datetime.now(timezone.utc)
-        self._commands.append(task_name)
         self._recent_output.clear()
 
         if not self._m7a_exe.exists():

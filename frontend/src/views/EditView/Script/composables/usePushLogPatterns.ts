@@ -44,8 +44,6 @@ export const normalizeLogType = (raw: unknown): string => {
     : LOG_TYPE_NORMAL
 }
 
-export const getDefaultPatternName = (idx: number): string => `规则${idx + 1}`
-
 let uidCounter = 0
 const newUid = (): string => `pattern_${Date.now()}_${++uidCounter}`
 

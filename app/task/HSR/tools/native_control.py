@@ -70,7 +70,6 @@ class HSRRunResult:
     summary: str = ""
     error: str = ""
     returncode: int = 0
-    native_result: Any = None
 
     @property
     def success(self) -> bool:
@@ -89,13 +88,11 @@ class HSRRunResult:
                 status="completed",
                 summary=str(getattr(result, "output", "") or default_summary),
                 returncode=int(getattr(result, "returncode", 0) or 0),
-                native_result=result,
             )
         return cls(
             status="failed",
             error=str(getattr(result, "error", "") or default_error),
             returncode=int(getattr(result, "returncode", 0) or 0),
-            native_result=result,
         )
 
 

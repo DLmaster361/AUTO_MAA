@@ -667,9 +667,14 @@ class MumuManager(DeviceBase):
             return True
 
         result: list[int | None] = [None]
-        with suppress(Exception):
-            # EnumWindows 在回调返回 False 时抛出异常，属正常行为
-            win32gui.EnumWindows(enum_cb, result)
+
+        def _enum() -> None:
+            with suppress(Exception):
+                # EnumWindows 在回调返回 False 时抛出异常，属正常行为
+                win32gui.EnumWindows(enum_cb, result)
+
+        # 逐窗口查询进程名较慢, 整段枚举放到线程里
+        await asyncio.to_thread(_enum)
         return result[0]
 
     async def close_mumu_nx_window(self) -> bool:

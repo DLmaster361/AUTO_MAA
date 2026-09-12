@@ -1143,9 +1143,11 @@ const gameLanguageLabels: Record<string, string> = Object.fromEntries(
 )
 
 // 用户名失焦：同脚本内禁止重名（绑定槽名与统计都依赖名字区分）
+// 上次查重并写回过的用户名；值没变时不再重复拉全部用户查重
+let lastCheckedUserName = ''
 const handleNameBlur = async () => {
   const name = formData.userName.trim()
-  if (!name) return
+  if (!name || name === lastCheckedUserName) return
   try {
     const resp = await getUsers(scriptId)
     const duplicate = Object.entries(resp?.data ?? {}).some(
@@ -1161,6 +1163,7 @@ const handleNameBlur = async () => {
   } catch (e) {
     logger.warn(e instanceof Error ? e.message : String(e))
   }
+  lastCheckedUserName = name
   await saveField('Info.Name', formData.userName)
 }
 
@@ -2293,6 +2296,7 @@ const loadUserData = async () => {
   applyUserData(data as ZzzOdUserConfig)
   await nextTick()
   formData.userName = formData.Info.Name || ''
+  lastCheckedUserName = formData.userName.trim()
 }
 
 const loadUser = async () => {
@@ -2315,9 +2319,8 @@ const loadUser = async () => {
 onMounted(async () => {
   if (await loadScriptInfo()) {
     await loadUser()
-    await loadInstances()
-    await loadLaunchers()
-    await loadCatalog()
+    // 三个请求互不依赖，并行发出
+    await Promise.all([loadInstances(), loadLaunchers(), loadCatalog()])
     // 已是直控模式的用户：公共初始化（备份 + 默认实例 + 加载原生配置）
     if (formData.Info.Mode === '直控') {
       await enterDirectMode()

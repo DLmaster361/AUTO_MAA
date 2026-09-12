@@ -201,15 +201,6 @@ MAA_TASK_TRANSITION_METHOD_BOOK = {
 }
 """MAA任务切换方式映射表"""
 
-MAA_STARTUP_BASE = {
-    "$type": "StartUpTask",
-    "AccountName": "",
-    "Name": "开始唤醒",
-    "IsEnable": True,
-    "TaskType": "StartUp",
-}
-"""MAA开始唤醒基础配置"""
-
 MAA_ANNIHILATION_FIGHT_BASE = {
     "$type": "FightTask",
     "UseMedicine": False,
@@ -847,19 +838,6 @@ TIME_FIELDS = {
     "%f": "microsecond",
 }
 """时间字段映射表"""
-
-POWER_SIGN_MAP = {
-    "NoAction": "无动作",
-    "Shutdown": "关机",
-    "ShutdownForce": "强制关机",
-    "Reboot": "重启",
-    "Hibernate": "休眠",
-    "Sleep": "睡眠",
-    "KillSelf": "退出程序",
-    "Logoff": "注销此账户",
-}
-"""电源操作类型索引表"""
-
 
 RESERVED_NAMES = {
     "CON",

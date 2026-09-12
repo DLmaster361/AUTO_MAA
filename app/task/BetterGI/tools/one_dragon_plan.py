@@ -39,16 +39,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from app.utils import get_logger, resource_path
-from app.utils.io import read_file
+from app.utils import get_logger
 
 logger = get_logger("BetterGI 一条龙计划")
 
 # 步骤来源类型，与前端队列 kind 保持一致
-StepKind = Literal["builtin", "js", "pathing", "scriptgroup", "custom"]
 _STEP_KINDS: frozenset[str] = frozenset(
     {"builtin", "js", "pathing", "scriptgroup", "custom"}
 )
@@ -239,76 +236,6 @@ def parse_one_dragon_plan(raw: Any) -> list[dict[str, Any]]:
             }
         )
     return steps
-
-
-def queue_to_plan(queue_raw: Any) -> list[dict[str, Any]]:
-    """把旧的可视化队列（``OneDragon.Queue``）迁移为 Plan。
-
-    kind/name/enabled 直接映射；``settings`` 留空，运行时走 BGI / 全局现有值
-    （与文档迁移策略一致）。
-    """
-    # 复用一条龙队列的归一化语义（允许同名重复）
-    try:
-        from .one_dragon import parse_one_dragon_queue
-    except Exception:  # pragma: no cover - 仅在 import 异常时兜底为空
-        logger.opt(exception=True).warning("导入 parse_one_dragon_queue 失败")
-        return []
-
-    queue = parse_one_dragon_queue(queue_raw)
-    steps: list[dict[str, Any]] = []
-    for item in queue:
-        name = item["name"]
-        kind = "builtin" if name in BUILTIN_STEP_NAMES else item.get("kind", "builtin")
-        steps.append(
-            {
-                "uid": _gen_uid(),
-                "kind": kind,
-                "name": name,
-                "enabled": item.get("enabled", True),
-                "settings": {},
-            }
-        )
-    return steps
-
-
-def default_plan() -> list[dict[str, Any]]:
-    """基于模板 ``默认配置.json`` 的 TaskOrder 生成默认 8 步 Plan。"""
-    template_path = (
-        resource_path("templates", "BetterGI") / "OneDragon" / "默认配置.json"
-    )
-    template = read_file(template_path)
-    if not isinstance(template, dict):
-        logger.warning(f"一条龙默认配置模板缺失或无效: {template_path}")
-        return []
-    order = template.get("TaskOrder") or []
-    defs = template.get("TaskDefinitions") or {}
-    enabled_map = template.get("TaskEnabledList") or {}
-    steps: list[dict[str, Any]] = []
-    for uid_key in order:
-        name = defs.get(uid_key)
-        if not name:
-            continue
-        steps.append(
-            {
-                "uid": str(uid_key),
-                "kind": "builtin",
-                "name": name,
-                "enabled": bool(enabled_map.get(uid_key, True)),
-                "settings": {},
-            }
-        )
-    return steps
-
-
-def resolve_plan(queue_raw: Any, plan_raw: Any) -> list[dict[str, Any]]:
-    """解析 Plan；为空则回退从 Queue 迁移（一次性，调用方负责写回）。
-
-    用于灰度期平滑过渡：用户尚未保存过 Plan 时，沿用既有队列语义，不破坏现状。
-    """
-    plan = parse_one_dragon_plan(plan_raw)
-    if plan:
-        return plan
-    return queue_to_plan(queue_raw)
 
 
 def validate_step_settings(step: dict[str, Any]) -> dict[str, Any]:
@@ -513,19 +440,6 @@ def extract_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
     return result
 
 
-def weekly_plan_keys(group: str) -> set[str]:
-    """该组所有 weekly 平铺键集合（用于从原生剩余中剥离）。"""
-    keys: set[str] = set()
-    if group == "自动秘境":
-        keys.add("SundayEverySelectedValue")
-        for day in WEEKDAY_KEYS:
-            keys.update({f"{day}PartyName", f"{day}DomainName", f"{day}SelectedValue"})
-    elif group == "自动地脉花":
-        for day in WEEKDAY_KEYS:
-            keys.update({f"LeyLine{day}Country", f"LeyLine{day}Type", f"LeyLineRun{day}"})
-    return keys
-
-
 def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any]:
     """把 Plan settings 里的 weeklyDomain/weeklyLeyLine 还原为平铺右栏键（回显）。"""
     out: dict[str, Any] = {}
@@ -579,12 +493,6 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
                 if "run" in vals:
                     out[f"LeyLineRun{day}"] = vals["run"]
     return out
-
-
-def is_combat_group(group: str) -> bool:
-    """是否为带执行层 Plan 的战斗 4 项组名（支持 ``自动秘境-副本A`` 形式的后缀名）。"""
-    base = _resolve_base_name(group)
-    return base in RIGHTBAR_TO_PLAN
 
 
 def build_combat_steps(

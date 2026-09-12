@@ -18,16 +18,11 @@ import json
 from pathlib import Path
 
 from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
-    _load_project_agent_requirements as load_requirements_via_agent_env,
-)
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
+    _load_project_agent_requirements,
     build_agent_env_manifest,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     pin_agent_maafw_requirement,
-)
-from app.task.MaaFW.tools.core.automas_maafw_runner.runner import (
-    _load_project_agent_requirements as load_requirements_via_runner,
 )
 
 # 照抄真实原生库里的排布：版本号是一条 NUL 结尾的 C 字符串，前后都是别的字符串。
@@ -101,15 +96,14 @@ def test_duplicate_declarations_collapse_to_one(tmp_path: Path) -> None:
     ]
 
 
-def test_both_requirement_loaders_apply_the_pin(tmp_path: Path) -> None:
-    """runner 与 agent_env 各有一份 loader，两条路径都得钉上。"""
+def test_requirement_loader_applies_the_pin(tmp_path: Path) -> None:
+    """agent_env 的 loader 是唯一一条准备路径（runner 里那份重复实现已删）。"""
 
     project = _make_project(tmp_path, requirements=["json-with-comments", "MaaFw"])
 
-    for load in (load_requirements_via_runner, load_requirements_via_agent_env):
-        packages = load(project)
-        assert "maafw==5.12.3" in packages, load.__module__
-        assert "MaaFw" not in packages, load.__module__
+    packages = _load_project_agent_requirements(project)
+    assert "maafw==5.12.3" in packages
+    assert "MaaFw" not in packages
 
 
 def test_manifest_carries_the_pin_so_stale_venvs_rebuild(tmp_path: Path) -> None:

@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.utils import get_logger
+from app.utils.io import force_rmtree
 
 logger = get_logger("配置归档")
 
@@ -275,5 +276,7 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     target = Path(target)
     # 先清再拷，copytree 加 dirs_exist_ok=True：目标残留目录被占用时
     # 不再「部分已删、备份一个没拷回」；与 #564 写法保持一致。
-    shutil.rmtree(target, ignore_errors=True)
+    # 删除走 force_rmtree：目标带只读文件（如脚本自带的 .git 对象）时
+    # 普通 rmtree 删不掉，残留会让随后的 copytree 覆盖失败。
+    force_rmtree(target)
     shutil.copytree(backup_dir, target, dirs_exist_ok=True)

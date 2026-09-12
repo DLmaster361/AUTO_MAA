@@ -181,6 +181,7 @@ import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import { WS_MAAFW_ENV_PREPARE_PROGRESS } from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   getDefaultMaaFWScriptConfig,
@@ -242,7 +243,8 @@ const canLeaveCurrentStep = computed(
 )
 const pageLoading = ref(false)
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formRef = ref<FormInstance>()
 const previewLoading = ref(false)
@@ -274,16 +276,18 @@ const rules = {
 }
 
 const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, { [category]: { [key]: value } })
-    if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-  } catch (error) {
-    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    isSaving.value = false
-  }
+  if (isInitializing.value) return
+  await enqueue(
+    async () => {
+      try {
+        const success = await updateScript(scriptId, { [category]: { [key]: value } })
+        if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
+      } catch (error) {
+        logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+    `${String(category)}.${key}`
+  )
 }
 
 const {

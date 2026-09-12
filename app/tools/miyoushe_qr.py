@@ -503,53 +503,6 @@ def _passport_app_cookie_parts(payload: object) -> dict[str, str]:
     }
 
 
-def _game_token_qr_data(payload: object) -> tuple[str, str] | None:
-    """从 GameToken 二维码响应中提取二维码 URL 和 ticket。"""
-
-    if not isinstance(payload, dict):
-        return None
-    qr_url = str(payload.get("url") or "").strip()
-    if not qr_url:
-        return None
-    parsed = urlparse(qr_url)
-    path = parsed.path.lower()
-    host = parsed.netloc.lower()
-    known_sdk_qr = host == "hk4e-sdk.mihoyo.com" and (
-        "/qrcode/" in path or path.endswith("/qrcode.html")
-    )
-    known_account_qr = host == "user.mihoyo.com" and path == "/qr_code_in_game.html"
-    if parsed.scheme.lower() != "https" or not (known_sdk_qr or known_account_qr):
-        return None
-
-    ticket = str(payload.get("ticket") or "").strip()
-    if not ticket:
-        ticket_values = parse_qs(parsed.query).get("ticket", [])
-        ticket = str(ticket_values[0] if ticket_values else "").strip()
-    if not ticket:
-        return None
-    return qr_url, ticket
-
-
-async def _create_game_token_qr(
-    device: str, proxy: str | None = None
-) -> tuple[str, str] | None:
-    """尝试创建参考项目使用的 GameToken 二维码。"""
-
-    async with httpx.AsyncClient(
-        proxy=proxy or Config.proxy,
-        trust_env=False,
-    ) as client:
-        response = await client.post(
-            GAME_TOKEN_CREATE_URL,
-            json={"app_id": GAME_TOKEN_APP_ID, "device": device},
-            timeout=15.0,
-        )
-        payload = response.json()
-    if not isinstance(payload, dict) or payload.get("retcode") != 0:
-        return None
-    return _game_token_qr_data(payload.get("data"))
-
-
 async def _create_passport_app_qr(
     device: str, proxy: str | None = None
 ) -> tuple[str, str] | None:

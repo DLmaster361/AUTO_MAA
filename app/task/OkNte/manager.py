@@ -280,6 +280,7 @@ class OkNteManager(TaskExecuteBase):
 
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
 
             if self.crashed:
                 self.script_info.status = "异常"
@@ -368,6 +369,7 @@ class OkNteManager(TaskExecuteBase):
         try:
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
         except Exception:
             logger.opt(exception=True).warning(
                 "on_crash 写回 UserConfig 失败，放弃本次状态变更"

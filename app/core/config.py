@@ -91,7 +91,7 @@ from app.utils.constants import (
     UTC4,
     UTC8,
 )
-from app.utils.io import write_file
+from app.utils.io import force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
@@ -295,6 +295,8 @@ class AppConfig(GlobalConfig):
         # 正在循环运行的队列，供配置改动前的安全检查使用
         self.running_cycle_queue_ids: set[uuid.UUID] = set()
         self._stage_refresh_task: Optional[asyncio.Task] = None
+        # MAA item_index.json 解析缓存: 路径 -> (mtime_ns, 物品选项)
+        self._maa_depot_items_cache: dict[Path, tuple[int, list[dict[str, str]]]] = {}
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
@@ -907,53 +909,6 @@ class AppConfig(GlobalConfig):
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
-    async def import_script_from_file(self, script_id: str, jsonFile: str) -> None:
-        """从文件加载脚本配置"""
-
-        logger.info(f"从文件加载脚本配置: {script_id} - {jsonFile}")
-        uid = uuid.UUID(script_id)
-        file_path = Path(jsonFile)
-
-        if uid not in self.ScriptConfig:
-            logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
-        if not Path(file_path).exists():
-            logger.error(f"文件不存在: {file_path}")
-            raise FileNotFoundError(f"文件不存在: {file_path}")
-
-        data = json.loads(file_path.read_text(encoding="utf-8"))
-        await self.ScriptConfig[uid].load(data)
-
-        logger.success(f"{script_id} 配置加载成功")
-
-    async def export_script_to_file(self, script_id: str, jsonFile: str):
-        """导出脚本配置到文件"""
-
-        logger.info(f"导出配置到文件: {script_id} - {jsonFile}")
-
-        uid = uuid.UUID(script_id)
-        file_path = Path(jsonFile)
-
-        if uid not in self.ScriptConfig:
-            logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
-
-        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
-        temp.pop("SubConfigsInfo", None)
-        temp = await self.remove_privacy_info(temp, Path(file_path).stem)
-
-        file_path.write_text(
-            json.dumps(temp, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"{script_id} 配置导出成功")
-
     async def import_script_from_web(self, script_id: str, url: str):
         """从「AUTO-MAS 配置分享中心」导入配置"""
 
@@ -1206,10 +1161,10 @@ class AppConfig(GlobalConfig):
         try:
             shutil.copytree(source_config_dir, temporary_path)
             target_config_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.rmtree(target_config_dir, ignore_errors=True)
+            force_rmtree(target_config_dir)
             temporary_path.rename(target_config_dir)
         finally:
-            shutil.rmtree(temporary_path, ignore_errors=True)
+            force_rmtree(temporary_path)
 
         logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
         return target_config_dir
@@ -2572,8 +2527,14 @@ class AppConfig(GlobalConfig):
                 f"未找到 MAA 物品资源: {item_index_path}，请更新 MAA 后重试"
             )
 
+        # 220 KB 的物品表每次打开用户编辑页都要解析, 按文件 mtime 缓存
+        mtime_ns = item_index_path.stat().st_mtime_ns
+        cached = self._maa_depot_items_cache.get(item_index_path)
+        if cached is not None and cached[0] == mtime_ns:
+            return cached[1]
+
         items = json.loads(item_index_path.read_text(encoding="utf-8"))
-        return [
+        options = [
             {"label": item.get("name") or item_id, "value": item_id}
             for item_id, item in sorted(
                 (
@@ -2586,6 +2547,8 @@ class AppConfig(GlobalConfig):
                 key=lambda entry: int(entry[0]),
             )
         ]
+        self._maa_depot_items_cache[item_index_path] = (mtime_ns, options)
+        return options
 
     async def add_plan(
         self, script: Literal["MaaPlan", "MaaEndPlan"]
@@ -2727,13 +2690,6 @@ class AppConfig(GlobalConfig):
 
         await self.EmulatorConfig.remove(emulator_uid)
 
-    async def reorder_emulator(self, index_list: list[str]) -> None:
-        """重新排序模拟器"""
-
-        logger.info(f"重新排序模拟器: {index_list}")
-
-        await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
-
     async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""
 
@@ -2778,13 +2734,6 @@ class AppConfig(GlobalConfig):
         self._ensure_cycle_safe(queue_uid, "删除")
 
         await self.QueueConfig.remove(queue_uid)
-
-    async def reorder_queue(self, index_list: list[str]) -> None:
-        """重新排序调度队列"""
-
-        logger.info(f"重新排序调度队列: {index_list}")
-
-        await self.QueueConfig.setOrder(list(map(uuid.UUID, index_list)))
 
     async def get_time_set(
         self, queue_id: str, time_set_id: Optional[str]
@@ -2989,13 +2938,6 @@ class AppConfig(GlobalConfig):
         except Exception as e:
             logger.warning(f"广播游戏社区结果失败: {e}")
 
-    async def update_game_sign_results(
-        self, formatted: dict[str, Any], *, replace: bool = False
-    ) -> None:
-        """兼容旧调用方，转发到社区结果更新入口。"""
-
-        await self.update_community_results(formatted, replace=replace)
-
     async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新工具设置"""
 
@@ -3034,18 +2976,6 @@ class AppConfig(GlobalConfig):
             )
             await config.set("GameSignAccount", "Name", account_name)
             return uid, config
-
-    async def get_game_sign_account(
-        self, account_id: str, *, if_decrypt: bool = True
-    ) -> Dict[str, Any]:
-        """获取游戏社区账号组详情"""
-
-        logger.debug(f"获取游戏社区账号组: {account_id}")
-
-        account_uid = uuid.UUID(account_id)
-        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict(
-            if_decrypt=if_decrypt
-        )
 
     def _clear_game_sign_account_results(self, account_id: str) -> None:
         """清除指定游戏社区账号的结果。"""
@@ -3256,28 +3186,6 @@ class AppConfig(GlobalConfig):
                 self.ScriptConfig[script_uid]
                 .UserData[user_uid]
                 .Notify_CustomWebhooks.remove(webhook_uid)
-            )
-
-    async def reorder_webhook(
-        self, script_id: Optional[str], user_id: Optional[str], index_list: list[str]
-    ) -> None:
-        """重新排序 webhook"""
-
-        if script_id is None and user_id is None:
-            logger.info(f"重新排序全局 webhook: {index_list}")
-
-            await self.Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
-
-        else:
-            logger.info(f"重新排序 webhook: {script_id} - {user_id} - {index_list}")
-
-            script_uid = uuid.UUID(script_id)
-            user_uid = uuid.UUID(user_id)
-
-            await (
-                self.ScriptConfig[script_uid]
-                .UserData[user_uid]
-                .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
             )
 
     @property

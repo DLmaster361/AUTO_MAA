@@ -24,8 +24,6 @@
 """
 
 from .core.automas_maafw_project_update import (
-    DOWNLOAD_MAX_BYTES,
-    MaaFWDownloadedProjectPackage,
     MaaFWProjectUpdateCandidate,
     MaaFWProjectUpdateDiscovery,
     MaaFWProjectUpdateError,
@@ -33,13 +31,10 @@ from .core.automas_maafw_project_update import (
     apply_maafw_project_update,
     detect_maafw_project_shell_hint,
     discover_maafw_project_update,
-    download_maafw_project_package,
     update_maafw_project_if_needed,
 )
 
 __all__ = [
-    "DOWNLOAD_MAX_BYTES",
-    "MaaFWDownloadedProjectPackage",
     "MaaFWProjectUpdateCandidate",
     "MaaFWProjectUpdateDiscovery",
     "MaaFWProjectUpdateError",
@@ -47,6 +42,5 @@ __all__ = [
     "apply_maafw_project_update",
     "detect_maafw_project_shell_hint",
     "discover_maafw_project_update",
-    "download_maafw_project_package",
     "update_maafw_project_if_needed",
 ]

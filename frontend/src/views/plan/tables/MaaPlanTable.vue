@@ -501,27 +501,24 @@ const enableAllStages = async (stageKey: string) => {
       }
     }
   }
-  // 保存整个时间配置
-  const planConfig = coordinator.toApiData()
-  for (const timeKey of TIME_KEYS) {
-    const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
-    }
-  }
+  await saveAllTimeConfigs()
 }
 
 const disableAllStages = async (stageKey: string) => {
   for (const timeKey of TIME_KEYS) {
     coordinator.toggleStage(stageKey, timeKey, false)
   }
-  // 保存整个时间配置
+  await saveAllTimeConfigs()
+}
+
+// 逐个时间键保存整份时间配置，只在最后一次回读，避免 8 次 update 各带一次 get
+const saveAllTimeConfigs = async () => {
   const planConfig = coordinator.toApiData()
-  for (const timeKey of TIME_KEYS) {
-    const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
-    }
+  const timeKeys = TIME_KEYS.filter(timeKey => planConfig[timeKey])
+  for (const [i, timeKey] of timeKeys.entries()) {
+    await props.handlePlanChange(timeKey, planConfig[timeKey], {
+      refresh: i === timeKeys.length - 1,
+    })
   }
 }
 

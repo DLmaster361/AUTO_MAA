@@ -35,6 +35,8 @@ export interface TaskRuntimeState {
   taskInfo: WSTaskScriptInfoData[]
   cycleNextList: WSTaskCyclePreviewData[]
   log: string
+  /** 快照里日志对应的 seq，供调度台与后续 task.log.updated 增量衔接 */
+  logSeq?: number
   phase: 'created' | 'active' | 'completed'
   taskName: string | null
   taskType: string | null
@@ -208,6 +210,7 @@ const stateFromSnapshot = (
   taskInfo: cloneTaskInfo(item.task_info),
   cycleNextList: item.cycleNextList ?? [],
   log: item.log,
+  logSeq: item.logSeq,
   phase: 'active',
   result: null,
   outcome: null,

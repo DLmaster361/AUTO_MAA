@@ -67,12 +67,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.root_path = Path(self.script_config.get("Info", "RootPath"))
         self.exe_path = self.root_path / _BGI_REL_EXE
 
-    def _target_user_config(self) -> BetterGIUserConfig | None:
-        """返回当前会话对应的用户配置；脚本级（"Default"）返回 None。"""
-        if self.cur_user_item.user_id == "Default":
-            return None
-        return self.user_config[uuid.UUID(self.cur_user_item.user_id)]
-
     def _cleanup_leftover_slot(self) -> None:
         """清理上一轮残留的 MAS 运行时槽位/物化组（若存在；安全幂等，不误删用户文件）。"""
         if not self.use_mas_config:

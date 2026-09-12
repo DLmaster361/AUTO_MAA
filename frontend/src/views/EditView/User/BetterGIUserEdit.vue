@@ -602,7 +602,7 @@
                             class="group-row-action-btn"
                             type="text"
                             size="small"
-                            :disabled="isGroupFrozen(item)"
+                            :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
                             aria-label="修改配置组名称"
                             @click.stop="openRenameModal(item)"
                           >
@@ -779,7 +779,8 @@
             </div>
           </a-modal>
 
-          <!-- 修改名称弹窗：编辑当前行的后名（仅显示别名，不复制真实配置组） -->
+          <!-- 修改名称弹窗：前名（配置组名称，仅前端展示的组级别名）与后名（名称备注，区分同名实例）分栏编辑。
+               默认/专项两类的前名沿用系统固定名，窗口内锁定只读；两者都不进入 key，运行仍按原配置组执行。 -->
           <a-modal
             v-model:open="renameModal.open"
             :title="t('edit.bettergiRenameTitle')"
@@ -796,15 +797,39 @@
               <p v-if="renameModal.source" class="rename-group-source">
                 {{ t('edit.bettergiRenameSource', { name: renameModal.source.key }) }}
               </p>
-              <a-input
-                v-model:value="renameModal.suffix"
-                :placeholder="t('edit.bettergiRenamePlaceholder')"
-                :status="renameModal.error ? 'error' : ''"
-                size="large"
-                :maxlength="40"
-                @input="renameModal.error = ''"
-                @press-enter="confirmRename"
-              />
+              <a-form layout="horizontal" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">{{ t('edit.bettergiRenameNameLabel') }}</span>
+                  </template>
+                  <a-input
+                    v-model:value="renameModal.name"
+                    :placeholder="t('edit.bettergiRenameNamePlaceholder')"
+                    :status="renameModal.error ? 'error' : ''"
+                    :disabled="renameNameLocked"
+                    size="large"
+                    :maxlength="40"
+                    @input="renameModal.error = ''"
+                    @press-enter="confirmRename"
+                  />
+                </a-form-item>
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">{{ t('edit.bettergiRenameSuffixLabel') }}</span>
+                  </template>
+                  <a-input
+                    v-model:value="renameModal.suffix"
+                    :placeholder="t('edit.bettergiRenamePlaceholder')"
+                    size="large"
+                    :maxlength="40"
+                    @input="renameModal.error = ''"
+                    @press-enter="confirmRename"
+                  />
+                </a-form-item>
+              </a-form>
+              <p v-if="renameNameLocked" class="rename-group-note">
+                {{ t('edit.bettergiRenameLockedTip') }}
+              </p>
               <p v-if="renameModal.error" class="rename-group-error">
                 {{ renameModal.error }}
               </p>
@@ -1484,6 +1509,8 @@ type ConfigGroupKind =
 type ConfigGroupIdentity = {
   kind: ConfigGroupKind
   key: string // builtin/custom/js/pathing: 组名字面量或相对路径；stamina: STAMINA_COMBAT_KEY
+  /** 前名（配置组名称）：仅前端展示的组级别名，不进入 key、不影响运行；留空按来源类型回退默认名 */
+  displayName?: string
   /** 后名（后缀别名）：仅作显示用，不进入 key；执行仍按 key（前名/基名）归一。留空即旧式「自动秘境」 */
   suffix?: string
   /** 队列行唯一实例标识：允许同一配置组重复添加时，每行都有独立 uid（拖拽/删除按行实例） */
@@ -1622,13 +1649,21 @@ const pathingFileSet = computed<Set<string>>(() => {
 const isPathingName = (name: string): boolean =>
   pathingTreeDirs.value.length > 0 && pathingFileSet.value.has(name)
 
+// 前名（配置组名称）按来源类型回退的默认显示名（未自定义别名时使用）
+const defaultGroupBaseLabel = (item: ConfigGroupIdentity): string => {
+  if (item.kind === 'builtin') return builtinGroupLabels.value[item.key] ?? item.key
+  if (item.kind === 'stamina') return t('edit.bettergiGroupStamina')
+  if (item.kind === 'js') return jsDisplayName(item.key)
+  if (item.kind === 'pathing') return pathingDisplayName(item.key)
+  return item.key
+}
+
+// 前名：用户自定义的「配置组名称」优先，未设置时回退默认名
+const groupBaseLabel = (item: ConfigGroupIdentity): string =>
+  item.displayName || defaultGroupBaseLabel(item)
+
 const groupLabel = (item: ConfigGroupIdentity): string => {
-  let base: string
-  if (item.kind === 'builtin') base = builtinGroupLabels.value[item.key] ?? item.key
-  else if (item.kind === 'stamina') base = t('edit.bettergiGroupStamina')
-  else if (item.kind === 'js') base = jsDisplayName(item.key)
-  else if (item.kind === 'pathing') base = pathingDisplayName(item.key)
-  else base = item.key
+  const base = groupBaseLabel(item)
   // 后名（后缀）仅作显示别名，与旧式「自动秘境」并存：有后缀显示「前名-后名」，无则仅前名
   return item.suffix ? `${base}-${item.suffix}` : base
 }
@@ -1716,6 +1751,11 @@ const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void>
     logger.error(e instanceof Error ? e.message : String(e))
   }
 }
+
+// 「配置组名称」（前名）是否锁定：默认（内置 8 组）与专项（体力作战）沿用系统固定名，
+// 只允许改「名称备注」；其余来源（配置组 / JS 脚本 / 路径 / 录制 / 自定义）可自定义前名。
+const isNameLocked = (item: ConfigGroupIdentity): boolean =>
+  item.kind === 'builtin' || item.kind === 'stamina'
 
 // 是否被体力作战冻结（启用体力作战时三个刷取内置组冻结）
 const isGroupFrozen = (item: ConfigGroupIdentity): boolean =>
@@ -1809,11 +1849,12 @@ const readStoredQueue = (): ConfigGroupIdentity[] => {
     } else {
       kind = resolveStoredRowKind(name)
     }
+    const displayName = typeof rec.displayName === 'string' ? rec.displayName : undefined
     const suffix = typeof rec.suffix === 'string' ? rec.suffix : undefined
     const uid = typeof rec.uid === 'number' ? rec.uid : undefined
     const planUid = typeof rec.planUid === 'string' ? rec.planUid : undefined
     const enabled = typeof rec.enabled === 'boolean' ? rec.enabled : undefined
-    rows.push(makeDragonRow({ kind, key: name, suffix, uid, planUid, enabled }))
+    rows.push(makeDragonRow({ kind, key: name, displayName, suffix, uid, planUid, enabled }))
   }
   // 第二遍：战斗组每实例启用状态来自 Plan；自定义组来自队列条目自带的 enabled。
   // 存量数据无该字段时回退按名查自定义组管理表，避免把用户已关闭的组误判为启用。
@@ -1854,6 +1895,7 @@ const persistDragonQueue = () => {
       const entry: Record<string, unknown> = {
         kind: i.kind,
         name: i.key,
+        displayName: i.displayName,
         suffix: i.suffix,
         uid: i.uid,
         planUid,
@@ -2054,8 +2096,10 @@ const addToDragon = (item: ConfigGroupIdentity) => {
       if (row && !row.enabled) toggleCustomGroupEnabled(row)
     }
   }
-  // 追加到队列末尾：生成带唯一 uid 的行实例（重复开关开启时允许同一配置多次添加）
-  dragonList.value.push(makeDragonRow(item))
+  // 追加到队列末尾：生成带唯一 uid 的行实例（重复开关开启时允许同一配置多次添加）。
+  // 同组已有自定义前名时沿用到新实例，避免队列里同一个配置组显示两个名字。
+  const alias = dragonList.value.find(i => i.kind === item.kind && i.key === item.key)?.displayName
+  dragonList.value.push(makeDragonRow(alias ? { ...item, displayName: alias } : item))
   persistDragonQueue()
 }
 
@@ -3683,6 +3727,13 @@ const canDuplicateGroup = (item: ConfigGroupIdentity): boolean => {
   return item.kind !== 'stamina'
 }
 
+// 是否可重命名：专项（体力作战）是本地虚拟项、不落库，改名无法保存故不提供入口；
+// 默认（内置）与其余来源都可打开弹窗，其中「配置组名称」是否可改由 isNameLocked 决定。
+const canRenameGroup = (item: ConfigGroupIdentity): boolean => {
+  if (!item) return false
+  return item.kind !== 'stamina'
+}
+
 // 直接复制相同：把当前行作为新实例追加到队列末尾（不改名、不写新副本，等同再添加一次该组）
 const duplicateSameGroup = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value || isGroupFrozen(item)) return
@@ -3739,24 +3790,33 @@ const confirmDuplicateGroup = () => {
   }
 }
 
-// ---- 修改名称：编辑当前行后名（仅显示别名，不复制真实配置组）----
+// ---- 修改名称：前名（配置组名称，仅前端展示）与后名（名称备注）分栏编辑 ----
 const renameModal = reactive<{
   open: boolean
   saving: boolean
+  name: string
   suffix: string
   error: string
   source: ConfigGroupIdentity | null
 }>({
   open: false,
   saving: false,
+  name: '',
   suffix: '',
   error: '',
   source: null,
 })
 
+// 弹窗内「配置组名称」是否锁定：默认/专项两类沿用系统固定名，只开放「名称备注」
+const renameNameLocked = computed<boolean>(
+  () => !!renameModal.source && isNameLocked(renameModal.source)
+)
+
 const openRenameModal = (item: ConfigGroupIdentity) => {
-  if (!groupsEditable.value) return
+  if (!groupsEditable.value || !canRenameGroup(item)) return
   renameModal.source = item
+  // 预填当前生效名（自定义别名优先，否则来源默认名），便于在现名基础上修改
+  renameModal.name = groupBaseLabel(item)
   renameModal.suffix = item.suffix ?? ''
   renameModal.error = ''
   renameModal.open = true
@@ -3767,11 +3827,20 @@ const confirmRename = () => {
   const source = renameModal.source
   if (!source) return
   renameModal.error = ''
-  const clean = (renameModal.suffix || '').trim().replace(/^-+|-+$/g, '')
+  const name = (renameModal.name || '').trim().replace(/-+$/, '')
+  const suffix = (renameModal.suffix || '').trim().replace(/^-+|-+$/g, '')
+  // 前名填回来源默认名时视为未自定义（清空别名），默认名日后变化仍可跟随
+  const nextDisplay = name && name !== defaultGroupBaseLabel(source) ? name : undefined
   renameModal.saving = true
   try {
-    // 直接改写当前队列行实例的后名（item 即 dragonList 中的元素引用）
-    source.suffix = clean || undefined
+    // 前名是组级别名：同 kind+key 的所有队列行统一显示；后名（名称备注）仅当前行实例。
+    // 两者都不进入 key，实际运行仍按原配置组执行。
+    if (!isNameLocked(source)) {
+      for (const row of dragonList.value) {
+        if (row.kind === source.kind && row.key === source.key) row.displayName = nextDisplay
+      }
+    }
+    source.suffix = suffix || undefined
     renameModal.open = false
     persistDragonQueue()
     message.success(t('edit.bettergiRenameDone', { name: groupLabel(source) }))
@@ -4442,6 +4511,40 @@ onUnmounted(() => {
   line-height: 1.6;
 }
 .duplicate-group-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ant-color-error);
+  line-height: 1.5;
+}
+
+/* 修改配置组名称弹窗：前名（配置组名称）+ 后名（名称备注） */
+.rename-group-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rename-group-form :deep(.ant-form-item) {
+  margin-bottom: 0;
+}
+.rename-group-source {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+  word-break: break-all;
+}
+.rename-group-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ant-color-warning);
+  line-height: 1.6;
+}
+.rename-group-tip {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  line-height: 1.6;
+}
+.rename-group-error {
   margin: 0;
   font-size: 13px;
   color: var(--ant-color-error);

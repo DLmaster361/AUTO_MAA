@@ -185,6 +185,10 @@
           :item-options="depotItemOptions"
           :item-options-loading="depotItemOptionsLoading"
           :item-options-error="depotItemOptionsError"
+          :stage-candidates="depotStageCandidates"
+          :stage-candidates-loading="depotStageCandidatesLoading"
+          :inventory="depotInventory"
+          :load-stage-candidates="loadDepotStageCandidates"
           @save="emitSave"
         />
       </PipelineRow>
@@ -342,6 +346,14 @@ const props = defineProps<{
   depotItemOptions: SelectOption[]
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
+  /** 按物品缓存的关卡候选（含每理智效率，来自一图流数据层；[] 表示已加载但无候选） */
+  depotStageCandidates: Record<string, SelectOption[]>
+  /** 正在加载候选的物品 ID 列表 */
+  depotStageCandidatesLoading: string[]
+  /** 仓库库存映射（itemId → 数量，安装级） */
+  depotInventory: Record<string, number>
+  /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
+  loadDepotStageCandidates: (itemId: string) => Promise<void>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean

@@ -337,6 +337,7 @@ export default {
     item: '物品',
     extractFieldsFromWindow: '由起始/结束正则划定窗口后提取字段',
     targetStock: '目标库存',
+    stock: '库存',
     customBaseLayout: '自定义基建',
     resource: '资源',
     preset: '预设',

@@ -35,6 +35,7 @@ from app.utils.constants import TASK_MODE_ZH
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -173,6 +174,16 @@ class OkNteManager(TaskExecuteBase):
                 elif self.script_config.get("Script", "ConfigPathMode") == "File":
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
+            # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
+            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——set_oknte 里按用户/重试归档会把上一轮下发的
+            # MAS 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
+            with suppress(Exception):
+                archive_native_backup(
+                    self.script_config_path,
+                    self.script_config.get("Script", "ConfigPathMode"),
+                )
+
     async def _restore_script_config_from_temp(self) -> None:
         if not (
             self.task_info.mode in ("AutoProxy", "ScriptConfig")
@@ -228,12 +239,16 @@ class OkNteManager(TaskExecuteBase):
 
         method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            method = method_cls(
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            kwargs: dict = dict(
                 script_info=self.script_info,
                 script_config=self.script_config,  # type: ignore[arg-type]
                 user_config=self.user_config,  # type: ignore[arg-type]
                 game_manager=self.game_manager,
             )
+            if self.task_info.mode == "ScriptConfig":
+                kwargs["view_only"] = self.task_info.view_only
+            method = method_cls(**kwargs)
 
             sub_check = await method.check()
             if sub_check != "Pass":

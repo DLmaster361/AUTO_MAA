@@ -63,6 +63,7 @@ from .config_schema import (
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
 from .tools import push_notification
 from .tools.account_switch import async_switch_account
+from .tools.backup_archive import archive_mas_runtime_backup
 from .tools.launcher_start import async_start_game_via_launcher
 
 logger = get_logger("OK-NTE 自动代理")
@@ -494,6 +495,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
+
+        # 下发前归档 MAS 用户配置（下发源，运行回写 update_config 会覆盖它；
+        # 指纹去重，失败不阻断运行）。native 池不在此处归档：原生配置跨用户
+        # 共享，按用户/重试归档会把上一轮下发的 MAS 配置误当原生内容挤进
+        # 保留池，由 manager.prepare 在任务级一次性完成
+        archive_mas_runtime_backup(self.script_info.script_id, str(self.cur_user_uid))
 
         mas_config_dir = self._ensure_oknte_mas_config_dir()
         self.daily_activity_required = _oknte_daily_activity_enabled(mas_config_dir)

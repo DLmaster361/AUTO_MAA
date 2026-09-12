@@ -6,7 +6,7 @@ describe('首页问候语', () => {
   it('换一句时不会抽到当前这句', () => {
     for (const current of HOME_GREETING_MESSAGES) {
       for (let round = 0; round < 20; round += 1) {
-        expect(pickHomeGreeting(current.text)).not.toBe(current)
+        expect(pickHomeGreeting(current.text).text).not.toBe(current.text)
       }
     }
   })

@@ -2138,6 +2138,7 @@ export default {
     stateDefault: 'Default',
     start: 'Start',
     stop: 'Stop',
+    show: 'Show window',
     hide: 'Hide window',
     openStore: 'Open game center',
     settings: 'Settings',
@@ -2229,6 +2230,7 @@ export default {
       unavailable: 'This emulator is unreachable right now',
       missing: 'This instance cannot be found',
       error: 'The instance is in an error state',
+      busy: 'An operation is still in progress',
     },
     status: {
       missing: 'Not found',

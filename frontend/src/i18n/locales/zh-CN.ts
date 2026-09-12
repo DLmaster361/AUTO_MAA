@@ -2026,6 +2026,7 @@ export default {
     stateDefault: '默认',
     start: '启动',
     stop: '关闭',
+    show: '显示窗口',
     hide: '隐藏窗口',
     openStore: '打开游戏中心',
     settings: '设置',
@@ -2114,6 +2115,7 @@ export default {
       unavailable: '该模拟器暂时不可用，无法操作',
       missing: '找不到这台实例',
       error: '实例处于错误状态',
+      busy: '有操作正在进行',
     },
     status: {
       missing: '未找到',

@@ -2,16 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
-import type { QueueReorderIn } from '../models/QueueReorderIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
-import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
@@ -22,7 +19,6 @@ import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
-import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -59,25 +55,6 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 从文件加载脚本配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static importScriptFromFileApiScriptsImportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/import/file',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -181,25 +158,6 @@ export class UpdateService {
         });
     }
     /**
-     * 重新排序webhook项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderWebhookApiScriptsWebhookOrderPost(
-        requestBody: WebhookReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/webhook/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 更新计划表配置信息
      * @param requestBody
      * @returns OutBase Successful Response
@@ -257,25 +215,6 @@ export class UpdateService {
         });
     }
     /**
-     * 重新排序模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderEmulatorApiEmulatorOrderPost(
-        requestBody: EmulatorReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 更新调度队列配置信息
      * @param requestBody
      * @returns OutBase Successful Response
@@ -287,25 +226,6 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderQueueApiQueueOrderPost(
-        requestBody: QueueReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/queue/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -441,25 +361,6 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序webhook项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderWebhookApiSettingWebhookOrderPost(
-        requestBody: WebhookReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/webhook/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -1,10 +1,11 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from app.core.notify import DispatchResult, NotifyPayload, NotifyTarget, dispatch
-from app.tools.game_sign_notify import (
+from app.core.notify import (
+    NotifyPayload,
+    NotifyTarget,
+    dispatch,
     dispatch_task_report,
-    finalize_task_game_sign_notification,
 )
 
 
@@ -172,25 +173,6 @@ class _Task:
         self.game_sign_summary_pending = pending
 
 
-def test_finalize_consumes_only_after_actual_delivery() -> None:
-    # 零实际渠道 (无 delivered): 不得消费
-    zero = _Task()
-    finalize_task_game_sign_notification(zero, True, DispatchResult())
-    assert zero.game_sign_summary_consumed is False
-
-    # 部分失败: 不消费
-    partial = _Task()
-    partial._delivery(delivered=("全局邮件",), pending=("全局 ServerChan",))
-    finalize_task_game_sign_notification(partial, True, DispatchResult())
-    assert partial.game_sign_summary_consumed is False
-
-    # 全部渠道成功: 消费
-    success = _Task()
-    success._delivery(delivered=("全局邮件", "全局 ServerChan"), pending=())
-    finalize_task_game_sign_notification(success, True, DispatchResult())
-    assert success.game_sign_summary_consumed is True
-
-
 def test_dispatch_task_report_retries_only_failed_channels() -> None:
     """多脚本任务: 第二批报告只把汇总重发给上次失败的渠道,
     已送达渠道收到的报告不含汇总, 避免重复。"""
@@ -276,9 +258,7 @@ def test_dispatch_task_report_publishes_failure_notice() -> None:
 
     with (
         patch("app.core.notify.Notify", _FailingMailNotify()),
-        patch(
-            "app.tools.game_sign_notify.Publisher.send", new_callable=AsyncMock
-        ) as publish,
+        patch("app.core.ws.Publisher.send", new_callable=AsyncMock) as publish,
     ):
         result = _run(
             dispatch_task_report(

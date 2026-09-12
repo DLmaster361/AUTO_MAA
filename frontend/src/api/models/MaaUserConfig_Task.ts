@@ -28,6 +28,10 @@ export type MaaUserConfig_Task = {
      */
     IfAward?: (boolean | null);
     /**
+     * 更换主题
+     */
+    IfSwitchTheme?: (boolean | null);
+    /**
      * 自动肉鸽
      */
     IfRoguelike?: (boolean | null);

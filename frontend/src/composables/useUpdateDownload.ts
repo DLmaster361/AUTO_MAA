@@ -13,6 +13,7 @@ import {
   type WSUpdateProgressData,
 } from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
+import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
 import type { ChangelogData } from '@/utils/changelog'
 
@@ -81,23 +82,6 @@ const estimatedTimeRemaining = computed(() => {
   const minutes = Math.floor((remainingSeconds % 3600) / 60)
   return `${hours}小时${minutes}分钟`
 })
-
-const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B'
-  const base = 1024
-  const units = ['B', 'KB', 'MB', 'GB']
-  const unitIndex = Math.floor(Math.log(bytes) / Math.log(base))
-  return `${parseFloat((bytes / Math.pow(base, unitIndex)).toFixed(2))} ${units[unitIndex]}`
-}
-
-const formatSpeed = (bytesPerSecond: number) => {
-  if (bytesPerSecond === 0) return '0 B/s'
-  const base = 1024
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  const unitIndex = Math.floor(Math.log(bytesPerSecond) / Math.log(base))
-  const value = bytesPerSecond / Math.pow(base, unitIndex)
-  return `${parseFloat(value.toFixed(1))} ${units[unitIndex]}`
-}
 
 const stopRuntimeMonitoring = () => {
   if (downloadTimeout) {

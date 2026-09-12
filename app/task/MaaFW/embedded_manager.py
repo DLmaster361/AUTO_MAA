@@ -60,16 +60,13 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 from app.task.MaaFW.tools.notify import push_notification
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.paths import SOURCE_ROOT
 from app.utils.security import sanitize_log_message
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
 
 logger = get_logger("MFW 内置运行")
-
-# Store checkout 的 sidecar：存在即说明版本由 Project Store 管理（source hash
-# 绑定），原地改文件会破坏这层绑定，第三层要求走「下载 → 导入新版本 → 切换」。
-MANAGED_PROJECT_SIDECAR_NAME = ".auto_mas_maafw_project.json"
 
 # 取消运行环境准备后等线程收尾的上限，与 ``runner_task`` 里那条准备路径的
 # ``_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS`` 取同一个值（那边导入即打开
@@ -487,10 +484,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
         project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
 
-        if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
-            self._append_update_log("受管项目由 Store 管理版本，跳过原地更新")
-            return
-
         credentials = resolve_update_credentials(self.script_config)
         self._append_update_log(
             f"开始{phase_zh}检查 MFW 项目更新：下载源 {credentials.source}，"
@@ -578,8 +571,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             interface,
             runtime_pool_root=route.root,
             runtime_pool_id=route.pool_id,
-            # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓
-            import_paths=[Path.cwd()],
+            # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+            # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+            import_paths=[SOURCE_ROOT],
             send_log=send_log,
             cancel_event=cancel_event,
         )
@@ -606,10 +600,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         project_path = Path(
             str(self.script_config.get("Info", "Path") or "")
         ).resolve()
-
-        if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
-            # 受管项目的环境由 Store/Gateway 那条链自己准备，别在这里插一脚。
-            return
 
         # 更新已经放掉了项目锁。拿不到说明另有准备/运行在跑，那份准备一样管用。
         reservation_key = await try_reserve_project_path(project_path)

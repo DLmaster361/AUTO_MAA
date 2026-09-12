@@ -49,7 +49,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import write_file
+from app.utils.io import force_rmtree, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -301,6 +301,11 @@ class AutoProxyTask(TaskExecuteBase):
                 paths=[self.script_log_path],
                 sink=self._append_push_log,
                 start_from_end=True,
+                # ok-script 框架跨零点把 ok-script.log 滚动为
+                # ok-script.YYYY-MM-DD.log（日期在中段），声明模板让轮转补偿命中旧文件
+                rotated_name=(
+                    f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
+                ),
             )
             # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
             self.log_translator = (
@@ -371,9 +376,9 @@ class AutoProxyTask(TaskExecuteBase):
             tmp_dst = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
             )
-            shutil.rmtree(tmp_dst, ignore_errors=True)
+            force_rmtree(tmp_dst)
             shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            force_rmtree(self.script_config_path)
             tmp_dst.rename(self.script_config_path)
         self._apply_mas_overrides()
         logger.info("OK-WW 运行参数配置完成: 自动代理")
@@ -921,8 +926,9 @@ class AutoProxyTask(TaskExecuteBase):
             return
         deadline = time.monotonic() + _GAME_EXIT_WAIT_SECONDS
         while time.monotonic() < deadline:
-            # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻
-            if not is_process_alive(_WUWA_CLIENT_PROCESS):
+            # 按进程存活判断（不依赖窗口）：窗口销毁后进程可能仍存活片刻。
+            # 全进程扫描是同步 IO，放到线程里免得每秒卡一次事件循环
+            if not await asyncio.to_thread(is_process_alive, _WUWA_CLIENT_PROCESS):
                 logger.info("鸣潮客户端进程已完全退出，继续下一用户")
                 return
             await asyncio.sleep(1)

@@ -17,22 +17,16 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
-import ast
 import hashlib
-import importlib
 import json
 import os
 import re
-import shutil
 import subprocess
-import sys
 import threading
 import time
-import uuid
 from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Literal, TextIO
+from typing import Any, BinaryIO, Callable, TextIO
 
 import maa as maa_package
 from maa.agent_client import AgentClient
@@ -60,33 +54,19 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     describe_runtime_architecture_mismatch,
     project_maafw_runtime_path,
 )
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 
 try:
-    from .run_plan import (
-        MaaFWResourceBundlePlan,
-        MaaFWRunPlan,
-        MaaFWTaskRunPlan,
-        build_maafw_agent_command_plans,
-    )
-    from .shared_agent import (
-        SHARED_RUNTIME_KIND,
-        route_managed_python_agents_to_shared_runtime,
-    )
+    from .models import MaaFWDeviceConfig
+    from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan
 except ImportError:
-    from run_plan import (  # type: ignore[no-redef]
-        MaaFWResourceBundlePlan,
-        MaaFWRunPlan,
-        MaaFWTaskRunPlan,
-        build_maafw_agent_command_plans,
-    )
-    from shared_agent import (  # type: ignore[no-redef]
-        SHARED_RUNTIME_KIND,
-        route_managed_python_agents_to_shared_runtime,
-    )
+    from models import MaaFWDeviceConfig  # type: ignore[no-redef]
+    from run_plan import MaaFWRunPlan, MaaFWTaskRunPlan  # type: ignore[no-redef]
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
-MAAFW_DEBUG_LOG_PATH = Path("debug") / "maafw.log"
 # 这些 controller 动作失败意味着游戏/设备根本没就绪。此时任务失败不该继续
 # 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
 # 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
@@ -104,7 +84,6 @@ _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
 
 
-MaaFWControllerType = Literal["Adb", "Win32"]
 AGENT_CONNECT_RETRY_COUNT = 30
 AGENT_CONNECT_RETRY_INTERVAL = 0.2
 AGENT_CONNECT_TIMEOUT_MS = 1000
@@ -120,8 +99,6 @@ AGENT_CONNECT_TIMEOUT_MS = 1000
 ADB_READY_RETRY_COUNT = 180
 ADB_READY_RETRY_INTERVAL = 1.0
 ADB_COMMAND_TIMEOUT = 5
-AGENT_PROJECT_RUNTIME_DIRS = ("debug", "logs", "temp")
-NATIVE_RUNTIME_OVERLAY_MARKER = ".auto_mas_maafw_native_runtime.json"
 AGENT_ENV_PATH_DIRS = (
     (),
     ("maafw",),
@@ -130,18 +107,8 @@ AGENT_ENV_PATH_DIRS = (
     ("deps",),
 )
 # Agent 自举所需的最小依赖包（pip 发行名）
-AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
 # pip 健康检测超时（秒）
-PIP_HEALTH_CHECK_TIMEOUT = 15
 # pip 安装/修复超时（秒）
-PIP_INSTALL_TIMEOUT = 120
-AGENT_ENV_MANIFEST_NAME = ".auto_mas_agent_env.json"
-EMBEDDED_AGENT_SERVER_SINK_DECORATORS = {
-    "resource_sink",
-    "controller_sink",
-    "tasker_sink",
-    "context_sink",
-}
 MAAFW_FAILURE_EVENT_MESSAGES = {
     "Node.NextList.Failed",
     "Node.PipelineNode.Failed",
@@ -250,97 +217,6 @@ def _ensure_maafw_client_library_mode(runtime_path: Path | None = None) -> None:
         raise RuntimeError("MaaFW Library is still in AgentServer mode")
 
 
-@dataclass(frozen=True)
-class _EmbeddedAgentScanItem:
-    module_name: str
-    class_name: str | None = None
-    sink_kind: str | None = None
-
-
-def _load_project_agent_requirements(project_path: Path) -> list[str]:
-    """读取 MaaFW 项目自己的 agent 依赖声明，避免串用 AUTO-MAS 依赖版本。"""
-
-    requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
-    try:
-        with requirements_path.open("r", encoding="utf-8") as file:
-            for raw_line in file:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                packages.append(line)
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-
-    normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
-    if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
-        packages.append(AGENT_BOOTSTRAP_PACKAGE)
-    return packages
-
-
-def _project_agent_requirements_hash(project_path: Path) -> str:
-    packages = _load_project_agent_requirements(project_path)
-    payload = json.dumps(packages, ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _project_interface_hash(project_path: Path) -> str:
-    for name in ("interface.json", "interface.jsonc"):
-        path = project_path / name
-        if path.is_file():
-            return hashlib.sha256(path.read_bytes()).hexdigest()
-    return ""
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _sha256_file_set(files: list[tuple[Path, Path]]) -> str:
-    digest = hashlib.sha256()
-    for source, relative_path in files:
-        digest.update(relative_path.as_posix().encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(_sha256_file(source).encode("ascii"))
-        digest.update(b"\n")
-    return digest.hexdigest()
-
-
-def _build_agent_env_manifest(project_path: Path) -> dict[str, Any]:
-    return {
-        "schemaVersion": 1,
-        "projectPath": str(project_path.resolve()),
-        "interfaceHash": _project_interface_hash(project_path),
-        "requirementsHash": _project_agent_requirements_hash(project_path),
-        "requirements": _load_project_agent_requirements(project_path),
-    }
-
-
-def _venv_python_path(venv_path: Path) -> Path:
-    if os.name == "nt":
-        return venv_path / "Scripts" / "python.exe"
-    return venv_path / "bin" / "python"
-
-
-def _is_valid_venv_path(venv_path: Path) -> bool:
-    return (
-        _venv_python_path(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
-    )
-
-
-def _venv_bootstrap_python() -> str:
-    portable_python = Path.cwd() / "environment" / "python" / "python.exe"
-    if portable_python.is_file():
-        return str(portable_python)
-    return sys.executable
-
-
 def describe_loaded_maafw() -> tuple[str, str]:
     """返回实际加载的 MaaFramework 版本与 Python binding 的版本。
 
@@ -407,6 +283,27 @@ def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
     if project_print is None or binding_print is None:
         return None
     return project_print != binding_print
+
+
+def _installed_maafw_version(venv_path: Path) -> str | None:
+    """读 venv 里已安装的 maafw 版本，读不出就返回 None。
+
+    走 ``dist-info`` 目录名而不是起解释器去 import：诊断发生在失败路径上，
+    不该再多花一次进程启动，也不该因为那个 venv 本身有问题而再抛一个异常。
+    """
+
+    roots = [venv_path / "Lib" / "site-packages"]
+    roots.extend(sorted(venv_path.glob("lib/python*/site-packages")))
+    for root in roots:
+        try:
+            matches = sorted(root.glob("maafw-*.dist-info"))
+        except OSError:
+            continue
+        for match in matches:
+            version = match.name[len("maafw-") : -len(".dist-info")]
+            if version:
+                return version
+    return None
 
 
 def _normalize_maafw_version(value: str) -> str:
@@ -502,17 +399,11 @@ def _ensure_maafw_global_init(
         _MAAFW_INITIALIZED = True
 
 
-class MaaFWDeviceConfig(BaseModel):
-    type: MaaFWControllerType
-    adbPath: str | None = None
-    address: str | None = None
-    hWnd: int | None = None
-    screencapMethods: int = MaaAdbScreencapMethodEnum.Default
-    inputMethods: int = MaaAdbInputMethodEnum.Default
-    screencapMethod: int = MaaWin32ScreencapMethodEnum.DXGI_DesktopDup
-    mouseMethod: int = MaaWin32InputMethodEnum.Seize
-    keyboardMethod: int = MaaWin32InputMethodEnum.Seize
-    config: dict[str, Any] = Field(default_factory=dict)
+# MaaFWDeviceConfig 统一从 models 导入（见文件头部的 import）。这里原本还有一份同名
+# 类，比 models 那份少了 adbReadyTimeout；宿主按 models 那份序列化 job 文件、worker 按
+# 这份反序列化，pydantic 默认 extra="ignore" 把该字段静默丢掉，模拟器等待时长设置因此
+# 从落地起就没生效过。各方法的默认值不会因此改变：宿主每次都显式写全本 controller 用到
+# 的字段，另一类 controller 的字段消费点本来就写成 `... or XxxEnum.Default`。
 
 
 class MaaFWRunResult(BaseModel):
@@ -678,16 +569,6 @@ class MaaFWRunner:
                     self._post_self_stop()
             except Exception as exc:
                 self.send_log(f"停止 MaaFW tasker 失败: {exc}")
-
-    def reset_for_retry(self) -> None:
-        self._stop_requested.set()
-        if self.tasker is not None:
-            try:
-                _ensure_maafw_client_library_mode()
-                if self.tasker.running:
-                    self._post_self_stop()
-            except Exception as exc:
-                self.send_log(f"停止 MaaFW tasker 准备重试失败: {exc}")
 
     def shutdown(self) -> None:
         self._stop_requested.set()
@@ -1069,7 +950,6 @@ class MaaFWRunner:
 
     def _start_agents(self) -> None:
         self._load_embedded_agents()
-        self._prepare_managed_native_runtime()
         self.prepare_agent_python_envs()
 
         for agent_plan in self.plan.agents:
@@ -1107,6 +987,7 @@ class MaaFWRunner:
                     agent_client,
                     process,
                     Path(command[0]).name,
+                    agent_plan,
                 )
             except Exception:
                 with suppress(Exception):
@@ -1122,238 +1003,6 @@ class MaaFWRunner:
 
             self.send_log(f"Agent 已启动: {command[0]}")
 
-    def _prepare_managed_native_runtime(self) -> None:
-        """Expose the selected shared MaaFW DLLs to a stripped Managed checkout.
-
-        Project Store payloads deliberately omit embedded runtimes.  Several
-        native Agents call ``WithLibDir(cwd/maafw)`` and therefore do not honor
-        PATH alone.  A Managed checkout is writable by design, so materialize
-        hardlinks (or copies on a different volume) into a private overlay and
-        record its exact ``MaaFramework.dll`` hash.  Ordinary projects and
-        checkouts that already carry their own runtime are left untouched.
-        """
-
-        if self.plan.managedSharedAgentDependenciesComplete is None:
-            return
-        if not any(
-            getattr(agent, "runtimeKind", None) == "project_binary"
-            for agent in self.plan.agents
-        ):
-            return
-
-        project_path = Path(self.plan.path).resolve()
-        source_bin = Path(maa_package.__file__).resolve().parent / "bin"
-        source_main = source_bin / "MaaFramework.dll"
-        if not source_main.is_file():
-            raise RuntimeError(
-                f"托管 MaaFW 原生 Agent 缺少共享运行时 MaaFramework.dll: {source_main}"
-            )
-
-        source_agent_binary = source_bin.parent.parent / "MaaAgentBinary"
-        if source_agent_binary.exists() and not source_agent_binary.is_dir():
-            raise RuntimeError(
-                f"托管 MaaFW native runtime 资产不是目录: {source_agent_binary}"
-            )
-
-        source_files: list[tuple[Path, Path]] = []
-        for source_file in sorted(
-            (item for item in source_bin.rglob("*") if item.is_file()),
-            key=lambda item: item.as_posix().casefold(),
-        ):
-            source_files.append((source_file, source_file.relative_to(source_bin)))
-        if source_agent_binary.is_dir():
-            for source_file in sorted(
-                (item for item in source_agent_binary.rglob("*") if item.is_file()),
-                key=lambda item: item.as_posix().casefold(),
-            ):
-                source_files.append(
-                    (
-                        source_file,
-                        Path("MaaAgentBinary")
-                        / source_file.relative_to(source_agent_binary),
-                    )
-                )
-        if not source_files:
-            raise RuntimeError(f"MaaFW native runtime 目录为空: {source_bin}")
-        asset_hash = _sha256_file_set(source_files)
-
-        target_dir = project_path / "maafw"
-        target_main = target_dir / "MaaFramework.dll"
-        marker_path = target_dir / NATIVE_RUNTIME_OVERLAY_MARKER
-
-        # A complete project release keeps its own native runtime and must win
-        # over the shared fallback.  The overlay is only for stripped payloads.
-        if target_main.is_file() and not marker_path.is_file():
-            self.send_log(f"[MaaFW Runtime] 使用项目自带 native runtime: {target_main}")
-            return
-
-        if target_dir.exists() and (not target_dir.is_dir() or target_dir.is_symlink()):
-            raise RuntimeError(
-                f"托管 MaaFW native runtime 目录不是普通目录: {target_dir}"
-            )
-        if marker_path.exists() and marker_path.is_symlink():
-            raise RuntimeError(
-                f"托管 MaaFW native runtime 标记不能是链接: {marker_path}"
-            )
-        if target_dir.is_dir() and not marker_path.exists():
-            unexpected = [child.name for child in target_dir.iterdir()]
-            if unexpected:
-                raise RuntimeError(
-                    "托管项目缺少 MaaFramework.dll，且 maafw 目录含有未标记文件；"
-                    f"拒绝覆盖: {target_dir} ({', '.join(unexpected[:8])})"
-                )
-
-        source_hash = _sha256_file(source_main)
-        if marker_path.is_file() and target_main.is_file():
-            try:
-                marker = json.loads(marker_path.read_text(encoding="utf-8"))
-            except Exception as exc:
-                raise RuntimeError(
-                    f"托管 MaaFW native runtime 标记损坏: {marker_path}"
-                ) from exc
-            target_files = [
-                (target_dir / relative_path, relative_path)
-                for _, relative_path in source_files
-            ]
-            expected_paths = {relative_path for _, relative_path in source_files}
-            actual_paths = {
-                item.relative_to(target_dir)
-                for item in target_dir.rglob("*")
-                if item.is_file() and item.name != NATIVE_RUNTIME_OVERLAY_MARKER
-            }
-            target_matches = (
-                all(
-                    path.is_file() and not path.is_symlink() for path, _ in target_files
-                )
-                and actual_paths == expected_paths
-                and _sha256_file_set(target_files) == asset_hash
-            )
-            if (
-                marker.get("schemaVersion") == 1
-                and marker.get("maafwSha256") == source_hash
-                and marker.get("assetSha256") == asset_hash
-                and target_matches
-            ):
-                self.send_log(
-                    "[MaaFW Runtime] 复用托管 checkout 的共享 native runtime: "
-                    f"{target_dir}"
-                )
-                return
-
-        # Managed checkouts may already live several levels below the
-        # configurable Project Runs root.  A full UUID here is needlessly
-        # expensive on Windows: the temporary path is only used while the
-        # overlay is assembled, but appending MaaAgentBinary/... can cross the
-        # legacy MAX_PATH boundary and fail with WinError 206.  Keep the
-        # staging name short while retaining enough entropy for the per-run
-        # project reservation to prevent collisions.
-        stage_dir = project_path / f".amrt-{uuid.uuid4().hex[:8]}"
-        backup_dir: Path | None = None
-        try:
-            stage_dir.mkdir(parents=False, exist_ok=False)
-            for source_file, relative_path in source_files:
-                destination = stage_dir / relative_path
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    os.link(source_file, destination)
-                except OSError:
-                    shutil.copy2(source_file, destination)
-
-            marker = {
-                "schemaVersion": 1,
-                "source": "shared-runtime-pool",
-                "maafwVersion": str(
-                    self.plan.piEnv.get("PI_CLIENT_MAAFW_VERSION") or ""
-                ),
-                "maafwSha256": source_hash,
-                "assetSha256": asset_hash,
-                "files": [str(relative_path) for _, relative_path in source_files],
-            }
-            marker_payload = json.dumps(
-                marker,
-                ensure_ascii=False,
-                indent=2,
-            )
-            (stage_dir / NATIVE_RUNTIME_OVERLAY_MARKER).write_text(
-                marker_payload,
-                encoding="utf-8",
-            )
-
-            # ``Path.exists()`` is false for a dangling symlink.  Never let
-            # the publish path treat one as an absent directory: replacing a
-            # link would either fail late or target an unexpected location.
-            if target_dir.is_symlink():
-                raise RuntimeError(
-                    "托管 MaaFW native runtime 目标目录是符号链接；"
-                    "拒绝覆盖以保持脱壳目录身份不变。"
-                )
-            if not target_dir.exists():
-                stage_dir.replace(target_dir)
-                stage_dir = None
-            else:
-                # Publish the complete overlay with one directory swap.  The
-                # previous implementation deleted the old files before
-                # moving staged children one by one; an I/O/permission error
-                # in that window left a half-written ``maafw`` directory and
-                # made the next run consume an incomplete native runtime.
-                # Keep the backup name short for the same MAX_PATH reason as
-                # the staging name, and restore it if the publish fails.
-                backup_dir = project_path / f".amrb-{uuid.uuid4().hex[:8]}"
-                if backup_dir.exists() or backup_dir.is_symlink():
-                    raise RuntimeError(
-                        f"托管 MaaFW native runtime 回滚目录已存在: {backup_dir}"
-                    )
-                target_dir.replace(backup_dir)
-                try:
-                    stage_dir.replace(target_dir)
-                    stage_dir = None
-                except BaseException:
-                    # The target path should be absent after the first rename.
-                    # Do not overwrite a concurrently-created directory: leave
-                    # that path untouched and report rollback failure instead.
-                    if backup_dir.exists() and not target_dir.exists():
-                        backup_dir.replace(target_dir)
-                        backup_dir = None
-                    raise
-        except BaseException as exc:
-            rollback_error: BaseException | None = None
-            if backup_dir is not None and backup_dir.exists():
-                try:
-                    if target_dir.exists() or target_dir.is_symlink():
-                        # A concurrent writer won the target path.  Never
-                        # remove its contents while trying to recover ours.
-                        raise RuntimeError(
-                            f"目标 overlay 路径在回滚期间被占用: {target_dir}"
-                        )
-                    backup_dir.replace(target_dir)
-                    backup_dir = None
-                except BaseException as restore_exc:
-                    rollback_error = restore_exc
-            if rollback_error is not None:
-                raise RuntimeError(
-                    "准备托管 MaaFW native runtime overlay 失败，且旧 overlay 回滚未完成: "
-                    f"{target_dir}: {rollback_error}"
-                ) from exc
-            raise RuntimeError(
-                f"准备托管 MaaFW native runtime overlay 失败: {target_dir}: {exc}"
-            ) from exc
-        finally:
-            if stage_dir is not None and stage_dir.exists():
-                with suppress(Exception):
-                    shutil.rmtree(stage_dir)
-            if backup_dir is not None and backup_dir.exists():
-                # A successful swap leaves only the old generated overlay in
-                # this private backup.  Cleanup is best effort: the new
-                # overlay is already complete and should not be rolled back
-                # merely because Windows still holds an old DLL handle.
-                with suppress(Exception):
-                    shutil.rmtree(backup_dir)
-
-        self.send_log(
-            "[MaaFW Runtime] 已为托管 native Agent 准备共享 runtime overlay: "
-            f"{target_dir}"
-        )
-
     def prepare_agent_python_envs(self) -> None:
         """Prepare all MaaFW agent Python environments without starting agents."""
 
@@ -1367,20 +1016,6 @@ class MaaFWRunner:
                 "[Python环境] 所有 Agent 均为 embedded，跳过子进程 Python 环境准备"
             )
             return
-
-        shared_agents = route_managed_python_agents_to_shared_runtime(
-            self.plan.path,
-            process_agents,
-            python_executable=sys.executable,
-            dependencies_complete=(self.plan.managedSharedAgentDependenciesComplete),
-            managed_python_agent_indexes=(self.plan.managedPythonAgentIndexes),
-        )
-        if shared_agents:
-            shim_dir = write_agent_compat_shims(Path(sys.prefix))
-            self.send_log(
-                "[Python环境] 托管 Python Agent 复用当前共享 runtime: "
-                f"{sys.executable} (agents={len(shared_agents)}, shim={shim_dir})"
-            )
 
         self.send_log(f"[Python环境] 开始准备 {len(process_agents)} 个 Agent 环境")
         from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
@@ -1402,340 +1037,6 @@ class MaaFWRunner:
             "embedded Agent must run as an isolated subprocess in AUTO-MAS; "
             "rebuild the MaaFW run plan before starting agents"
         )
-
-    def _resolve_embedded_agent_paths(
-        self, agent_plan: Any
-    ) -> tuple[Path, Path | None]:
-        project_path = Path(self.plan.path)
-        entry_path: Path | None = None
-        for raw_arg in agent_plan.childArgs:
-            raw_path = str(raw_arg)
-            if not raw_path.lower().endswith(".py"):
-                continue
-            candidate = Path(raw_path)
-            if not candidate.is_absolute():
-                candidate = project_path / candidate
-            entry_path = candidate.resolve()
-            break
-
-        if entry_path is None:
-            default_entry = project_path / "agent" / "main.py"
-            entry_path = default_entry.resolve() if default_entry.is_file() else None
-
-        if entry_path is not None and entry_path.is_file():
-            return entry_path.parent, entry_path
-        return project_path / "agent", entry_path
-
-    def _load_embedded_agent_custom(self, agent_root: Path) -> bool:
-        if not agent_root.is_dir():
-            raise RuntimeError(f"Embedded Agent 目录不存在: {agent_root}")
-        if self.resource is None or self.controller is None or self.tasker is None:
-            raise RuntimeError("Embedded Agent 需要先初始化 resource/controller/tasker")
-
-        scan_items = self._scan_embedded_agent_modules(agent_root)
-        if not scan_items:
-            self.send_log(f"[Embedded Agent] 未扫描到装饰器: {agent_root}")
-            return False
-        modules = sorted({item.module_name for item in scan_items})
-        implicit_sinks = [
-            item
-            for item in scan_items
-            if item.class_name is not None and item.sink_kind is not None
-        ]
-
-        self._purge_embedded_modules(agent_root)
-        self._purge_module_name("agent")
-        added_paths = self._add_embedded_sys_paths(agent_root)
-        restore_patch = self._patch_embedded_agent_decorators()
-        before_actions = set(self.resource.custom_action_list or [])
-        before_recognitions = set(self.resource.custom_recognition_list or [])
-        before_event_sinks = len(self.event_sinks)
-        try:
-            for module_name in modules:
-                self._purge_module_name(module_name)
-                self.send_log(f"[Embedded Agent] 导入模块: {module_name}")
-                importlib.import_module(module_name)
-            for item in implicit_sinks:
-                self._register_embedded_implicit_sink(item)
-        finally:
-            restore_patch()
-            self._remove_embedded_sys_paths(added_paths)
-
-        actions = sorted(set(self.resource.custom_action_list or []) - before_actions)
-        recognitions = sorted(
-            set(self.resource.custom_recognition_list or []) - before_recognitions
-        )
-        sink_count = len(self.event_sinks) - before_event_sinks
-        self.send_log(
-            "[Embedded Agent] 注册完成: "
-            f"actions={actions or []}, recognitions={recognitions or []}, sinks={sink_count}"
-        )
-        return bool(actions or recognitions or sink_count)
-
-    def _scan_embedded_agent_modules(
-        self, agent_root: Path
-    ) -> list[_EmbeddedAgentScanItem]:
-        items: set[_EmbeddedAgentScanItem] = set()
-        for file_path in sorted(agent_root.rglob("*.py")):
-            if "__pycache__" in file_path.parts:
-                continue
-            try:
-                tree = ast.parse(file_path.read_text(encoding="utf-8"))
-            except (OSError, SyntaxError, UnicodeDecodeError):
-                continue
-            module_name = self._embedded_module_name(agent_root, file_path)
-            if not module_name:
-                continue
-
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ClassDef):
-                    continue
-
-                has_sink_decorator = False
-                for decorator in node.decorator_list:
-                    decorator_kind = self._embedded_agent_decorator_kind(decorator)
-                    if decorator_kind is None:
-                        continue
-                    items.add(_EmbeddedAgentScanItem(module_name=module_name))
-                    has_sink_decorator = has_sink_decorator or decorator_kind.endswith(
-                        "_sink"
-                    )
-
-                if has_sink_decorator:
-                    continue
-
-                implicit_sink_kind = self._implicit_embedded_sink_kind(node)
-                if implicit_sink_kind is not None:
-                    items.add(
-                        _EmbeddedAgentScanItem(
-                            module_name=module_name,
-                            class_name=node.name,
-                            sink_kind=implicit_sink_kind,
-                        )
-                    )
-
-        return sorted(
-            items,
-            key=lambda item: (
-                item.module_name,
-                item.class_name or "",
-                item.sink_kind or "",
-            ),
-        )
-
-    @staticmethod
-    def _embedded_agent_decorator_kind(decorator: ast.expr) -> str | None:
-        if not isinstance(decorator, ast.Call):
-            return None
-        func = decorator.func
-        if not isinstance(func, ast.Attribute):
-            return None
-
-        owner = func.value
-        owner_name = owner.id if isinstance(owner, ast.Name) else ""
-        if owner_name in {"resource", "Resource", "AgentServer"}:
-            if func.attr == "custom_action":
-                return "action"
-            if func.attr == "custom_recognition":
-                return "recognition"
-        if (
-            owner_name == "AgentServer"
-            and func.attr in EMBEDDED_AGENT_SERVER_SINK_DECORATORS
-        ):
-            return func.attr
-        return None
-
-    @staticmethod
-    def _implicit_embedded_sink_kind(node: ast.ClassDef) -> str | None:
-        for base in node.bases:
-            base_name = ""
-            if isinstance(base, ast.Name):
-                base_name = base.id
-            elif isinstance(base, ast.Attribute):
-                base_name = base.attr
-            if base_name == "ResourceEventSink":
-                return "resource_sink"
-            if base_name == "ControllerEventSink":
-                return "controller_sink"
-            if base_name == "TaskerEventSink":
-                return "tasker_sink"
-            if base_name == "ContextEventSink":
-                return "context_sink"
-        return None
-
-    @staticmethod
-    def _embedded_module_name(agent_root: Path, file_path: Path) -> str | None:
-        try:
-            relative = file_path.relative_to(agent_root)
-        except ValueError:
-            return None
-        parts = list(relative.with_suffix("").parts)
-        if not parts:
-            return None
-        if parts[-1] == "__init__":
-            parts = parts[:-1]
-        return ".".join(parts) if parts else None
-
-    def _patch_embedded_agent_decorators(self) -> Callable[[], None]:
-        _ensure_maafw_client_library_mode()
-        import maa.resource as maa_resource_module
-        from maa.agent.agent_server import AgentServer
-
-        sentinel = object()
-        old_resource = getattr(maa_resource_module, "resource", sentinel)
-        old_custom_action = AgentServer.__dict__.get("custom_action", sentinel)
-        old_custom_recognition = AgentServer.__dict__.get(
-            "custom_recognition", sentinel
-        )
-        old_resource_sink = AgentServer.__dict__.get("resource_sink", sentinel)
-        old_controller_sink = AgentServer.__dict__.get("controller_sink", sentinel)
-        old_tasker_sink = AgentServer.__dict__.get("tasker_sink", sentinel)
-        old_context_sink = AgentServer.__dict__.get("context_sink", sentinel)
-
-        setattr(maa_resource_module, "resource", self.resource)
-        AgentServer.custom_action = staticmethod(self.resource.custom_action)
-        AgentServer.custom_recognition = staticmethod(self.resource.custom_recognition)
-        AgentServer.resource_sink = staticmethod(self._embedded_resource_sink_decorator)
-        AgentServer.controller_sink = staticmethod(
-            self._embedded_controller_sink_decorator
-        )
-        AgentServer.tasker_sink = staticmethod(self._embedded_tasker_sink_decorator)
-        AgentServer.context_sink = staticmethod(self._embedded_context_sink_decorator)
-
-        def restore() -> None:
-            if old_resource is sentinel:
-                with suppress(AttributeError):
-                    delattr(maa_resource_module, "resource")
-            else:
-                setattr(maa_resource_module, "resource", old_resource)
-            for name, old_value in {
-                "custom_action": old_custom_action,
-                "custom_recognition": old_custom_recognition,
-                "resource_sink": old_resource_sink,
-                "controller_sink": old_controller_sink,
-                "tasker_sink": old_tasker_sink,
-                "context_sink": old_context_sink,
-            }.items():
-                if old_value is sentinel:
-                    with suppress(AttributeError):
-                        delattr(AgentServer, name)
-                else:
-                    setattr(AgentServer, name, old_value)
-
-        return restore
-
-    def _embedded_resource_sink_decorator(self) -> Callable[[type[Any]], type[Any]]:
-        def wrapper(sink_class: type[Any]) -> type[Any]:
-            sink = sink_class()
-            if self.resource is not None:
-                self.resource.add_sink(sink)
-            self.event_sinks.append(sink)
-            return sink_class
-
-        return wrapper
-
-    def _embedded_controller_sink_decorator(self) -> Callable[[type[Any]], type[Any]]:
-        def wrapper(sink_class: type[Any]) -> type[Any]:
-            sink = sink_class()
-            if self.controller is not None:
-                self.controller.add_sink(sink)
-            self.event_sinks.append(sink)
-            return sink_class
-
-        return wrapper
-
-    def _embedded_tasker_sink_decorator(self) -> Callable[[type[Any]], type[Any]]:
-        def wrapper(sink_class: type[Any]) -> type[Any]:
-            sink = sink_class()
-            if self.tasker is not None:
-                self.tasker.add_sink(sink)
-            self.event_sinks.append(sink)
-            return sink_class
-
-        return wrapper
-
-    def _embedded_context_sink_decorator(self) -> Callable[[type[Any]], type[Any]]:
-        def wrapper(sink_class: type[Any]) -> type[Any]:
-            sink = sink_class()
-            if self.tasker is not None and hasattr(self.tasker, "add_context_sink"):
-                self.tasker.add_context_sink(sink)
-            self.event_sinks.append(sink)
-            return sink_class
-
-        return wrapper
-
-    def _register_embedded_implicit_sink(self, item: _EmbeddedAgentScanItem) -> None:
-        if item.class_name is None or item.sink_kind is None:
-            return
-        module = sys.modules.get(item.module_name)
-        if module is None:
-            return
-        sink_class = getattr(module, item.class_name, None)
-        if sink_class is None:
-            self.send_log(
-                f"[Embedded Agent] 跳过不存在的 sink: {item.module_name}.{item.class_name}"
-            )
-            return
-
-        sink = sink_class()
-        if item.sink_kind == "resource_sink":
-            if self.resource is not None:
-                self.resource.add_sink(sink)
-            self.event_sinks.append(sink)
-            return
-        if item.sink_kind == "controller_sink":
-            if self.controller is not None:
-                self.controller.add_sink(sink)
-            self.event_sinks.append(sink)
-            return
-        if item.sink_kind == "tasker_sink":
-            if self.tasker is not None:
-                self.tasker.add_sink(sink)
-            self.event_sinks.append(sink)
-            return
-        if item.sink_kind == "context_sink":
-            if self.tasker is not None and hasattr(self.tasker, "add_context_sink"):
-                self.tasker.add_context_sink(sink)
-            self.event_sinks.append(sink)
-
-    def _add_embedded_sys_paths(self, agent_root: Path) -> list[str]:
-        added_paths: list[str] = []
-        for path in (str(agent_root), str(agent_root.parent)):
-            if path in sys.path:
-                continue
-            sys.path.insert(0, path)
-            added_paths.append(path)
-            self.embedded_agent_sys_paths.append(path)
-        return added_paths
-
-    def _remove_embedded_sys_paths(self, paths: list[str]) -> None:
-        for path in paths:
-            with suppress(ValueError):
-                sys.path.remove(path)
-            with suppress(ValueError):
-                self.embedded_agent_sys_paths.remove(path)
-
-    @staticmethod
-    def _purge_embedded_modules(agent_root: Path) -> None:
-        for module_name, module in list(sys.modules.items()):
-            if not isinstance(module_name, str):
-                continue
-            module_file = getattr(module, "__file__", None)
-            if not module_file:
-                continue
-            try:
-                if Path(module_file).resolve().is_relative_to(agent_root):
-                    del sys.modules[module_name]
-            except (OSError, ValueError, KeyError):
-                continue
-
-    @staticmethod
-    def _purge_module_name(module_name: str) -> None:
-        prefix = module_name + "."
-        for key in list(sys.modules.keys()):
-            if isinstance(key, str) and (key == module_name or key.startswith(prefix)):
-                with suppress(KeyError):
-                    del sys.modules[key]
 
     def _create_agent_client(self, label: str) -> AgentClient:
         try:
@@ -1765,6 +1066,7 @@ class MaaFWRunner:
         agent_client: AgentClient,
         process: subprocess.Popen,
         label: str,
+        agent_plan: Any = None,
     ) -> None:
         last_error: Exception | None = None
         if not agent_client.set_timeout(AGENT_CONNECT_TIMEOUT_MS):
@@ -1791,7 +1093,36 @@ class MaaFWRunner:
             time.sleep(AGENT_CONNECT_RETRY_INTERVAL)
 
         detail = f": {last_error}" if last_error else ""
-        raise RuntimeError(f"AgentClient 连接超时: {label}{detail}")
+        hint = self._describe_agent_maafw_mismatch(agent_plan)
+        raise RuntimeError(f"AgentClient 连接超时: {label}{detail}{hint}")
+
+    def _describe_agent_maafw_mismatch(self, agent_plan: Any) -> str:
+        """连不上时补一句版本诊断。
+
+        AgentServer 与 AgentClient 之间有协议版本号，跨版本会被直接拒绝握手；
+        原生日志里写着 ``Protocol version mismatch``，但传到用户眼前只剩一句
+        「连接超时」，看不出该动什么。这里现读两侧版本拼出真正的原因。
+
+        **只在失败路径上跑**：正常连上时零开销，也不会因为判断失误挡下本来
+        能跑起来的组合。
+        """
+
+        venv_path = getattr(agent_plan, "isolatedVenvPath", None)
+        if not venv_path:
+            return ""
+        agent_version = _installed_maafw_version(Path(venv_path))
+        runner_version, _ = describe_loaded_maafw()
+        if not agent_version or not runner_version:
+            return ""
+        if _normalize_maafw_version(agent_version) == _normalize_maafw_version(
+            runner_version
+        ):
+            return ""
+        return (
+            f"；agent 隔离 venv 里的 maafw 是 {agent_version}，runner 加载的"
+            f" MaaFramework 是 {_display_maafw_version(runner_version)}，"
+            "两者的 Agent 协议版本不兼容。删掉该 venv 让它重建即可"
+        )
 
     def _start_agent_output_reader(
         self,
@@ -1870,18 +1201,16 @@ class MaaFWRunner:
         再显式设置当前项目所需的 PYTHONPATH；PATH 前置 agent Python 目录、
         Scripts 目录、项目根目录与项目必要 dll 目录。
         """
-        env = os.environ.copy()
+        # 先按共用名单剔除 worker 自己与宿主的 Python 变量，再叠加项目 interface 声明的
+        # 环境：项目给自己 agent 设的值要保留。worker 自己需要 PYTHONSAFEPATH（见
+        # build_runner_environment），但不能透传给项目 agent：agent 以 `python ./agent/main.py`
+        # 启动，靠脚本目录进 sys.path[0] 才能 import 同级模块，官方模板就是这么写的，
+        # 继承过去会当场 ModuleNotFoundError——它随 PYTHON* 前缀一起被剔除。
+        env = strip_host_python_environment()
         env.update(self.plan.piEnv)
 
         project_path = Path(self.plan.path)
 
-        # 清理 AUTO-MAS 自身环境变量，防止 agent 串到 MAS .venv
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONUSERBASE", None)
-        env.pop("PIP_TARGET", None)
-        env.pop("PIP_PREFIX", None)
-        env.pop("PIP_USER", None)
         # 不继承 MAS 的 PYTHONPATH，显式设置为当前项目根目录
         python_path_items: list[str] = []
         if getattr(agent_plan, "runtimeKind", None) == "isolated_venv":
@@ -1893,23 +1222,13 @@ class MaaFWRunner:
                     )
                 except Exception as exc:
                     self.send_log(f"[Python环境] 写入 Agent 兼容层失败: {exc}")
-        elif getattr(agent_plan, "runtimeKind", None) == SHARED_RUNTIME_KIND:
-            try:
-                python_path_items.append(
-                    str(write_agent_compat_shims(Path(sys.prefix)))
-                )
-            except Exception as exc:
-                raise RuntimeError(f"写入共享 runtime Agent 兼容层失败: {exc}") from exc
         python_path_items.append(str(project_path))
         env["PYTHONPATH"] = os.pathsep.join(python_path_items)
         env["PYTHONIOENCODING"] = "utf-8"
 
         # PATH 前置：agent Python 目录、Scripts 目录、项目根目录、项目必要 dll 目录。
-        #
-        # Managed Project Store 会刻意移除项目自带的 MaaFramework.dll。此时
-        # 原生 Agent（MaaEnd/MaaYYS 等）仍需从本次选定的 Runtime Pool 加载
-        # 与当前 maafw 包一致的 DLL；将 maa 包的 bin 放在项目路径之后、宿主
-        # PATH 之前，既保留完整发行包的项目优先级，也让脱壳项目走同一运行时。
+        # 再把 maa 包的 bin 放在项目路径之后、宿主 PATH 之前：项目自带的原生库
+        # 仍然优先，缺库的项目则从当前 maafw 包拿到同版本的 DLL。
         python_exe = Path(agent_plan.executable)
         path_items: list[str] = []
         python_dir = python_exe.parent
@@ -1935,476 +1254,6 @@ class MaaFWRunner:
             else os.pathsep.join(path_items)
         )
         return env
-
-    def _prepare_agent_project_dirs(self) -> None:
-        project_path = Path(self.plan.path)
-        try:
-            for dir_name in AGENT_PROJECT_RUNTIME_DIRS:
-                (project_path / dir_name).mkdir(exist_ok=True)
-        except Exception as exc:
-            raise RuntimeError(f"准备 MaaFW agent 运行目录失败: {exc}") from exc
-
-    def _prepare_agent_python_env(self, agent_plan: Any) -> None:
-        """在启动 agent 子进程前准备 Python 环境，严格按 runtime_kind 分支处理。
-
-        - project_python: 使用项目自带 Python，仅检查 MaaFW Agent 健康状态，不自动改 release 目录
-        - isolated_venv: 创建/复用项目专属隔离 venv，安装项目 requirements.txt
-        - external: 用户自备环境，不做任何操作
-
-        绝不使用 AUTO-MAS 自身 Python 替代项目 Python，绝不污染 MAS .venv。
-        """
-        runtime_kind = getattr(agent_plan, "runtimeKind", None)
-        python_exe = agent_plan.command[0]
-        project_path = Path(self.plan.path)
-        self.send_log(
-            f"[Python环境] Agent {agent_plan.childExec} 使用 "
-            f"{runtime_kind or 'external'}: {python_exe}"
-        )
-
-        try:
-            resolved_python = str(Path(python_exe).resolve())
-        except Exception:
-            resolved_python = python_exe
-
-        if resolved_python in self._python_env_checked:
-            self.send_log(f"[Python环境] 已检查过该 Python，跳过重复检查: {python_exe}")
-            return
-
-        if runtime_kind == "isolated_venv":
-            self._prepare_isolated_venv_env(agent_plan, project_path)
-            self._python_env_checked[resolved_python] = True
-            return
-
-        if runtime_kind == "project_python":
-            self._prepare_project_python_env(python_exe, project_path)
-            self._python_env_checked[resolved_python] = True
-            return
-
-        # external 或未知 runtime_kind：用户自备环境，不做任何操作
-        self.send_log(f"[Python环境] 跳过外部环境检测: {python_exe}")
-
-    def _prepare_project_python_env(
-        self,
-        python_exe: str,
-        project_path: Path,
-    ) -> None:
-        """准备项目自带 Python，而不把 ``pip`` 当作运行时前置条件。
-
-        MaaFW 的 Windows 发布包经常只携带可运行的 Python + Agent 模块，
-        不携带 ``pip``/``ensurepip``。运行 Agent 只需要能导入
-        ``maa.agent.agent_server``；强制执行 ``python -m pip`` 会把这种合法
-        发布包误报为环境损坏，并且曾导致 M9A 更新后无法运行。这里仅做
-        与 Agent Env 预热一致的导入探针，绝不修改项目 release 目录。
-        """
-        self.send_log(f"[Python环境] 检测项目 Python: {python_exe}")
-        test_env = self._build_agent_env_for_pip(project_path)
-        probe = (
-            "import sys; "
-            "from maa.agent.agent_server import AgentServer; "
-            "print(f'Python {sys.version_info.major}.{sys.version_info.minor}; MaaFW Agent OK')"
-        )
-        try:
-            result = subprocess.run(
-                [python_exe, "-c", probe],
-                capture_output=True,
-                timeout=PIP_HEALTH_CHECK_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=str(project_path),
-                env=test_env,
-            )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                f"项目 Python/Agent 健康检查超时 ({PIP_HEALTH_CHECK_TIMEOUT}s): {python_exe}"
-            ) from None
-        except Exception as exc:
-            raise RuntimeError(f"项目 Python/Agent 健康检查异常: {exc}") from exc
-
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(
-                f"项目 Python/MaaFW Agent 不可用，请手动修复后重试：\n"
-                f"  Python 路径: {python_exe}\n"
-                f"  检测信息: {detail[:500]}\n"
-                f"  处理建议:\n"
-                f"    方法1: 重新下载并解压完整 MaaFW 项目包\n"
-                f"    方法2: 检查项目自带 Python 是否能导入 MaaFW Agent\n"
-                f"  AUTO-MAS 不会自动修改项目 release 目录。"
-            )
-        detail = (result.stdout or "").strip()
-        self.send_log(f"[Python环境] 项目 Python/Agent 健康: {detail or python_exe}")
-
-    def _prepare_isolated_venv_env(
-        self,
-        agent_plan: Any,
-        project_path: Path,
-    ) -> None:
-        """准备项目专属隔离 venv 环境。
-
-        使用 AUTO-MAS 的 sys.executable 引导创建 venv，但 agent 实际运行在
-        隔离 venv 中，不会污染 AUTO-MAS 自身 .venv。依赖声明来自
-        MaaFW 项目自己的 requirements.txt。
-        """
-        venv_path_str = getattr(agent_plan, "isolatedVenvPath", None)
-        if not venv_path_str:
-            raise RuntimeError("隔离 venv 路径未提供，无法创建隔离环境")
-
-        venv_path = Path(venv_path_str)
-        python_exe = agent_plan.command[0]
-
-        self.send_log(f"[Python环境] 准备隔离 venv: {venv_path}")
-        had_valid_venv = _is_valid_venv_path(venv_path)
-        if self._should_rebuild_isolated_venv(venv_path, project_path):
-            self._reset_isolated_venv(venv_path)
-            had_valid_venv = False
-        self._ensure_isolated_venv(venv_path)
-        write_agent_compat_shims(venv_path)
-
-        test_env = self._build_agent_env_for_pip(project_path)
-        # 隔离 venv 的 PYTHONPATH 指向项目根目录
-        test_env["PYTHONPATH"] = str(project_path)
-
-        pip_ok = self._check_pip_health(python_exe, cwd=str(project_path), env=test_env)
-        if not pip_ok:
-            self.send_log("[Python环境] 隔离 venv pip 异常，尝试 ensurepip 修复...")
-            if not self._try_ensurepip(python_exe, cwd=str(project_path), env=test_env):
-                raise RuntimeError(f"隔离 venv pip 无法自动修复: {python_exe}")
-
-        if had_valid_venv and self._is_isolated_venv_manifest_current(
-            venv_path,
-            project_path,
-        ):
-            self.send_log("[Python环境] 隔离 venv 依赖清单未变化，跳过 pip install")
-            return
-
-        # 隔离 venv 安装 MaaFW 项目自己的 requirements.txt
-        if not self._ensure_agent_packages(
-            python_exe,
-            runtime_kind="isolated_venv",
-            project_path=project_path,
-            cwd=str(project_path),
-            env=test_env,
-        ):
-            raise RuntimeError(f"隔离 venv 依赖安装失败: {python_exe}")
-        self._write_isolated_venv_manifest(venv_path, project_path)
-
-    def _is_isolated_venv_manifest_current(
-        self,
-        venv_path: Path,
-        project_path: Path,
-    ) -> bool:
-        manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except Exception:
-            return False
-
-        expected = _build_agent_env_manifest(project_path)
-        return (
-            manifest.get("projectPath") == expected["projectPath"]
-            and manifest.get("interfaceHash") == expected["interfaceHash"]
-            and manifest.get("requirementsHash") == expected["requirementsHash"]
-        )
-
-    def _should_rebuild_isolated_venv(
-        self,
-        venv_path: Path,
-        project_path: Path,
-    ) -> bool:
-        if venv_path.exists() and not _is_valid_venv_path(venv_path):
-            self.send_log("[Python环境] 隔离 venv 不完整，将重建")
-            return True
-
-        if not _is_valid_venv_path(venv_path):
-            return False
-
-        manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            self.send_log("[Python环境] 隔离 venv 缺少依赖清单，将重建")
-            return True
-        except Exception as exc:
-            self.send_log(f"[Python环境] 隔离 venv 依赖清单异常，将重建: {exc}")
-            return True
-
-        expected = _build_agent_env_manifest(project_path)
-        if manifest.get("projectPath") != expected["projectPath"]:
-            self.send_log("[Python环境] 隔离 venv 项目路径已变化，将重建")
-            return True
-        if manifest.get("interfaceHash") != expected["interfaceHash"]:
-            self.send_log("[Python环境] MaaFW 项目 interface 已变化，将重建隔离 venv")
-            return True
-        if manifest.get("requirementsHash") != expected["requirementsHash"]:
-            self.send_log(
-                "[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv"
-            )
-            return True
-        return False
-
-    def _reset_isolated_venv(self, venv_path: Path) -> None:
-        if (
-            venv_path.parent.name != "maafw_agent_venvs"
-            or not venv_path.name.startswith("maafw_venv_")
-        ):
-            raise RuntimeError(f"拒绝重建非托管隔离 venv: {venv_path}")
-        shutil.rmtree(venv_path, ignore_errors=True)
-        self.send_log(f"[Python环境] 已清理旧隔离 venv: {venv_path}")
-
-    def _write_isolated_venv_manifest(
-        self,
-        venv_path: Path,
-        project_path: Path,
-    ) -> None:
-        manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
-        manifest_path.write_text(
-            json.dumps(
-                _build_agent_env_manifest(project_path),
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-
-    def _ensure_isolated_venv(self, venv_path: Path) -> None:
-        """创建或复用项目专属隔离 venv。
-
-        使用便携包基础 Python 或 AUTO-MAS 的 sys.executable 引导创建 venv（仅用于 venv 创建），
-        agent 实际运行在隔离 venv 中，不会污染 AUTO-MAS 自身 .venv。
-        """
-        if _is_valid_venv_path(venv_path):
-            self.send_log(f"[Python环境] 隔离 venv 已存在: {venv_path}")
-            return
-
-        if venv_path.exists():
-            self._reset_isolated_venv(venv_path)
-
-        venv_path.parent.mkdir(parents=True, exist_ok=True)
-        bootstrap_python = _venv_bootstrap_python()
-        self.send_log(
-            f"[Python环境] 创建隔离 venv: {venv_path} (引导 Python: {bootstrap_python})"
-        )
-        try:
-            result = subprocess.run(
-                [
-                    bootstrap_python,
-                    "-m",
-                    "venv",
-                    str(venv_path),
-                ],
-                capture_output=True,
-                timeout=PIP_INSTALL_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            if result.returncode != 0:
-                detail = (result.stderr or result.stdout or "").strip()
-                raise RuntimeError(
-                    f"创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
-                )
-            if not _is_valid_venv_path(venv_path):
-                raise RuntimeError(f"创建隔离 venv 后结构不完整: {venv_path}")
-            self.send_log(f"[Python环境] 隔离 venv 创建成功: {venv_path}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                f"创建隔离 venv 超时 ({PIP_INSTALL_TIMEOUT}s): {venv_path}"
-            )
-
-    def _build_agent_env_for_pip(self, project_path: Path) -> dict[str, str]:
-        """构建与 agent 运行时一致的环境变量（清理 MAS 环境变量），用于 pip 检测。
-
-        与 _build_agent_env 不同的是，此方法不依赖 agent_plan，用于 pip 检测阶段。
-        """
-        env = os.environ.copy()
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONUSERBASE", None)
-        env.pop("PIP_TARGET", None)
-        env.pop("PIP_PREFIX", None)
-        env.pop("PIP_USER", None)
-        env["PYTHONPATH"] = str(project_path)
-        return env
-
-    def _check_pip_health(
-        self,
-        python_exe: str,
-        *,
-        cwd: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> bool:
-        """检测 pip 是否能正常执行 install 命令（模拟 agent 真实使用场景）。
-
-        使用 python -c 尝试加载 pip._internal.commands.install，
-        因为 pip --version 不会加载 install 子模块，无法检测到 backports.zstd 冲突。
-        """
-        try:
-            # 先做简单的 --version 检测
-            result = subprocess.run(
-                [python_exe, "-m", "pip", "--version"],
-                capture_output=True,
-                timeout=PIP_HEALTH_CHECK_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=cwd,
-                env=env,
-            )
-            if result.returncode != 0:
-                error_detail = (result.stderr or result.stdout or "").strip()
-                self.send_log(
-                    f"[Python环境] pip --version 失败 (exit={result.returncode}): {error_detail[:500]}"
-                )
-                return False
-
-            # 关键检测：尝试加载 install 子命令（这是真正会触发 backports.zstd 崩溃的地方）
-            result2 = subprocess.run(
-                [
-                    python_exe,
-                    "-c",
-                    "from pip._internal.commands.install import InstallCommand; print('install command OK')",
-                ],
-                capture_output=True,
-                timeout=PIP_HEALTH_CHECK_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=cwd,
-                env=env,
-            )
-            if result2.returncode == 0:
-                version_info = result.stdout.strip()
-                self.send_log(f"[Python环境] pip 健康: {version_info}")
-                return True
-
-            error_detail = (result2.stderr or result2.stdout or "").strip()
-            zstd_err = "backports.zstd" in error_detail or "ZstdError" in error_detail
-            if zstd_err:
-                self.send_log(
-                    "[Python环境] pip install 子命令加载失败（backports.zstd 冲突）"
-                )
-            else:
-                self.send_log(
-                    f"[Python环境] pip install 检测失败 (exit={result2.returncode}): {error_detail[:500]}"
-                )
-            return False
-        except subprocess.TimeoutExpired:
-            self.send_log(f"[Python环境] pip 检测超时 ({PIP_HEALTH_CHECK_TIMEOUT}s)")
-            return False
-        except Exception as exc:
-            self.send_log(f"[Python环境] pip 检测异常: {exc}")
-            return False
-
-    def _try_ensurepip(
-        self,
-        python_exe: str,
-        *,
-        cwd: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> bool:
-        """尝试 python -m ensurepip --upgrade 修复 pip。"""
-        self.send_log("[Python环境] 修复策略 A (ensurepip)...")
-        try:
-            result = subprocess.run(
-                [python_exe, "-m", "ensurepip", "--upgrade"],
-                capture_output=True,
-                timeout=PIP_INSTALL_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=cwd,
-                env=env,
-            )
-            if result.returncode == 0 and self._check_pip_health(
-                python_exe, cwd=cwd, env=env
-            ):
-                self.send_log("[Python环境] ensurepip 修复成功")
-                return True
-            detail = (result.stderr or result.stdout or "").strip()
-            self.send_log(f"[Python环境] ensurepip 未成功: {detail[:300]}")
-        except subprocess.TimeoutExpired:
-            self.send_log(f"[Python环境] ensurepip 超时 ({PIP_INSTALL_TIMEOUT}s)")
-        except Exception as exc:
-            self.send_log(f"[Python环境] ensurepip 执行异常: {exc}")
-        return False
-
-    def _ensure_agent_packages(
-        self,
-        python_exe: str,
-        *,
-        runtime_kind: str,
-        project_path: Path | None = None,
-        cwd: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> bool:
-        """按 runtime_kind 预安装 agent 依赖，绝不无版本升级 maafw。
-
-        - project_python: 用户自带环境，不自动安装依赖
-        - isolated_venv: 安装 MaaFW 项目自己的 requirements.txt
-        """
-        if runtime_kind == "project_python":
-            self.send_log("[Python环境] 项目自带 Python 不自动安装依赖")
-            return True
-
-        if runtime_kind == "isolated_venv":
-            if project_path is None:
-                raise RuntimeError("隔离 venv 依赖安装缺少 MaaFW 项目路径")
-            packages = _load_project_agent_requirements(project_path)
-            self.send_log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
-            return self._pip_install(
-                python_exe,
-                packages,
-                cwd=cwd,
-                env=env,
-            )
-
-        self.send_log(f"[Python环境] runtime_kind={runtime_kind}，跳过依赖安装")
-        return True
-
-    def _pip_install(
-        self,
-        python_exe: str,
-        packages: list[str],
-        *,
-        cwd: str | None = None,
-        env: dict[str, str] | None = None,
-    ) -> bool:
-        """执行 pip install（不带 --upgrade），返回是否成功。"""
-        try:
-            result = subprocess.run(
-                [
-                    python_exe,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--quiet",
-                    *packages,
-                ],
-                capture_output=True,
-                timeout=PIP_INSTALL_TIMEOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=cwd,
-                env=env,
-            )
-            if result.returncode == 0:
-                self.send_log(f"[Python环境] pip install 完成: {', '.join(packages)}")
-                return True
-            detail = (result.stderr or result.stdout or "").strip()
-            self.send_log(
-                f"[Python环境] pip install 未成功（将由 agent 自举尝试）: "
-                f"{detail[:300]}"
-            )
-        except subprocess.TimeoutExpired:
-            self.send_log(
-                f"[Python环境] pip install 超时 ({PIP_INSTALL_TIMEOUT}s)，"
-                f"将由 agent 自举尝试"
-            )
-        except Exception as exc:
-            self.send_log(f"[Python环境] pip install 异常: {exc}，将由 agent 自举尝试")
-        return False
 
     def _post_self_stop(self) -> None:
         """MAS 自己发起停止，并给随之而来的 MaaTaskerPostStop 通知记账。
@@ -2628,70 +1477,6 @@ class MaaFWRunner:
                 continue
             kept.append(summary)
         return "框架失败事件: " + "；".join(kept) if kept else ""
-
-
-def prepare_maafw_agent_python_envs(
-    project_path: str | Path,
-    interface_model: Any,
-    *,
-    send_log: Callable[[str], None] | None = None,
-) -> list[Any]:
-    """Prepare MaaFW agent Python envs without loading resources or starting agents."""
-
-    resolved_project_path = Path(project_path).resolve()
-    plugin_result = _prepare_maafw_agent_python_envs_from_plugin(
-        resolved_project_path,
-        interface_model,
-        send_log=send_log,
-    )
-    if plugin_result is not None:
-        return plugin_result
-
-    agent_plans = build_maafw_agent_command_plans(
-        resolved_project_path,
-        interface_model.agent,
-    )
-    plan = MaaFWRunPlan(
-        path=str(resolved_project_path),
-        projectName=interface_model.name,
-        projectLabel=getattr(interface_model, "label", None),
-        controllerName="",
-        controllerType="Adb",
-        resourceName="",
-        resource=MaaFWResourceBundlePlan(name="", label=None),
-        agents=agent_plans,
-        piEnv={},
-        tasks=[],
-        skippedTasks=[],
-    )
-    runner = MaaFWRunner(plan, send_log=send_log)
-    runner.prepare_agent_python_envs()
-    return agent_plans
-
-
-def _prepare_maafw_agent_python_envs_from_plugin(
-    project_path: Path,
-    interface_model: Any,
-    *,
-    send_log: Callable[[str], None] | None,
-) -> list[Any] | None:
-    try:
-        from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
-            MaaFWAgentEnvService,
-        )
-    except Exception:
-        return None
-
-    try:
-        service = MaaFWAgentEnvService()
-        result = service.prepare_env(
-            project_path,
-            interface_model,
-            send_log=send_log,
-        )
-        return list(getattr(result, "plans", []))
-    except Exception as exc:
-        raise RuntimeError(str(exc)) from exc
 
 
 class _MaaFWResourceLogSink(ResourceEventSink):

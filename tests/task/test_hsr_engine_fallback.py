@@ -1,6 +1,6 @@
 """HSR 模块引擎归属的四级回落回归。
 
-`get_assigned_script` 的第四级是「按 `effective_engines` 收敛」：分配到的引擎
+`resolve_script_assignment` 的第四级是「按 `effective_engines` 收敛」：分配到的引擎
 没配置路径时，改取 `supported_scripts` 里第一个已配置的引擎。能力快照一直在
 传这一级，`check()` 与自动代理队列却没传——于是编辑页徽章显示三月七、运行时
 却按脚本级默认值 SRA 解析，只填 M7A 路径的用户被自己看不到的归属拦下。
@@ -24,7 +24,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.task import ScriptItem, UserItem
 from app.task.HSR.AutoProxy import HSRAutoProxyTask
 from app.task.HSR.manager import HSRManager
-from app.task.HSR.task_mapping import HSR_TASK_MODULE_MAP, get_assigned_script
+from app.task.HSR.task_mapping import HSR_TASK_MODULE_MAP, resolve_script_assignment
 from app.task.HSR.tools.api import build_managed_config
 from app.task.HSR.tools.m7a_runtime import M7ARunner
 from app.task.HSR.tools.native_control import resolve_configured_engines
@@ -154,12 +154,12 @@ class HSREngineFallbackTest(unittest.TestCase):
         )
 
         badge_engine = build_managed_config(config, user_cfg)["task_mapping"]["Daily"]
-        runtime_engine = get_assigned_script(
+        runtime_engine = resolve_script_assignment(
             DAILY,
             config,
             user_config=user_cfg,
             effective_engines=resolve_configured_engines(config),
-        )
+        ).script
 
         self.assertEqual(badge_engine, "M7A")
         self.assertEqual(runtime_engine, badge_engine)
@@ -201,12 +201,12 @@ class HSREngineFallbackTest(unittest.TestCase):
 
         self.assertEqual(resolve_configured_engines(config), ("SRA",))
         self.assertEqual(
-            get_assigned_script(
+            resolve_script_assignment(
                 DAILY,
                 config,
                 user_config=user_cfg,
                 effective_engines=resolve_configured_engines(config),
-            ),
+            ).script,
             "SRA",
         )
 
@@ -220,12 +220,12 @@ class HSREngineFallbackTest(unittest.TestCase):
 
         self.assertEqual(resolve_configured_engines(config), ("M7A", "SRA"))
         self.assertEqual(
-            get_assigned_script(
+            resolve_script_assignment(
                 DAILY,
                 config,
                 user_config=user_cfg,
                 effective_engines=resolve_configured_engines(config),
-            ),
+            ).script,
             "M7A",
         )
 
@@ -242,12 +242,12 @@ class HSREngineFallbackTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            get_assigned_script(
+            resolve_script_assignment(
                 DAILY,
                 config,
                 user_config=user_cfg,
                 effective_engines=resolve_configured_engines(config),
-            ),
+            ).script,
             "SRA",
         )
 

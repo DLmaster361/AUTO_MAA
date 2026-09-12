@@ -103,6 +103,173 @@ class BetterGICustomGroupsOut(OutBase):
     )
 
 
+class BetterGIOneDragonSettingsOut(OutBase):
+    """BetterGI 一条龙设置项（右栏按任务分组展示/编辑）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="一条龙设置项键值（camelCase，与 BGI 一条龙 JSON 顶层一致）",
+    )
+
+
+class BetterGIOneDragonSettingsIn(BaseModel):
+    """BetterGI 一条龙设置项写入请求"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="所属用户ID")
+    configName: str = Field(..., description="一条龙配置名")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的内置任务组名（战斗4项 Plan 路由用；空或非战斗组时不做 Plan 路由）",
+    )
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的设置项（camelCase 键）"
+    )
+
+
+class BetterGIGlobalDomainSettingsOut(OutBase):
+    """BetterGI 全局 config.json 的「秘境刷取配置」段（autoDomainConfig/autoArtifactSalvageConfig）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "秘境刷取配置键值（camelCase 扁平键：specifyResinUse/originalResinUseCount/"
+            "condensedResinUseCount/transientResinUseCount/fragileResinUseCount/"
+            "autoArtifactSalvage/maxArtifactStar/rewardRecognitionEnabled）"
+        ),
+    )
+
+
+class BetterGIGlobalDomainSettingsIn(BaseModel):
+    """BetterGI 秘境刷取配置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: Optional[str] = Field(default="", description="所属用户ID（空=写 BGI 全局实配）")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的实例组名（形如 自动秘境-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）",
+    )
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的秘境刷取配置键值（camelCase 扁平键）"
+    )
+
+
+class BetterGIGlobalStygianSettingsOut(OutBase):
+    """BetterGI 全局 config.json 的「自动幽境危战」段（autoStygianOnslaughtConfig）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "幽境危战设置键值（camelCase 扁平键：bossNum/fightTeamName/strategyName/"
+            "specifyResinUse/originalResinUseCount/condensedResinUseCount/"
+            "transientResinUseCount/fragileResinUseCount/autoArtifactSalvage）"
+        ),
+    )
+
+
+class BetterGIGlobalStygianSettingsIn(BaseModel):
+    """BetterGI 幽境危战设置写入请求（per-user 副本；userId 为空时直控 BGI 全局 config.json）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: Optional[str] = Field(default="", description="所属用户ID（空=写 BGI 全局实配）")
+    groupName: str = Field(
+        default="",
+        description="右栏当前编辑的实例组名（形如 自动幽境危战-3；战斗4项按此做逐实例 Plan 路由，空则回落到基名）",
+    )
+    settings: Dict[str, Any] = Field(
+        default_factory=dict, description="要覆盖写入的幽境危战设置键值（camelCase 扁平键）"
+    )
+
+
+class BetterGIDomainCatalogItem(BaseModel):
+    """BetterGI 每周秘境可选秘境目录项（来源：官方 tp.json，唯一数据源）"""
+
+    name: str = Field(..., description="秘境名称（与 BGI 传送点/每周秘境 DomainName 一致）")
+    region: str = Field(default="", description="所在地区")
+    category: str = Field(default="", description="tp.json 的 domain type（BlessDomain/ForgeryDomain/MasteryDomain）")
+    rewards: List[str] = Field(
+        default_factory=list,
+        description="三档奖励物品名（顺序即 BGI 领奖序号 1/2/3；圣遗物秘境为套装两件）",
+    )
+
+
+class BetterGIDomainCatalogOut(OutBase):
+    """BetterGI 每周秘境秘境候选 + 每秘境三档奖励物"""
+
+    data: List[BetterGIDomainCatalogItem] = Field(
+        default_factory=list, description="秘境目录列表"
+    )
+    source: Optional[str] = Field(default=None, description="数据来源文件绝对路径（缺省为空）")
+
+
+class BetterGIScriptGroupDetailOut(OutBase):
+    """BetterGI 配置组 json 详情（per-user 副本 → BGI 实配）"""
+
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="配置组 json 内容（含 name/index/config/projects，projects 为执行顺序）",
+    )
+
+
+class BetterGIScriptGroupSaveIn(BaseModel):
+    """BetterGI 配置组 json 写入请求（保存到 per-user 副本，不触碰 BGI 同名实配）"""
+
+    scriptId: str = Field(..., description="所属脚本ID")
+    userId: str = Field(..., description="所属用户ID")
+    name: str = Field(..., description="配置组名（文件名）")
+    data: Dict[str, Any] = Field(
+        default_factory=dict, description="要保存的完整配置组 json（projects 数组为新顺序与各项目设置）"
+    )
+
+
+class BetterGIScriptSettingsUiOut(OutBase):
+    """BetterGI 某 JsScript 脚本目录 settings.json 的 UI 定义（双击项目设置弹窗渲染用）"""
+
+    data: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="settings.json UI 定义数组（name/type/label/options/default）",
+    )
+
+
+class BetterGIScriptReadmeOut(OutBase):
+    """BetterGI 某 JsScript 脚本目录的 README 内容（双击弹窗「脚本说明」标签展示用）"""
+
+    data: str = Field(
+        default="", description="README 纯文本内容（缺失时为空字符串）"
+    )
+
+
+class BetterGIPathingNode(BaseModel):
+    """BetterGI AutoPathing 目录树节点"""
+
+    name: str = Field(..., description="目录名")
+    dirs: List["BetterGIPathingNode"] = Field(
+        default_factory=list, description="子目录"
+    )
+    files: List[str] = Field(default_factory=list, description="该目录下路径文件名(不含 .json)")
+
+
+BetterGIPathingNode.model_rebuild()
+
+
+class BetterGIPathingTreeOut(OutBase):
+    """BetterGI 地图追踪目录树（{RootPath}/User/AutoPathing 的递归结构）"""
+
+    root: Optional[str] = Field(default=None, description="AutoPathing 绝对目录")
+    dirs: List[BetterGIPathingNode] = Field(
+        default_factory=list, description="顶层目录树"
+    )
+
+
+class BetterGIScriptDirsOut(OutBase):
+    """BetterGI 常用目录与可执行文件绝对路径"""
+
+    repoDir: Optional[str] = Field(default=None, description="脚本仓库检出目录")
+    jsScriptDir: Optional[str] = Field(default=None, description="JS 脚本目录")
+    autoPathingDir: Optional[str] = Field(default=None, description="地图追踪任务目录")
+    oneDragonDir: Optional[str] = Field(default=None, description="一条龙配置目录")
+    scriptGroupDir: Optional[str] = Field(default=None, description="配置组目录")
+    exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
 class ZzzOdInstanceOut(BaseModel):
     """zzz-od 实例（账号）信息"""
 
@@ -598,13 +765,9 @@ class ToolsConfig_GameSign(BaseModel):
     Enabled: bool | None = Field(default=None, description="是否启用游戏社区")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
     ActivityEnabled: bool | None = Field(default=None, description="是否启用日常便笺")
-    WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
-    WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
     RunOnStartup: bool | None = Field(default=None, description="启动时运行")
-    ScheduledRun: bool | None = Field(default=None, description="定时运行")
     AutoStart: bool | None = Field(default=None, description="是否立即开始")
     LastSignDate: str | None = Field(default=None, description="上次签到日期")
-    ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
     Status: str | None = Field(default=None, description="签到状态标签")
     Result: str | None = Field(default=None, description="签到结果 JSON")
 
@@ -642,12 +805,6 @@ class GameSignAccountCreateOut(OutBase):
     data: GameSignAccountGroupConfig = Field(
         default_factory=GameSignAccountGroupConfig, description="账号组配置"
     )
-
-
-class GameSignAccountGetIn(BaseModel):
-    """游戏社区账号组查询请求"""
-
-    accountId: str = Field(..., description="账号组 UUID")
 
 
 class GameSignAccountInstanceOut(BaseModel):
@@ -1225,6 +1382,7 @@ class MaaUserConfig_Task(BaseModel):
     IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
+    IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
@@ -1522,6 +1680,22 @@ class BetterGIUserConfig_OneDragon(BaseModel):
     CustomGroups: Optional[Union[str, List]] = Field(
         default=None,
         description="自定义配置组 JSON 列表字符串，元素含 name/enabled",
+    )
+    Queue: Optional[str] = Field(
+        default=None,
+        description="一条龙可视化队列 JSON 数组字符串（按执行顺序），元素为 {kind, name}；"
+        "kind ∈ builtin/js/pathing/scriptgroup/custom，允许同名重复实例",
+    )
+    Plan: Optional[str] = Field(
+        default=None,
+        description="一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}；"
+        "与 Queue 并列，灰度开关 UseExecutionLayer 打开后由执行层直接消费，否则按 Queue 运行",
+    )
+    UseExecutionLayer: Optional[bool] = Field(
+        default=None,
+        description="是否启用「直连执行层」开关（路径 B）：打开后一条龙由 MAS 自编排 Plan 驱动、"
+        "战斗 4 项直连 BetterGI 原生任务；默认开，但只有用户配置过该组且队列中启用时才接管，"
+        "其余战斗组仍走原生一条龙",
     )
 
 
@@ -2364,10 +2538,37 @@ class HSRConfig_TaskMapping(BaseModel):
     )
 
 
+class HSRConfig_Update(BaseModel):
+    AutoUpdateMode: Optional[Literal["Off", "AfterRun"]] = Field(
+        default=None,
+        description="外部脚本自动更新时机：Off 不更新 / AfterRun 全部用户跑完后",
+    )
+    Channel: Optional[Literal["stable", "beta"]] = Field(
+        default=None, description="外部脚本更新渠道：稳定版 / 测试版，两个引擎共用"
+    )
+    M7ASource: Optional[Literal["GitHub", "MirrorChyan"]] = Field(
+        default=None,
+        description="三月七助手更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
+    )
+    SRASource: Optional[Literal["AutoSite", "GitHub", "MirrorChyan"]] = Field(
+        default=None,
+        description=(
+            "SRA 更新包下载源：AUTO-MAS 下载站（免 CDK，默认）/ GitHub / "
+            "Mirror 酱（需自行填写 CDK）"
+        ),
+    )
+    MirrorChyanCDK: Optional[str] = Field(
+        default=None, description="Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填"
+    )
+
+
 class HSRConfig(BaseModel):
     Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[HSRConfig_Run] = Field(default=None, description="运行配置")
+    Update: Optional[HSRConfig_Update] = Field(
+        default=None, description="外部脚本更新配置"
+    )
     TaskMapping: Optional[HSRConfig_TaskMapping] = Field(
         default=None, description="模块脚本分配"
     )
@@ -2607,6 +2808,31 @@ class HSRCapabilitiesData(BaseModel):
 
 class HSRCapabilitiesOut(OutBase):
     data: Optional[HSRCapabilitiesData] = Field(default=None, description="HSR 能力")
+
+
+class HSRUpdateIn(BaseModel):
+    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    engine: Literal["M7A", "SRA"] = Field(..., description="要操作的外部脚本引擎")
+    action: Literal["check", "apply"] = Field(
+        default="check", description="check 只查版本；apply 查完就装"
+    )
+
+
+class HSRUpdateData(BaseModel):
+    engine: Literal["M7A", "SRA"] = Field(..., description="外部脚本引擎")
+    checked: bool = Field(default=False, description="是否成功查到版本信息")
+    updated: bool = Field(default=False, description="本次是否真的完成了更新")
+    current_version: Optional[str] = Field(default=None, description="当前已安装版本")
+    latest_version: Optional[str] = Field(default=None, description="可用的最新版本")
+    update_available: bool = Field(default=False, description="是否有新版本")
+    installable: bool = Field(
+        default=False, description="新版本能否从当前下载源安装（CDK 失效时为假）"
+    )
+    message: str = Field(default="", description="面向用户的结果说明")
+
+
+class HSRUpdateOut(OutBase):
+    data: Optional[HSRUpdateData] = Field(default=None, description="更新结果")
 
 
 class HSRManagedField(BaseModel):
@@ -2934,6 +3160,10 @@ class MaaFWConfig_Game(BaseModel):
     LaunchPath: Optional[str] = Field(
         default=None, description="DirectExe 模式下 MAS 启动的游戏 exe"
     )
+    PackageName: Optional[str] = Field(
+        default=None,
+        description="安卓游戏包名，留空则从项目的 pipeline 中自动识别",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(
         default=None, description="游戏启动后等待窗口就绪的时间（秒）"
@@ -3214,6 +3444,12 @@ class MaaFWOptionInfo(BaseModel):
 
 
 class MaaFWTaskSnapshot(BaseModel):
+    """ProjectInterface 预设转换出的任务快照，三个字段的键都是任务 name。
+
+    与用户自己的任务快照同构。用户队列允许同一个任务加多份，那边的键是任务
+    实例 id（首份就是任务 name）；预设里的重复任务会被折叠，因此这里只有 name。
+    """
+
     taskOrder: List[str] = Field(default_factory=list, description="任务 name 顺序")
     taskChecked: Dict[str, bool] = Field(
         default_factory=dict, description="任务勾选状态"
@@ -3623,11 +3859,6 @@ class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
-class ScriptFileIn(BaseModel):
-    scriptId: str = Field(..., description="脚本ID")
-    jsonFile: str = Field(..., description="配置文件路径")
-
-
 class ScriptUrlIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
     url: str = Field(..., description="配置文件URL")
@@ -3748,10 +3979,6 @@ class EmulatorUpdateIn(BaseModel):
 
 class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-
-
-class EmulatorReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="模拟器 ID列表, 按新顺序排列")
 
 
 class EmulatorOperateIn(BaseModel):
@@ -3913,6 +4140,22 @@ class Emulator2InstanceDeleteIn(BaseModel):
     slot: str = Field(..., description="要删除的设备号")
 
 
+class Emulator2StoreOpenIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要打开游戏中心的设备号")
+
+
+class Emulator2StoreOpenOut(OutBase):
+    ok: bool = Field(default=False, description="游戏中心是否已在前台")
+    reason: str = Field(
+        default="",
+        description=(
+            "结局原因码: launched / already-running / no-store / not-installed"
+            " / no-adb / boot-timeout / launch-timeout"
+        ),
+    )
+
+
 class Emulator2InstanceDeletePreviewOut(OutBase):
     ok: bool = Field(default=False, description="设备号是否有效")
     reason: str = Field(default="", description="失败原因枚举")
@@ -3937,18 +4180,6 @@ class Emulator2SettingField(BaseModel):
     state: str = Field(
         default="unset",
         description="saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出",
-    )
-
-
-class Emulator2SettingsIn(BaseModel):
-    emulatorId: str = Field(..., description="模拟器配置ID")
-    slot: str = Field(..., description="设备号")
-
-
-class Emulator2SettingsOut(OutBase):
-    slot: str = Field(default="", description="设备号")
-    settings: Dict[str, Emulator2SettingField] = Field(
-        default_factory=dict, description="四项设置的当前值与状态"
     )
 
 
@@ -4084,10 +4315,6 @@ class WebhookDeleteIn(WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
 
 
-class WebhookReorderIn(WebhookInBase):
-    indexList: List[str] = Field(..., description="Webhook ID列表, 按新顺序排列")
-
-
 class WebhookTestIn(WebhookInBase):
     data: Webhook = Field(..., description="Webhook配置数据")
 
@@ -4154,10 +4381,6 @@ class QueueUpdateIn(BaseModel):
 
 class QueueDeleteIn(BaseModel):
     queueId: str = Field(..., description="队列ID")
-
-
-class QueueReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="按新顺序排列的调度队列UID列表")
 
 
 class QueueSetInBase(BaseModel):
@@ -4336,9 +4559,11 @@ class WSTaskInfoUpdatedData(BaseModel):
 
 
 class WSTaskLogUpdatedData(BaseModel):
-    """任务当前日志 (type=task.log.updated)。"""
+    """任务日志更新 (type=task.log.updated), 按序号增量推送。"""
 
-    log: str = Field(default="", description="当前脚本日志")
+    log: str = Field(default="", description="append 为真时是新增片段, 否则是完整日志")
+    seq: int = Field(default=0, description="推送序号, 每个任务独立, 从 1 起单调递增")
+    append: bool = Field(default=False, description="是否追加到已有日志, 否则整体替换")
 
 
 class WSTaskScriptIdentityData(BaseModel):
@@ -4369,7 +4594,8 @@ class TaskRuntimeSnapshotItem(BaseModel):
     cycleNextList: List[WSTaskCyclePreviewData] = Field(
         default_factory=list, description="循环运行的待运行条目, 仅循环任务非空"
     )
-    log: str = Field(default="", description="当前脚本日志")
+    log: str = Field(default="", description="已推送的脚本日志, 与下一条增量推送衔接")
+    logSeq: int = Field(default=0, description="已推送日志对应的推送序号")
 
 
 class TaskRuntimeSnapshot(BaseModel):

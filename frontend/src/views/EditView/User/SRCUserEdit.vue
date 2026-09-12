@@ -88,6 +88,7 @@ import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import {
   WS_TASK_COMPLETED,
@@ -118,7 +119,8 @@ const { subscribe, unsubscribe } = useWebSocket()
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 // SRC配置相关状态
 const srcConfigLoading = ref(false)
@@ -214,11 +216,9 @@ const syncUserName = () => {
 
 // 即时保存单个字段变更
 const handleFieldSave = async (key: string, value: any) => {
-  // 如果正在初始化或正在保存，或者是新用户（还没有userId），不执行保存
-  if (isInitializing.value || isSaving.value || !userId) {
-    logger.debug(
-      `跳过保存: 初始化=${isInitializing.value}, 保存中=${isSaving.value}, userId=${userId}`
-    )
+  // 如果正在初始化，或者是新用户（还没有userId），不执行保存
+  if (isInitializing.value || !userId) {
+    logger.debug(`跳过保存: 初始化=${isInitializing.value}, userId=${userId}`)
     return
   }
 
@@ -229,30 +229,29 @@ const handleFieldSave = async (key: string, value: any) => {
     value = formData.Info.Name
   }
 
-  isSaving.value = true
-  try {
-    const parts = key.split('.')
-    let userData: Record<string, any> = {}
-    let current = userData
+  await enqueue(async () => {
+    try {
+      const parts = key.split('.')
+      let userData: Record<string, any> = {}
+      let current = userData
 
-    // 构建嵌套结构
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
+      // 构建嵌套结构
+      for (let i = 0; i < parts.length - 1; i++) {
+        current[parts[i]] = {}
+        current = current[parts[i]]
+      }
+      current[parts[parts.length - 1]] = value
 
-    logger.debug(`保存字段: ${key} = ${JSON.stringify(value)}`)
-    const success = await updateUser(scriptId, userId, userData)
-    if (success) {
-      logger.info(`字段已保存: ${key}`)
+      logger.debug(`保存字段: ${key} = ${JSON.stringify(value)}`)
+      const success = await updateUser(scriptId, userId, userData)
+      if (success) {
+        logger.info(`字段已保存: ${key}`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存字段失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存字段失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 // 初始化
@@ -456,36 +455,6 @@ const handleSaveSRCConfig = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存SRC配置失败: ${errorMsg}`)
     message.error(t('edit.couldNotSaveSrc'))
-  }
-}
-
-// 保存用户（用于新建时初始创建）
-// 在新建模式下，需要先创建用户获取userId，再更新数据
-const _saveNewUser = async () => {
-  if (!formRef.value) return
-
-  try {
-    await formRef.value.validate()
-    syncUserName()
-
-    const { userName: _userName, ...userData } = formData
-
-    // 先创建用户
-    const result = await addUser(scriptId)
-    if (result && result.userId) {
-      userId = result.userId
-      isEdit.value = true
-
-      // 再更新用户数据
-      const success = await updateUser(scriptId, userId, userData)
-      if (success) {
-        message.success(t('edit.added'))
-        router.push('/scripts')
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存用户失败: ${errorMsg}`)
   }
 }
 

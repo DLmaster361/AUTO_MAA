@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import threading
 import tomllib
 from contextlib import suppress
@@ -38,6 +39,9 @@ from .logger import get_logger
 from .tools import decode_bytes
 
 logger = get_logger("路径迁移")
+
+# YAML 解析器拒绝的控制字符(除 \t \n \r): 映射为 None 即 translate 时丢弃
+_INVALID_YAML_CHARS = dict.fromkeys([*range(0x20), 0x7F])
 
 # 格式后缀 -> (dump: (dict, encoding)->bytes, load: bytes->dict)
 # 若要扩展格式, 直接改此表
@@ -71,6 +75,14 @@ _CODECS: dict[str, tuple[Any, Any]] = {
         ).encode(encoding),
         lambda data: yaml.safe_load(decode_bytes(data)),
     ),
+    ".sanitized.yaml": (
+        lambda d, encoding: yaml.safe_dump(
+            d, allow_unicode=True, sort_keys=False
+        ).encode(encoding),
+        # 容错读: 非原子写落盘的文件可能留下 NUL 填充, YAML 解析器遇到直接抛
+        # ReaderError; 只取已知字段的调用方不应因此整个失败
+        lambda data: yaml.safe_load(decode_bytes(data).translate(_INVALID_YAML_CHARS)),
+    ),
 }
 
 # 后缀别名, 共享同一序列化器: 别名后缀 -> 规范化后缀
@@ -82,6 +94,28 @@ _ALIASES: dict[str, str] = {
 
 # 进程内串行锁, 避免并发竞争写
 _WRITE_LOCK = threading.Lock()
+
+
+def force_rmtree(path: Path) -> None:
+    """
+    删除目录树, 遇到只读文件先清除只读位再重试
+
+    ``shutil.rmtree(..., ignore_errors=True)`` 在 Windows 上删不掉只读文件且静默
+    跳过, 残留文件会让随后的 ``copytree(..., dirs_exist_ok=True)`` 覆盖时抛
+    ``PermissionError``; 脚本配置目录里的 ``.git`` 对象正是只读的。清除只读位后仍
+    删不掉的条目按原 ``ignore_errors`` 语义忽略, 不向上抛出。
+
+    Args:
+        path: 待删除的目录路径
+    """
+
+    def _retry_without_readonly(func: Any, target: Any, _exc: BaseException) -> None:
+        with suppress(OSError):
+            os.chmod(target, stat.S_IWRITE)
+            func(target)
+
+    with suppress(OSError):
+        shutil.rmtree(path, onexc=_retry_without_readonly)
 
 
 def atomic_write(path: Path, data: bytes) -> None:

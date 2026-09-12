@@ -193,15 +193,16 @@ class MaaEndResourceLoader:
             logger.warning(f"写入 MaaEnd 源文件资源缓存失败：{error}")
 
     def _read_json5(self, path: Path) -> Any:
+        # 解析结果只读（对外 get_* 才做 deepcopy），缓存与调用方共用同一份对象
         path = path.resolve()
         signature = self._file_signature(path)
 
         cached = self._file_cache.get(path)
         if cached is not None and cached[0] == signature:
-            return deepcopy(cached[1])
+            return cached[1]
 
         data = json5.loads(path.read_text(encoding="utf-8"))
-        self._file_cache[path] = (signature, deepcopy(data))
+        self._file_cache[path] = (signature, data)
         self._cache_dirty = True
         return data
 

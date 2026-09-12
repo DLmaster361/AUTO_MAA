@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -24,6 +25,8 @@ from .state import DEFAULT_OPERATION_ROOT, UpdateOperationStore, project_lock
 ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
 MANIFEST_NAME = "resource-manifest.json"
+
+logger = logging.getLogger("automas.maafw.project_update.apply")
 PROJECT_STATE_DIR_NAME = "maafw_project_state"
 
 
@@ -138,7 +141,11 @@ def apply_package_transaction(
     """Apply a package using a durable stage/backup transaction.
 
     The function only removes files previously recorded in the updater-owned
-    project manifest. Unknown user files remain untouched during full updates.
+    project manifest. Unknown user files remain untouched during full updates —
+    except inside the resource bundle directories on the very first update of a
+    project the updater never installed, where there is no such manifest and
+    stale files from the previous layout would otherwise break the new version;
+    see :func:`_orphan_paths_without_baseline`.
     """
 
     root = project_path.expanduser().resolve(strict=False)
@@ -147,19 +154,12 @@ def apply_package_transaction(
         raise UpdateApplyError(f"MaaFW project directory does not exist: {root}")
     if not archive.is_file():
         raise UpdateApplyError(f"MaaFW update package does not exist: {archive}")
-    before = project_fingerprint(root)
-    if before is None:
-        raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
     expected = str(expected_fingerprint or "").strip().lower()
-    if expected and before != expected:
-        raise UpdateApplyError(
-            "MaaFW project changed after update plan; apply rejected"
-        )
 
     store = operation or UpdateOperationStore.create(
         root=operation_root or DEFAULT_OPERATION_ROOT,
         projectPath=str(root),
-        expectedFingerprint=expected or before,
+        expectedFingerprint=expected,
         planId=plan_id or uuid.uuid4().hex,
         targetVersion=target_version or "",
     )
@@ -178,9 +178,15 @@ def apply_package_transaction(
     send_update_log = send_log or (lambda _message: None)
 
     with project_lock(root, project_lock_already_held=project_lock_already_held):
+        # 指纹要 rglob + sha256 整个项目，锁内只算这一次：锁外先算一遍再进锁比对
+        # 等于白哈希一轮，锁内这次已经足以拒绝「计划之后项目被改过」。
         current = project_fingerprint(root)
-        if current != before or (expected and current != expected):
-            raise UpdateApplyError("MaaFW project changed before apply; apply rejected")
+        if current is None:
+            raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
+        if expected and current != expected:
+            raise UpdateApplyError(
+                "MaaFW project changed after update plan; apply rejected"
+            )
         expanded_size = _zip_expanded_size(archive)
         _check_disk_space(
             state_dir,
@@ -212,6 +218,16 @@ def apply_package_transaction(
             _validate_plan_base(root, plan, old_manifest, current)
             if plan.package_type == "full":
                 stale = set(old_manifest.get("files", {})) - set(plan.files)
+                if not old_manifest.get("files"):
+                    orphans = _orphan_paths_without_baseline(root, plan)
+                    if orphans:
+                        preview = ", ".join(sorted(orphans)[:10])
+                        suffix = " ..." if len(orphans) > 10 else ""
+                        send_update_log(
+                            f"MaaFW 项目无基线清单，本次全量更新清理 {len(orphans)} "
+                            f"个旧版残留文件: {preview}{suffix}"
+                        )
+                    stale |= orphans
             else:
                 stale = set(plan.deleted)
             touched = sorted(set(plan.files) | stale)
@@ -284,7 +300,12 @@ def apply_package_transaction(
             for relative, source in plan.files.items():
                 target = _project_target(root, relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+                # 暂存区已经是解压好的完整副本，回滚只看 backup/，所以同盘
+                # 直接挪过去；跨盘 os.replace 会报 OSError，再退回复制。
+                try:
+                    os.replace(source, target)
+                except OSError:
+                    shutil.copy2(source, target)
 
             store.update("post_validating")
             _emit(progress, "post_validating", {"planId": effective_plan_id})
@@ -472,76 +493,6 @@ def build_package_plan(
     )
 
 
-def recover_update_operation(
-    operation: UpdateOperationStore,
-    *,
-    send_log: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
-    """Recover a staged/applying operation after a process restart."""
-
-    try:
-        state = operation.read()
-    except Exception as exc:
-        try:
-            operation.mark_recovery_required(str(exc))
-        except Exception:
-            pass
-        raise UpdateApplyError(
-            f"MaaFW update journal recovery is required: {exc}",
-            unsafe_to_continue=True,
-        ) from exc
-    status = str(state.get("status") or "")
-    if status not in {"staged", "applying", "post_validating"}:
-        return state
-    raw_project = str(state.get("projectPath") or "").strip()
-    raw_state_root = str(state.get("stateRoot") or "").strip()
-    raw_work_dir = str(state.get("workDir") or "").strip()
-    if not raw_project or not raw_state_root or not raw_work_dir:
-        operation.mark_recovery_required("update journal has incomplete owned paths")
-        raise UpdateApplyError(
-            "MaaFW update journal has incomplete owned paths",
-            unsafe_to_continue=True,
-        )
-    root = Path(raw_project).expanduser().resolve(strict=False)
-    state_dir = Path(raw_state_root).expanduser().resolve(strict=False)
-    host_state_root = (
-        operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME
-    ).resolve(strict=False)
-    expected_key = hashlib.sha256(str(root).casefold().encode("utf-8")).hexdigest()[:24]
-    if (
-        not state_dir.is_absolute()
-        or not state_dir.is_relative_to(host_state_root)
-        or state_dir.name != expected_key
-    ):
-        operation.mark_recovery_required(
-            "update journal state root is outside host state"
-        )
-        raise UpdateApplyError(
-            "MaaFW update journal state root is outside host state",
-            unsafe_to_continue=True,
-        )
-    try:
-        work_dir = _owned_state_path(Path(raw_work_dir), state_dir)
-    except UpdateApplyError as exc:
-        operation.mark_recovery_required(str(exc))
-        raise UpdateApplyError(str(exc), unsafe_to_continue=True) from exc
-    if not root.is_dir():
-        return operation.update(
-            "recovery_required", recoveryRequired=True, error="project path is missing"
-        )
-    try:
-        _rollback_from_state(root, state, state_dir=state_dir)
-    except Exception as exc:
-        operation.update(
-            "recovery_required", recoveryRequired=True, rollbackError=str(exc)[:500]
-        )
-        raise UpdateApplyError(str(exc), unsafe_to_continue=True) from exc
-    if send_log:
-        send_log(f"MaaFW update operation recovered: {operation.operation_id}")
-    _remove_owned_path(work_dir, state_dir)
-    return operation.update("rolled_back", recovered=True)
-
-
 def _validate_plan_base(
     project_path: Path,
     plan: PackagePlan,
@@ -576,6 +527,96 @@ def _validate_plan_base(
         source = plan.files.get(relative)
         if source is None or _sha256_file(source) != expected:
             raise UpdateApplyError(f"delta file hash mismatch: {relative}")
+
+
+def _package_resource_directories(plan: PackagePlan) -> set[str]:
+    """新版 interface.json 声明的资源包目录，项目相对 posix 路径。
+
+    实测四个发行包写的都是 ``./resource`` / ``./resource_pack/base`` 这样的相对
+    路径；``{PROJECT_DIR}`` 前缀在规格里存在但没见项目用过，这里一并去掉。
+    """
+
+    source = plan.files.get("interface.json")
+    if source is None or not source.is_file():
+        return set()
+    try:
+        data = json.loads(source.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return set()
+    entries = data.get("resource")
+    if not isinstance(entries, list):
+        return set()
+
+    directories: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        raw = entry.get("path")
+        for candidate in raw if isinstance(raw, list) else [raw]:
+            if not isinstance(candidate, str):
+                continue
+            text = candidate.strip().replace("\\", "/").replace("{PROJECT_DIR}", "")
+            while text.startswith("./"):
+                text = text[2:]
+            text = text.strip("/")
+            if not text:
+                continue
+            try:
+                directories.add(safe_relative_path(text))
+            except UpdateApplyError:
+                continue
+    return directories
+
+
+def _orphan_paths_without_baseline(project_path: Path, plan: PackagePlan) -> set[str]:
+    """没有基线清单时，从磁盘上算出全量包应当清掉的旧版残留。
+
+    正常路径靠更新器自己的清单算 stale：装过一次之后「上一版铺了哪些文件」是已知
+    的，只删这些，用户自己放进项目的文件一概不碰。
+
+    但项目**第一次**被更新时没有这份清单——用户是直接指到一棵已经解压好的目录，
+    那棵树不是更新器铺的（日志里那句「本地无可信更新基线」说的就是这件事）。此时
+    stale 恒为空，全量包退化成纯覆盖：新版删掉或挪走的文件会原地留下。实测
+    MaaYYs v3.10.2 → v3.15.5 把 ``resource_pack/base/pipeline/kun28.json`` 挪进了
+    ``战斗/`` 子目录，旧的那份留在原地，两份都定义顶层节点 ``困28``，MaaFramework
+    直接拒收整个资源包（``key already exists``），项目从此每次运行都失败。
+
+    **扫描范围只有新版 interface.json 声明的资源包目录。** 这条边界是拿真实包在
+    测试床上试出来的：一开始按「包自己铺的顶层目录」扫，结果 v3.15.5 的包里带了
+    ``preset/``（两个自带预设），而 MXU 也把**用户自建的预设**写在同一个目录，用户
+    预设于是被当成残留删掉。``tasks/``、``assets/`` 同理都可能混着用户内容。资源包
+    目录不一样：它是 MaaFramework 直接加载的纯内容，也正是节点重名会炸掉整个项目
+    的地方——修的就是这个，扫这里就够。
+
+    另外跳过我们自己铺进项目的东西（``.auto_mas`` 前缀）与字节码（由解释器重写，
+    见 :func:`_is_bytecode_artifact`）。
+
+    残留风险说清楚：没有基线时无法区分「旧版本装的」和「用户自己塞进资源目录的」，
+    因此用户手放在资源目录里的覆写也会被清掉。这与全量包语义一致（它就是要把项目
+    换成新版本），删除动作仍走既有事务——进 touched、先备份、post-validate 失败整体
+    回滚。装过这一次之后清单就有了，后续更新走回精确口径。
+    """
+
+    orphans: set[str] = set()
+    for relative_dir in sorted(_package_resource_directories(plan)):
+        prefix = f"{relative_dir}/"
+        if not any(name.startswith(prefix) for name in plan.files):
+            # 包里没往这个资源目录铺任何文件：声明与实际对不上，不能拿它当
+            # 「这个目录本该是空的」的依据。
+            continue
+        directory = _project_target(project_path, relative_dir)
+        if directory.is_symlink() or not directory.is_dir():
+            continue
+        for path in directory.rglob("*"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = safe_relative_path(path.relative_to(project_path).as_posix())
+            if relative in plan.files or _is_bytecode_artifact(relative):
+                continue
+            if any(part.startswith(".auto_mas") for part in relative.split("/")):
+                continue
+            orphans.add(relative)
+    return orphans
 
 
 def _is_bytecode_artifact(relative: str) -> bool:
@@ -939,7 +980,9 @@ def _emit(
     try:
         progress(stage, payload)
     except Exception:
-        return
+        # 进度只是旁观者，不能拖垮事务；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW 更新进度回调失败: stage=%s", stage, exc_info=True)
 
 
 __all__ = [
@@ -948,5 +991,4 @@ __all__ = [
     "UpdateApplyError",
     "apply_package_transaction",
     "build_package_plan",
-    "recover_update_operation",
 ]

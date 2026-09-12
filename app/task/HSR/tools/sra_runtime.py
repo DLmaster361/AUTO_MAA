@@ -228,10 +228,7 @@ def write_sra_temp_config(
     return target_path
 
 
-def cleanup_sra_temp_config(path: Path, keep_on_error: bool = False) -> None:
-    if keep_on_error:
-        return
-
+def cleanup_sra_temp_config(path: Path) -> None:
     if path.exists():
         try:
             path.unlink()

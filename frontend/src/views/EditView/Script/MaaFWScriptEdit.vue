@@ -73,7 +73,12 @@
               已就绪的 Agent：{{ envAgents.map(a => a.runtimeKind || '未知').join('、') }}
             </template>
             <template v-if="envFailed" #description>
-              运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。
+              <div>运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。</div>
+              <div v-if="envFailureLogs.length" class="env-log-box">
+                <div v-for="(line, index) in envFailureLogs" :key="index" class="env-log-line">
+                  {{ line }}
+                </div>
+              </div>
             </template>
             <template v-if="envFailed" #action>
               <a-button size="small" :loading="envPreparing" @click="retryAgentEnvPrepare">
@@ -176,6 +181,7 @@ import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import { WS_MAAFW_ENV_PREPARE_PROGRESS } from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   getDefaultMaaFWScriptConfig,
@@ -237,7 +243,8 @@ const canLeaveCurrentStep = computed(
 )
 const pageLoading = ref(false)
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formRef = ref<FormInstance>()
 const previewLoading = ref(false)
@@ -269,16 +276,18 @@ const rules = {
 }
 
 const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, { [category]: { [key]: value } })
-    if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-  } catch (error) {
-    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    isSaving.value = false
-  }
+  if (isInitializing.value) return
+  await enqueue(
+    async () => {
+      try {
+        const success = await updateScript(scriptId, { [category]: { [key]: value } })
+        if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
+      } catch (error) {
+        logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+    `${String(category)}.${key}`
+  )
 }
 
 const {
@@ -458,6 +467,9 @@ const envFailed = ref(false)
 const envMessage = ref('')
 const envPercent = ref<number | null>(null)
 const envLogs = ref<string[]>([])
+// 失败时只摊开末尾这些行：前面多是「创建隔离 venv」之类的流水，真正的报错
+// （比如 pip 的 stderr）总在最后。整份日志仍在 envLogs 里。
+const envFailureLogs = computed(() => envLogs.value.slice(-12))
 const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
 let envSubscriptionId: string | null = null
 
@@ -510,6 +522,9 @@ const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
     if (!response || response.code !== 200 || !response.data) {
       envFailed.value = true
       envMessage.value = response?.message || 'MFW 运行环境准备失败'
+      // 失败响应里同样带着逐行日志，而且这才是最需要它的时候：原先这里直接
+      // return，把唯一一份失败原因扔了，用户只剩一句「准备失败」。
+      if (response?.data?.logs?.length) envLogs.value = response.data.logs
       message.error(envMessage.value)
       return
     }

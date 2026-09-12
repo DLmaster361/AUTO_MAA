@@ -497,6 +497,7 @@ const getDefaultMAAUserData = () => ({
     IfFight: true,
     IfMall: true,
     IfAward: true,
+    IfSwitchTheme: false,
     IfRecruit: true,
     IfReclamation: false,
     IfRoguelike: false,
@@ -672,33 +673,6 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
   return savePromise
 }
 
-// 保存完整用户数据（仅用于特殊批量操作）
-const _saveFullUserData = async () => {
-  if (isInitializing.value || isSaving.value || !userId) return
-
-  isSaving.value = true
-  try {
-    // 确保扁平化字段同步到嵌套数据
-    formData.Info.Name = formData.userName
-    formData.Info.Id = formData.userId
-
-    const userData = {
-      Info: { ...formData.Info },
-      Task: { ...formData.Task },
-      Notify: { ...formData.Notify },
-      Data: { ...formData.Data },
-    }
-
-    await updateUser(scriptId, userId, userData)
-    logger.info('用户配置已保存')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-}
-
 // 注意：移除了 watch 自动保存，现在由子组件的 @save 事件触发保存
 
 // 加载脚本信息
@@ -848,7 +822,15 @@ const loadActivityStageOptions = async () => {
       return
     }
 
-    const overview = response.data as HomeOverviewResponse
+    const overview = response.data as Partial<HomeOverviewResponse> | undefined
+    if (!overview?.StageByServer) {
+      // 不能直接赋值: 字段缺席会把 stageOverviewByServer 的 {} 默认值抹成 undefined,
+      // 之后服务器切换的 watcher 一跑 applyServerStageOptions 就会整页崩
+      logger.error('活动关卡数据缺少 StageByServer 字段，后端版本可能与前端不匹配')
+      activityStageError.value = '加载活动关卡失败：返回数据缺少关卡信息'
+      return
+    }
+
     stageOverviewByServer.value = overview.StageByServer
     applyServerStageOptions()
   } catch (error) {
@@ -1295,10 +1277,8 @@ onMounted(() => {
 
           if (response && response.code === 200 && response.data[newStageMode]) {
             const planData = response.data[newStageMode]
-            logger.debug(`获取到计划数据: ${JSON.stringify(planData)}`)
 
             const currentConfig = getPlanCurrentConfig(planData)
-            logger.debug(`getPlanCurrentConfig返回: ${JSON.stringify(currentConfig)}`)
 
             planModeConfig.value = currentConfig
             logger.debug('planModeConfig.value已更新')
@@ -1307,12 +1287,9 @@ onMounted(() => {
             fullPlanData.value = planData
             logger.debug('fullPlanData.value已更新')
 
+            // 只记 planId 与字段数，整份计划序列化进日志既慢又没人看
             logger.info(
-              `计划配置加载成功:${JSON.stringify({
-                planId: newStageMode,
-                currentConfig: JSON.parse(JSON.stringify(currentConfig)),
-                planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
-              })}`
+              `计划配置加载成功: ${newStageMode}, 字段数=${Object.keys(currentConfig ?? {}).length}`
             )
 
             // 从stageModeOptions中查找对应的计划名称

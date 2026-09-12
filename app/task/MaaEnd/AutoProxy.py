@@ -158,6 +158,27 @@ def _select_auto_collect_routes(
     }
 
 
+def _disable_removed_tasks(
+    maaend_tasks: list[dict[str, object]],
+    task_i18n: dict[str, str],
+) -> set[str]:
+    """禁用当前 MaaEnd 版本已移除的任务条目，返回被移除的任务名。
+
+    MaaEnd 更新可能删除或合并旧任务，其加载配置时会静默移除无效条目；
+    若注入的运行配置里只剩这类条目，MaaEnd 会以“没有启用的任务”拒绝启动，
+    自动代理也会因该任务永不回报完成而反复重试。
+    """
+
+    removed_names: set[str] = set()
+    for task in maaend_tasks:
+        task_name = str(task.get("taskName"))
+        if task_name.startswith("__MXU_") or task_name in task_i18n:
+            continue
+        task["enabled"] = False
+        removed_names.add(task_name)
+    return removed_names
+
+
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
 
@@ -192,6 +213,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.unique_task: dict[str, str] = {}
         self.maaend_config_file: Path | None = None
         self.maaend_root_path: Path | None = None
+        # 一轮运行内 check/prepare 会多次读同一份 mxu-MaaEnd.json，按文件签名缓存解析结果
+        self._source_tasks_cache: (
+            tuple[tuple, list[dict[str, object]] | None] | None
+        ) = None
         self.account_switch_mode: str | None = None
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
@@ -432,8 +457,25 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
     def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
-        """读取当前用户所选 MaaEnd 实例的任务列表。"""
+        """读取当前用户所选 MaaEnd 实例的任务列表（文件未变时复用上次解析结果）。"""
 
+        if self.maaend_config_file is None:
+            return None
+        try:
+            stat = self.maaend_config_file.stat()
+            signature = (str(self.maaend_config_file), stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None
+        if (
+            self._source_tasks_cache is not None
+            and self._source_tasks_cache[0] == signature
+        ):
+            return self._source_tasks_cache[1]
+        tasks = self._parse_source_maaend_tasks()
+        self._source_tasks_cache = (signature, tasks)
+        return tasks
+
+    def _parse_source_maaend_tasks(self) -> list[dict[str, object]] | None:
         if self.maaend_config_file is None:
             return None
         try:
@@ -858,15 +900,18 @@ class AutoProxyTask(TaskExecuteBase):
                 # 中止相关程序
                 await self.kill_managed_process()
 
-                await Notify.push_plyer(
-                    "用户自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
-                )
+                try:
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"{self.cur_user_item.name}的自动代理出现异常",
+                        3,
+                    )
+                except Exception:
+                    pass
 
                 if not self.retryable:
-                    logger.info("检测到游戏画面参数错误，跳过后续重试")
+                    logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
 
         if self.cur_user_config.get("Info", "IfScriptAfterTask"):
@@ -900,12 +945,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
-        )
+        try:
+            await Notify.push_plyer(
+                "用户自动代理出现异常！",
+                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                f"{self.cur_user_item.name}的自动代理出现异常",
+                3,
+            )
+        except Exception:
+            pass
 
     async def kill_managed_process(self, kill_game: bool = True) -> None:
         """中止关联进程
@@ -1256,6 +1304,8 @@ class AutoProxyTask(TaskExecuteBase):
             "task.SceneManager.focus.color_match_failed_prefix"
         ]
 
+        removed_task_names = _disable_removed_tasks(maaend_tasks, maaend_i18n)
+
         if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
 
         def get_task_book_name(task: dict[str, object]) -> str:
@@ -1297,6 +1347,9 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 task_name_value = str(task.get("taskName"))
                 if task_name_value.startswith("__MXU_"):
+                    continue
+
+                if task_name_value in removed_task_names:
                     continue
 
                 task_enabled = bool(task.get("enabled", False))
@@ -1346,6 +1399,19 @@ class AutoProxyTask(TaskExecuteBase):
                 warning_message = (
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
                     "已跳过理智任务快速配置"
+                )
+                logger.warning(warning_message)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=warning_message),
+                )
+
+            if removed_task_names:
+                warning_message = (
+                    f"用户 {self.cur_user_item.name} 的 MaaEnd 配置中存在"
+                    f"当前版本已移除的任务：{'、'.join(sorted(removed_task_names))}，"
+                    "已自动跳过，请重做「MaaEnd 配置」以同步最新任务列表"
                 )
                 logger.warning(warning_message)
                 await Publisher.send(
@@ -1570,8 +1636,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
         if "资源加载失败" in log:
+            # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
-        elif "快捷键开始任务：失败" in log:
+            self.retryable = False
+        elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
@@ -1630,7 +1698,10 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         self.cur_user_log.status = "Success!"
-                except Exception:
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"MaaEnd 任务执行情况解析失败: {e}"
+                    )
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif self.is_log_stalled(

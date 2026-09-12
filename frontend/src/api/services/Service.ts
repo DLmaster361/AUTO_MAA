@@ -4,8 +4,20 @@
 /* eslint-disable */
 import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
+import type { BetterGIDomainCatalogOut } from '../models/BetterGIDomainCatalogOut';
+import type { BetterGIGlobalDomainSettingsIn } from '../models/BetterGIGlobalDomainSettingsIn';
+import type { BetterGIGlobalDomainSettingsOut } from '../models/BetterGIGlobalDomainSettingsOut';
+import type { BetterGIGlobalStygianSettingsIn } from '../models/BetterGIGlobalStygianSettingsIn';
+import type { BetterGIGlobalStygianSettingsOut } from '../models/BetterGIGlobalStygianSettingsOut';
+import type { BetterGIOneDragonSettingsIn } from '../models/BetterGIOneDragonSettingsIn';
+import type { BetterGIOneDragonSettingsOut } from '../models/BetterGIOneDragonSettingsOut';
+import type { BetterGIPathingTreeOut } from '../models/BetterGIPathingTreeOut';
+import type { BetterGIScriptDirsOut } from '../models/BetterGIScriptDirsOut';
+import type { BetterGIScriptGroupDetailOut } from '../models/BetterGIScriptGroupDetailOut';
+import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSaveIn';
+import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
+import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
-import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CommunityActivityOut } from '../models/CommunityActivityOut';
 import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
@@ -15,13 +27,11 @@ import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
-import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
-import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
@@ -36,6 +46,8 @@ import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOu
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
+import type { HSRUpdateIn } from '../models/HSRUpdateIn';
+import type { HSRUpdateOut } from '../models/HSRUpdateOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
@@ -73,14 +85,12 @@ import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
-import type { QueueReorderIn } from '../models/QueueReorderIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
-import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
@@ -123,7 +133,6 @@ import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
 import type { WebhookInBase } from '../models/WebhookInBase';
-import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
@@ -437,44 +446,6 @@ export class Service {
         });
     }
     /**
-     * 从文件加载脚本配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static importScriptFromFileApiScriptsImportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/import/file',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 导出脚本配置到文件
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static exportScriptToFileApiScriptsExportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/export/file',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 从网络加载脚本配置
      * @param requestBody
      * @returns OutBase Successful Response
@@ -779,25 +750,6 @@ export class Service {
         });
     }
     /**
-     * 重新排序webhook项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderWebhookApiScriptsWebhookOrderPost(
-        requestBody: WebhookReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/webhook/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 预览 MFW interface
      * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
      * @param requestBody
@@ -956,10 +908,11 @@ export class Service {
      * 获取 BetterGI 一条龙自定义配置组
      * 返回指定一条龙配置里的自定义配置组（非内置 8 组）及其启用状态，供前端表格自动加载。
      *
-     * ``useMasConfig=True``（用户独立配置）时改读 MAS 运行时槽位「MAS独立配置」：独立模式的
-     * per-user 配置物化在槽位而非 {configName} 实配，读槽位才能列到用户刚在 BGI GUI 里往
-     * 独立配置添加的自定义组。
+     * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
+     * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
+     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
+     * @param userId
      * @param configName
      * @param useMasConfig
      * @returns BetterGICustomGroupsOut Successful Response
@@ -967,6 +920,7 @@ export class Service {
      */
     public static getBettergiCustomGroupsApiApiScriptsBettergiOneDragonCustomGroupsGet(
         scriptId: string,
+        userId: string = '',
         configName: string = '',
         useMasConfig: boolean = false,
     ): CancelablePromise<BetterGICustomGroupsOut> {
@@ -975,6 +929,7 @@ export class Service {
             url: '/api/scripts/bettergi/one-dragon/custom-groups',
             query: {
                 'scriptId': scriptId,
+                'userId': userId,
                 'configName': configName,
                 'useMasConfig': useMasConfig,
             },
@@ -999,6 +954,432 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 可用自定义 JS 脚本列表
+     * 返回 BetterGI 可执行自定义 JS 脚本候选。
+     *
+     * ``label`` 为 ``manifest.json`` 的中文显示名（目录名常为英文，如
+     * ``AAA-Artifacts-Bulk-Supply`` → 「AAA狗粮批发」）；``value`` 为脚本**目录名**
+     * （BetterGI 一条龙按目录名定位任务，落库与执行都用它）。
+     * 供一条龙「添加配置组」弹窗作为候选（贴 JS 标签）选择。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiJsScriptsApiApiScriptsBettergiJsScriptsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/js-scripts',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 可用配置组列表
+     * 返回 BetterGI 配置组候选：BGI ``User/ScriptGroup*.json`` 文件名；带 userId 时并集该用户 per-user 副本名。
+     *
+     * BetterGI 的「配置组」（GUI 中可加入一条龙的自定义任务组）以独立 json 保存于
+     * ``User/ScriptGroup``，文件名（不含 ``.json``）即组名，与一条龙 TaskDefinitions
+     * 的引用名一致。每次调用实时扫描，供「添加配置组」弹窗「配置组」标签页展示。
+     *
+     * ``userId`` 非空时把该用户的 per-user ScriptGroup 副本名一并并入（副本是 MAS
+     * 独立配置的权威内容源，复制自 JS/路径等来源的新组也只存在于副本目录，需要能被
+     * 识别/展示为配置组）。
+     * @param scriptId
+     * @param userId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptGroupsApiApiScriptsBettergiScriptGroupsGet(
+        scriptId: string,
+        userId: string = '',
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-groups',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 配置组 json 详情（per-user 副本优先）
+     * 返回某用户的配置组 json（per-user 副本 → BGI 实配的种子顺序）。
+     *
+     * 右栏「配置组」标签页选中 scriptgroup 时，据此列出其 json 内 ``projects`` 的
+     * 每个项目；也供 JS/路径等单项目组展示（项目名=组名）。
+     * @param scriptId
+     * @param userId
+     * @param name
+     * @returns BetterGIScriptGroupDetailOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptGroupDetailApiApiScriptsBettergiScriptGroupDetailGet(
+        scriptId: string,
+        userId: string,
+        name: string,
+    ): CancelablePromise<BetterGIScriptGroupDetailOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-group/detail',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'name': name,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 某 JsScript 脚本目录的 settings.json UI 定义
+     * 返回某脚本目录（User/JsScript/{folder}/）的 settings.json UI 定义数组。
+     *
+     * 双击配置组内某项目（其 folderName 即脚本目录名）时，前端据此渲染设置弹窗表单。
+     * @param scriptId
+     * @param folder
+     * @returns BetterGIScriptSettingsUiOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptSettingsUiApiApiScriptsBettergiScriptSettingsUiGet(
+        scriptId: string,
+        folder: string,
+    ): CancelablePromise<BetterGIScriptSettingsUiOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-settings-ui',
+            query: {
+                'scriptId': scriptId,
+                'folder': folder,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 某 JsScript 脚本目录的 README 内容
+     * 返回某脚本目录（User/JsScript/{folder}/）的 README 纯文本。
+     *
+     * 双击配置组内某项目设置弹窗的「脚本说明」标签页展示。
+     * @param scriptId
+     * @param folder
+     * @returns BetterGIScriptReadmeOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptReadmeApiApiScriptsBettergiScriptReadmeGet(
+        scriptId: string,
+        folder: string,
+    ): CancelablePromise<BetterGIScriptReadmeOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-readme',
+            query: {
+                'scriptId': scriptId,
+                'folder': folder,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 常用目录（脚本仓库 / JsScript / AutoPathing）
+     * 返回 BetterGI 三个常用目录的绝对路径，供「添加配置组」弹窗的打开目录按钮使用。
+     * @param scriptId
+     * @returns BetterGIScriptDirsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptDirsApiApiScriptsBettergiDirsGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIScriptDirsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/dirs',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 地图追踪目录树
+     * 返回 BetterGI 地图追踪目录树：{RootPath}/User/AutoPathing 的递归结构。
+     *
+     * 节点：``{name, dirs, files}``，``files`` 为路径文件名（不含 ``.json``、含相对目录前缀），
+     * 全局唯一。供「添加配置组」弹窗「地图追踪」标签页左树右表浏览。
+     * @param scriptId
+     * @returns BetterGIPathingTreeOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiAutoPathingTreeApiApiScriptsBettergiAutoPathingTreeGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIPathingTreeOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/auto-pathing-tree',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 一条龙设置项（右栏按任务分组展示）
+     * 返回某用户一条龙配置的设置项（per-user 副本 → BGI 实配 → 内置模板的种子顺序）。
+     *
+     * 供右栏按任务分组渲染并回显该任务在 BGI 一条龙里的可设置字段。
+     * ``groupName`` 为右栏当前编辑的内置组名，战斗 4 项 Plan 回显按其查映射，
+     * 缺省/不匹配时跳过 Plan 回显。
+     * @param scriptId
+     * @param userId
+     * @param configName
+     * @param groupName
+     * @returns BetterGIOneDragonSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsGet(
+        scriptId: string,
+        userId: string,
+        configName: string = '',
+        groupName: string = '',
+    ): CancelablePromise<BetterGIOneDragonSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/one-dragon/settings',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'configName': configName,
+                'groupName': groupName,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 一条龙设置项到 per-user 副本
+     * 把右栏编辑的设置项写回该用户一条龙配置副本（不触碰 BGI 同名实配）。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiOneDragonSettingsApiApiScriptsBettergiOneDragonSettingsPost(
+        requestBody: BetterGIOneDragonSettingsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/one-dragon/settings',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置一条龙 Plan 某步骤的启用状态（按实例名，支持 基名-后缀）
+     * 按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
+     *
+     * 步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
+     * 「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
+     * 一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+     *
+     * 步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
+     * 后端无步骤可写，刷新后回退。
+     * @param scriptId
+     * @param userId
+     * @param name
+     * @param enabled
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setOneDragonPlanStepEnabledApiScriptsBettergiOneDragonPlanStepEnabledPost(
+        scriptId: string,
+        userId: string,
+        name: string,
+        enabled: boolean = true,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/one-dragon/plan/step-enabled',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'name': name,
+                'enabled': enabled,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 全局 config.json 的秘境刷取配置段
+     * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
+     *
+     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+     * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
+     * @param scriptId
+     * @param userId
+     * @param groupName
+     * @returns BetterGIGlobalDomainSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsGet(
+        scriptId: string,
+        userId: string = '',
+        groupName: string = '',
+    ): CancelablePromise<BetterGIGlobalDomainSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/global-domain/settings',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'groupName': groupName,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 全局 config.json 的秘境刷取配置段
+     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiGlobalDomainSettingsApiApiScriptsBettergiGlobalDomainSettingsPost(
+        requestBody: BetterGIGlobalDomainSettingsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/global-domain/settings',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 全局 config.json 的自动幽境危战设置段
+     * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
+     *
+     * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
+     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+     * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
+     * @param scriptId
+     * @param userId
+     * @param groupName
+     * @returns BetterGIGlobalStygianSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsGet(
+        scriptId: string,
+        userId: string = '',
+        groupName: string = '',
+    ): CancelablePromise<BetterGIGlobalStygianSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/global-stygian/settings',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'groupName': groupName,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 全局 config.json 的自动幽境危战设置段
+     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiGlobalStygianSettingsApiApiScriptsBettergiGlobalStygianSettingsPost(
+        requestBody: BetterGIGlobalStygianSettingsIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/global-stygian/settings',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 每周秘境候选与每秘境三档奖励物
+     * 返回 BetterGI 每周秘境可选秘境目录与分档奖励物。
+     *
+     * 数据源：官方传送点 tp.json（GameTask/AutoTrackPath/Assets/tp.json）中
+     * Bless/Forgery/Mastery 三类 Domain 点（含奖励物）；tp.json 缺失或为空时返回空目录。
+     * 供「每周秘境」表格的秘境/奖励下拉联动使用（奖励仍按 BGI 语义存 0~3 序号）。
+     * @param scriptId
+     * @returns BetterGIDomainCatalogOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiDomainCatalogApiApiScriptsBettergiDomainCatalogGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIDomainCatalogOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/domain-catalog',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 BetterGI 配置组 json 到 per-user 副本
+     * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
+     * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
+     *
+     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(
+        requestBody: BetterGIScriptGroupSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/script-group/save',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -1513,6 +1894,29 @@ export class Service {
         });
     }
     /**
+     * 检查或执行 HSR 外部脚本更新
+     * 手动检查或安装 M7A / SRA 的更新。
+     *
+     * 自动更新只在任务正常跑完后触发（``Update.AutoUpdateMode = AfterRun``），
+     * 这个接口是唯一不必等一轮任务就能更新的入口。
+     * @param requestBody
+     * @returns HSRUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static postHsrUpdateApiApiScriptsHsrUpdatePost(
+        requestBody: HSRUpdateIn,
+    ): CancelablePromise<HSRUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 HSR 托管配置字段
      * 返回原生动态托管字段；用户 ID 只负责归属校验。
      * @param scriptId
@@ -1624,35 +2028,6 @@ export class Service {
                 'script_id': scriptId,
                 'user_id': userId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新 OK-NTE 配置文件
-     * 更新 OK-NTE 配置文件
-     *
-     * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
-     * filename: 配置文件名（如 DailyTask.json）
-     * data: 要更新的配置数据
-     *
-     * Returns:
-     * dict: 操作结果
-     * @param requestBody
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static updateOknteConfigApiScriptsOknteConfigsUpdatePost(
-        requestBody: Body_update_oknte_config_api_scripts_oknte_configs_update_post,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/oknte/configs/update',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -1880,25 +2255,6 @@ export class Service {
         });
     }
     /**
-     * 重新排序模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderEmulatorApiEmulatorOrderPost(
-        requestBody: EmulatorReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 操作模拟器
      * @param requestBody
      * @returns OutBase Successful Response
@@ -2009,25 +2365,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderQueueApiQueueOrderPost(
-        requestBody: QueueReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/queue/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -2455,26 +2792,6 @@ export class Service {
         });
     }
     /**
-     * 获取游戏社区账号组详情
-     * 获取游戏社区账号组详情
-     * @param requestBody
-     * @returns GameSignAccountCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static getGameSignAccountApiToolsSignAccountGetPost(
-        requestBody: GameSignAccountGetIn,
-    ): CancelablePromise<GameSignAccountCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 更新游戏社区账号组配置
      * 更新游戏社区账号组配置
      * @param requestBody
@@ -2694,25 +3011,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序webhook项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderWebhookApiSettingWebhookOrderPost(
-        requestBody: WebhookReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/webhook/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

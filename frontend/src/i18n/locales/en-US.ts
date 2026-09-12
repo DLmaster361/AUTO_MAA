@@ -303,6 +303,9 @@ export default {
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
     maaDaily: 'Daily tasks',
+    maaSwitchTheme: 'Switch theme',
+    maaSwitchThemeHint:
+      'Theme names are configured in MAA\'s "Switch Theme" task. Multiple names are picked at random each run; an empty list skips the task. Requires MAA v6.17.3 or later',
     maaRoguelike: 'Integrated Strategies',
     maaRoguelikeHint: 'A long run may be mistaken for a timeout',
     maaGreenTicketStore: 'Green Ticket Store',
@@ -906,6 +909,10 @@ export default {
     masManagedConfigurationOff: 'MAS-managed configuration is off',
     masManagesGame: 'MAS manages the game',
     mfwAdbControllerUses: 'The MFW ADB controller uses this emulator configuration',
+    mfwGamePackageName: 'Game package name',
+    mfwGamePackageNamePassed:
+      'Launch the game together with the emulator. Leave empty to detect it from the project pipeline; when detection finds nothing or several candidates, the game is not launched and you can fill it in here',
+    mfwGamePackageNamePlaceholder: 'Empty to auto-detect, e.g. com.hypergryph.arknights',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:
@@ -1155,6 +1162,56 @@ export default {
       'Treat the daily run as timed out when the MAA log has not changed for this long',
     update: 'Update',
     runLimits: 'Run limits',
+    hsrExternalUpdate: 'External script updates',
+    hsrUpdateSectionHint:
+      'March7th Assistant and SRA are third-party tools you installed yourself, so MAS never rewrites their folders unless you turn this on. Auto update only runs after the whole run has finished and never makes the current run wait for a download; after enabling it, a full run has to complete before the first update happens. Use the manual buttons below to update right away.',
+    hsrUpdateModeTip:
+      'Off: never update automatically; After run: check and update once every user in this run has finished normally. No update happens if the run was cancelled, failed, or did not pass the config check. A failed update is rolled back and skipped without affecting the run result; only if the rollback itself fails is the run marked abnormal',
+    hsrUpdateModeOff: 'Off',
+    hsrUpdateModeAfterRun: 'After run',
+    hsrUpdateChannel: 'Update channel',
+    hsrUpdateChannelTip: 'Shared by both scripts; beta builds may be unstable',
+    hsrUpdateChannelStable: 'Stable',
+    hsrUpdateChannelBeta: 'Beta',
+    hsrUpdateM7ASource: 'March7th Assistant download source',
+    hsrUpdateM7ASourceTip:
+      'March7th Assistant is only available from GitHub and MirrorChyan. MirrorChyan requires a CDK; if the CDK is unusable the update fails and is skipped, it never silently falls back to GitHub',
+    hsrUpdateSRASource: 'SRA download source',
+    hsrUpdateSRASourceTip:
+      'The AUTO-MAS download site needs no CDK and has no rate limit, and is the default for SRA. MirrorChyan requires a CDK; if the CDK is unusable the update fails and is skipped, it never silently falls back to GitHub',
+    hsrUpdateSourceAutoSite: 'AUTO-MAS download site (no CDK)',
+    hsrUpdateSourceGithub: 'GitHub',
+    hsrUpdateSourceMirrorChyan: 'MirrorChyan (CDK required)',
+    hsrUpdateCdk: 'MirrorChyan CDK',
+    hsrUpdateCdkTip:
+      'Used only for March7th Assistant / SRA updates and unrelated to the CDK in global settings; required when either download source is MirrorChyan',
+    hsrUpdateCdkPlaceholder: 'Enter the MirrorChyan CDK',
+    hsrUpdateCdkHint:
+      'Required when either download source is MirrorChyan; get one on the MirrorChyan site',
+    hsrUpdateCdkMissing:
+      'MirrorChyan is selected as a download source but no CDK is set: the update will fail and be skipped, it will not fall back to GitHub',
+    hsrUpdateCdkGetLink: 'Get a MirrorChyan CDK',
+    hsrUpdateManual: 'Manual update',
+    hsrUpdateManualTip:
+      'Auto update waits for the run to finish; use these buttons to update now. Updating is not possible while a task is running',
+    hsrUpdateNeedPath:
+      'Set the March7th Assistant or SRA path and the check / update buttons will appear here',
+    hsrUpdateEngineM7A: 'March7th Assistant',
+    hsrUpdateEngineSRA: 'SRA',
+    hsrUpdateInstalledVersion: 'Installed: {version}',
+    hsrUpdateVersionUnknown: 'unknown version',
+    hsrUpdateCheckNow: 'Check for updates',
+    hsrUpdateApplyNow: 'Update now',
+    hsrUpdateDone: '{engine} updated to {version}',
+    hsrUpdateUpToDate: '{engine} is already up to date ({version})',
+    hsrUpdateAvailable:
+      '{engine} {latest} is available (current {current}); click "Update now" to install',
+    hsrUpdateNotInstallable:
+      '{engine} {version} is available, but it cannot be installed from the current download source',
+    hsrUpdateNotInstallableHint:
+      'Usually the MirrorChyan CDK is missing or unusable; check the CDK or switch to another download source',
+    hsrUpdateCheckFailed: 'Could not check for {engine} updates',
+    hsrUpdateRequestFailed: '{engine} update request failed',
     calyxCrimson: 'Calyx (Crimson)',
     calyxCrimsonTraceMaterials:
       'Calyx (Crimson): trace materials (gold and crimson are stored separately)',
@@ -1496,14 +1553,14 @@ export default {
     bettergiNotBettergiScript: 'This script is not a BetterGI script',
     bettergiConfigure: 'Configure BetterGI',
     bettergiMasConfigTooltip:
-      'Per-user mode: this opens BetterGI. Edit the MAS独立配置 profile on its One Dragon page; it is read back into this user when you save and exit.',
+      'Per-user mode: this user\'s One Dragon tasks and custom groups are configured entirely on this page (MAS is the source of truth); there is no need to edit the MAS independent profile inside BetterGI.',
     bettergiConfiguringTitle: 'BetterGI setup in progress',
     bettergiConfiguringDesc: 'Finish your changes in the BetterGI window.',
     bettergiConfiguringDesc2: 'When you are done, click Save settings to end this session.',
     bettergiUserNameHint:
       'Name used to tell users apart. Users sharing a name are counted as one in statistics',
     bettergiAccount: 'Account',
-    bettergiEnterAccount: 'Enter the account',
+    bettergiEnterAccount: 'Enter the account (for account switching; leave empty if not needed)',
     bettergiAccountHint:
       'Used for account switching; leave empty if you do not need it. In dropdown mode enter the full phone number or email and MAS masks it the way the game displays it',
     bettergiAccountUid: 'Account UID',
@@ -1526,19 +1583,19 @@ export default {
     bettergiTaskConfigHint:
       "Tick the built-in One Dragon groups to run. Under script-controlled mode BetterGI's own settings decide, and this section is read-only",
     bettergiDirectModeAlert:
-      'Currently in script-controlled mode, so task settings are read-only. Switch to per-user config to give this user their own One Dragon setup here.',
+      'Script-controlled mode: enter the OneDragon config name this user uses below (a config that already exists in BetterGI); configure scripts inside BetterGI (click "Configure BetterGI" to open it).',
     bettergiSwitchToMasConfig: 'Switch to per-user config',
     bettergiMasConfigHowTo: 'How to use per-user config',
     bettergiMasConfigHowTo1a:
-      "This user's One Dragon runs on a per-user profile: MAS launches from the MAS独立配置 slot. To adjust the tasks, click Configure BetterGI at the top right, then on its One Dragon page pick and edit the profile named",
+      "This user's One Dragon is on a per-user profile: tasks and custom groups are configured on this page as the MAS source of truth (no need to open BetterGI's One Dragon page). MAS launches One Dragon from the fixed slot",
     bettergiMasConfigSlotName: 'MAS独立配置',
     bettergiMasConfigHowTo1b:
-      '. MAS reads it back into this user after you save and exit. Leave your own One Dragon profiles (such as 默认配置) alone: per-user config only reads the MAS独立配置 slot, so your real profiles are neither read nor affected.',
+      'and cleans the slot up afterwards. Your own BetterGI profiles (such as 默认配置) stay untouched: the same-named real profile is neither read nor affected by this page.',
     bettergiMasConfigHowTo2:
       "Battle party and battle strategy below: leave them empty to keep BetterGI's current settings (an empty strategy means picking automatically from the party). Once filled in, they apply to the four combat tasks in One Dragon (ley line blossoms, domains, boss runs and Stygian Onslaught), replacing BetterGI's defaults for those tasks.",
     bettergiOneDragonName: 'One Dragon profile',
     bettergiOneDragonNameHint:
-      "Required. Matches the profile name saved (or to be saved) on BetterGI's One Dragon page; defaults to 默认配置",
+      'Fixed to MAS独立配置 while per-user config is on and cannot be changed. With per-user config off (direct mode) it picks the BetterGI profile to use; defaults to 默认配置',
     bettergiPickOneDragonName: 'Pick a One Dragon profile',
     bettergiDailyRewardParty: 'Reward pickup party',
     bettergiEnterDailyRewardParty: 'Enter the reward pickup party',
@@ -1546,7 +1603,7 @@ export default {
     bettergiBattleParty: 'Battle party',
     bettergiEnterBattleParty: 'Enter the battle party',
     bettergiBattleStrategy: 'Battle strategy',
-    bettergiEnterBattleStrategy: 'Enter the battle strategy',
+    bettergiEnterBattleStrategy: 'Select a battle strategy',
     bettergiBattleStrategyHint: 'Leave empty to fall back to picking automatically from the party',
     bettergiGroupCapsuleHint:
       'Each pill toggles a task group: ticked groups run, unticked ones do not.',
@@ -1567,7 +1624,7 @@ export default {
     bettergiCustomGroupsTip2b:
       '. Groups added to this table follow their own row switch: on runs, off does not.',
     bettergiCustomGroupsTip3:
-      'Add group picks from your existing BetterGI profile (the MAS独立配置 slot under per-user mode) which groups to manage here. Groups left out stay in One Dragon and are never dropped because of this table.',
+      'Add group picks from your existing BetterGI profile (the user MAS independent copy under per-user mode) which groups to manage here. Groups left out stay in One Dragon and are never dropped because of this table.',
     bettergiCustomGroupsDesc:
       'These come from the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones. The table is only a switch: groups present in One Dragon but absent here run by default, while listed groups follow their row switch (on runs, off does not).',
     bettergiAddGroup: 'Add group',
@@ -1594,7 +1651,8 @@ export default {
     zzzodScriptConfiguration: 'ZZZ-OD script settings',
     zzzodScriptNameHint: 'Distinguishes this ZZZ-OD script instance from others',
     zzzodRootPath: 'ZZZ-OD install directory',
-    zzzodRootPathHint: 'Pick the OneDragon install root (contains the OneDragon launcher and the config folder)',
+    zzzodRootPathHint:
+      'Pick the OneDragon install root (contains the OneDragon launcher and the config folder)',
     zzzodRootPathPlaceholder: 'Pick the OneDragon install root directory',
     zzzodRootPathRequired: 'Pick the ZZZ-OD install directory',
     zzzodRootPathSaved: 'ZZZ-OD install directory saved',
@@ -1605,23 +1663,26 @@ export default {
     zzzodCloseGameOnFinish: 'Close the game after the run',
     zzzodAccountSwitch: 'Account switching',
     zzzodAccountSwitchHint:
-      'Multi-user runs switch each user\'s account per the selected method; hover a dropdown option for its details',
+      "Multi-user runs switch each user's account per the selected method; hover a dropdown option for its details",
     zzzodAccountSwitchSingle: 'Single-instance (recommended)',
     zzzodAccountSwitchSingleHint:
-      "Each user gets an independent one-dragon session: inject that user config → single-instance run (no cross-slot switching) → finish and close → next user. A failure only restarts the failed user; users are fully isolated",
+      'Each user gets an independent one-dragon session: inject that user config → single-instance run (no cross-slot switching) → finish and close → next user. A failure only restarts the failed user; users are fully isolated',
     zzzodAccountSwitchMulti: 'Multi-instance (not recommended)',
     zzzodAccountSwitchMultiHint:
       'All users merge into one multi-account run with the one-dragon switching accounts internally; shortest total time, but one bad slot or failed switch drags the whole round into retries and users are not isolated',
     zzzodAccountSwitchMas: 'MAS switching (not yet available)',
     zzzodAccountSwitchMasHint:
       'MAS drives the game to switch accounts then hands over to the one-dragon; not yet available',
-    zzzodCloseGameOnFinishHint: 'MAS closes the game after the run; the game is also closed when you manually stop the schedule (recommended for multi-account runs)',
+    zzzodCloseGameOnFinishHint:
+      'MAS closes the game after the run; the game is also closed when you manually stop the schedule (recommended for multi-account runs)',
     zzzodLaunchBeforeTaskHint:
       'MAS starts the game before running; skipped when the game is already running',
     zzzodGameArgumentsHint: 'Game launch arguments (not the one-dragon launcher arguments)',
     zzzodRetryLimitHint: 'Give up after this many failures; re-runs skip already completed tasks',
-    zzzodRunTimeoutHint: 'Times out when the log stays silent; a full one-dragon run usually needs 180+ minutes',
-    zzzodDuplicateUserName: 'Another user with this name already exists in this script; pick a different name',
+    zzzodRunTimeoutHint:
+      'Times out when the log stays silent; a full one-dragon run usually needs 180+ minutes',
+    zzzodDuplicateUserName:
+      'Another user with this name already exists in this script; pick a different name',
     zzzodTaskConfigHint: 'Click for quick config',
     zzzodTaskConfigLoadFailed: 'Could not load the task config',
     zzzodTaskConfigSaveFailed: 'Could not save the task config',
@@ -1646,8 +1707,7 @@ export default {
     zzzodLauncherIntegrated: 'Integrated',
     zzzodLauncherAutoHint:
       'Prefer the last successful launcher; on startup failure, retry with the other one and remember the next successful one',
-    zzzodLauncherOriginalHint:
-      'Always use the original launcher (OneDragon-Launcher.exe)',
+    zzzodLauncherOriginalHint: 'Always use the original launcher (OneDragon-Launcher.exe)',
     zzzodLauncherIntegratedHint:
       'Always use the integrated launcher (OneDragon-RuntimeLauncher.exe, bundled runtime)',
     zzzodLauncherLoadFailed: 'Failed to load launcher availability',
@@ -1668,7 +1728,8 @@ export default {
       'Backups of the standalone MAS user config; restoring applies directly to the MAS config page. Created automatically (dedup) before running {script} or opening its config, latest 10 kept',
     configRestoreScriptDesc:
       'Backups of the {script} native config; restoring applies directly to {script} itself. Created automatically (dedup) before running {script}, editing in direct-control mode, or opening its config, latest 10 kept',
-    configRestoreEmpty: 'No backups yet; they are created automatically before runs or config sessions',
+    configRestoreEmpty:
+      'No backups yet; they are created automatically before runs or config sessions',
     configRestorePreview: 'Preview config',
     configRestorePreviewTitle: 'Config preview',
     configRestorePreviewFailed: 'Failed to load config preview',
@@ -1678,7 +1739,8 @@ export default {
     configRestorePreviewActive: 'Active',
     configRestoreListFailed: 'Failed to load backups',
     configRestoreDetailView: 'View details',
-    configRestoreDetailHint: 'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
+    configRestoreDetailHint:
+      'Opens the script page to view the detailed config. Make sure no other script with the same name is running!',
     configRestoreAction: 'Restore',
     configRestoreSuccess: 'Config restored',
     configRestoreFailed: 'Failed to restore config',
@@ -1699,7 +1761,8 @@ export default {
     zzzodOpenNativeConfigHint:
       'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-<user>) seeded from this page, task list and account changes made in the GUI read back here automatically, and the previous active instance is restored on close',
     zzzodConfiguringTitle: 'ZZZ-OD setup in progress',
-    zzzodConfiguringDesc: 'Switched to the dedicated instance bound to this user; finish team setup there.',
+    zzzodConfiguringDesc:
+      'Switched to the dedicated instance bound to this user; finish team setup there.',
     zzzodConfiguringDesc2:
       'Task and account changes in the GUI read back to this page; click "Save settings" to end this session when done.',
     zzzodScriptFallbackName: 'ZZZ-OD script',
@@ -1709,10 +1772,12 @@ export default {
     zzzodSessionFailed: 'ZZZ-OD setup failed: {p0}',
     zzzodSessionOpened: 'ZZZ-OD setup opened',
     zzzodViewOpened: 'ZZZ-OD viewer opened',
-    zzzodSessionTimeoutWarn: 'The ZZZ-OD setup session is about to time out and will be saved in 30 seconds',
+    zzzodSessionTimeoutWarn:
+      'The ZZZ-OD setup session is about to time out and will be saved in 30 seconds',
     zzzodViewingTitle: 'Viewing ZZZ-OD config',
     zzzodViewingDesc: 'The OneDragon window shows the selected backup, for viewing only.',
-    zzzodViewingDesc2: 'Viewing does not change the fields on this page; click "Close viewer" when done.',
+    zzzodViewingDesc2:
+      'Viewing does not change the fields on this page; click "Close viewer" when done.',
     zzzodViewClose: 'Close viewer',
     zzzodSettingsSaved: 'ZZZ-OD settings saved',
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',
@@ -1720,10 +1785,9 @@ export default {
     zzzodConfigSourceUserAlert:
       'Account and task list follow this page; AUTO-MAS injects them into the one-dragon at run time',
     zzzodConfigSourceDirectAlert:
-      'Direct mode edits the selected instance\'s native one-dragon config and runs with that instance\'s config; MAS does not inject or interfere',
+      "Direct mode edits the selected instance's native one-dragon config and runs with that instance's config; MAS does not inject or interfere",
     zzzodModeUser: 'User',
-    zzzodModeUserDesc:
-      "Use this user's independent config, isolated from the native one.",
+    zzzodModeUserDesc: "Use this user's independent config, isolated from the native one.",
     zzzodModeDirectDesc:
       "Edit the one-dragon's native config directly; configure multiple accounts in the Instance management on this page\n(one direct-control user per script)",
     zzzodDirectInstance: 'Instance to edit',
@@ -1732,7 +1796,7 @@ export default {
     zzzodDirectPickInstance: 'Pick the instance to edit',
     zzzodDirectPickInstanceFirst: 'Pick an instance above first',
     zzzodDirectModeLimit:
-      'Only one direct-control user is allowed per script; configure multiple accounts in that user\'s Instance management',
+      "Only one direct-control user is allowed per script; configure multiple accounts in that user's Instance management",
     zzzodDirectInstanceRun: 'Run instances',
     zzzodDirectInstanceRunHint:
       'Run current only = run just the selected account; all enabled instances = run every account whose "Launch instance" switch is on, in the one-dragon\'s own order',
@@ -1741,9 +1805,10 @@ export default {
     zzzodDirectBindAlert:
       'Account fields only write back when you click Save settings; task toggles and Run instances take effect immediately. Entering/leaving Direct mode auto-creates a backup you can restore from Config restore',
     zzzodDirectTasksDesc:
-      'Task switches and order are written straight back to the selected instance\'s native task list; flip a switch to include it, drag the card handle to reorder. Disabled tasks can stay anywhere in the list.',
+      "Task switches and order are written straight back to the selected instance's native task list; flip a switch to include it, drag the card handle to reorder. Disabled tasks can stay anywhere in the list.",
     zzzodSortTasks: 'Tidy up',
-    zzzodSortTasksHint: 'Move enabled tasks before disabled ones (keeping their relative order) and write back',
+    zzzodSortTasksHint:
+      'Move enabled tasks before disabled ones (keeping their relative order) and write back',
     zzzodDragSortHint: 'Drag to reorder',
     zzzodInstancesManage: 'Instance management',
     zzzodInstancesManageHint:
@@ -1782,12 +1847,13 @@ export default {
     zzzodDeleteInstanceSuccess: 'Instance deleted',
     zzzodNativeLoadFailed: 'Could not load the instance native config',
     zzzodNativeSaveFailed: 'Could not save the instance native config',
-    zzzodNativeSaved: 'Saved to the selected instance\'s native one-dragon config',
+    zzzodNativeSaved: "Saved to the selected instance's native one-dragon config",
     zzzodBackupFailed:
       'Could not back up the direct-control config; check Config restore for a recovery point',
     zzzodLoadInstancesFailed: 'Could not load the instance list',
     zzzodGameRegion: 'Game region',
-    zzzodGameRegionHint: 'The region of this account; regions differ in client and daily reset time',
+    zzzodGameRegionHint:
+      'The region of this account; regions differ in client and daily reset time',
     zzzodRegionCn: 'CN',
     zzzodRegionCnB: 'CN (Bilibili)',
     zzzodRegionUs: 'US',
@@ -1817,6 +1883,99 @@ export default {
       'One-dragon series tasks on one screen: flip a switch to include a task in the run, and it stays in place when turned off; drag the card handle to adjust the run order.',
     zzzodLoadOneDragonFailed: 'Could not load the one-dragon task list',
     zzzodPushLogModeHint: 'How per-task results (success/failure/skipped) appear in the run report',
+    bettergiAddScriptToGroup: 'Add script to group',
+    bettergiAddScriptToGroupOk: 'Add',
+    bettergiAddScriptUnsupported: 'This type cannot be added to a config group yet',
+    bettergiAddToDragon: 'Add to one-dragon',
+    bettergiAddToDragonOk: 'Add',
+    bettergiAlreadyInDragon: 'Already in the one-dragon queue',
+    bettergiChipSelectHint: 'Select items to add to the queue',
+    bettergiClearDragon: 'Clear one-dragon',
+    bettergiClearDragonTitle: 'Clear the one-dragon queue?',
+    bettergiCopySameAs: 'Copy identical config',
+    bettergiDuplicateAsNew: 'Save as new config group',
+    bettergiDuplicateDone: 'Saved as a new config group',
+    bettergiDuplicateNamePlaceholder: 'New config group name',
+    bettergiDuplicateOk: 'Save as',
+    bettergiDuplicateSameDone: 'Copied an identical config group',
+    bettergiDuplicateSource: 'Source config group',
+    bettergiDuplicateTip: 'Save the selected config group content as a new, separately editable config group',
+    bettergiGroupFrozen: 'Frozen',
+    bettergiGroupFrozenTip: 'This config group is frozen and cannot be edited or moved',
+    bettergiGroupKindCustom: 'Custom',
+    bettergiGroupKindPathing: 'Pathing',
+    bettergiGroupKindScriptGroup: 'Script group',
+    bettergiGroupKindStamina: 'Stamina',
+    bettergiGroupNamesUnknown: 'Unknown group',
+    bettergiGroupPrefixDefault: 'Default',
+    bettergiGroupSettingsLoadFailed: 'Failed to load config group settings',
+    bettergiGroupSettingsNone: 'This config group has no settings',
+    bettergiGroupSettingsSaveFailed: 'Failed to save config group settings',
+    bettergiGroupSettingsSaved: 'Config group settings saved',
+    bettergiGroupStamina: 'Stamina',
+    bettergiInQueue: 'In queue',
+    bettergiInputGroupNames: 'Enter config group names',
+    bettergiInputGroupNamesTip: 'Separate multiple names with line breaks or commas',
+    bettergiMultiDisable: 'Disable selected',
+    bettergiMultiEnable: 'Enable selected',
+    bettergiMultiRemove: 'Remove selected',
+    bettergiMultiRemoveContent: 'After removal, these config groups will no longer run with the one-dragon',
+    bettergiMultiRemoveTitle: 'Remove the selected config groups?',
+    bettergiMultiSelected: 'Selected {count}',
+    bettergiOpenBgi: 'Open BetterGI folder',
+    bettergiOpenOneDragonDir: 'Open one-dragon folder',
+    bettergiOpenScriptDir: 'Open script folder',
+    bettergiOpenScriptGroupDir: 'Open script group folder',
+    bettergiOpenScriptRepo: 'Open script repository',
+    bettergiOpenTaskDir: 'Open task folder',
+    bettergiPathingEmptyDir: 'Pathing folder is empty',
+    bettergiPathingEmptyTree: 'Pathing list is empty',
+    bettergiPathingSelectHint: 'Select a pathing to add',
+    bettergiPickCandidateFirst: 'Please select a candidate first',
+    bettergiProjectSaveFailed: 'Failed to save the project',
+    bettergiRemoveFromDragonContent: 'After removal, this config group will no longer run with the one-dragon',
+    bettergiRemoveFromDragonTitle: 'Remove this item from the one-dragon queue?',
+    bettergiRenameAsNew: 'Rename config group',
+    bettergiRenameDone: 'Renamed',
+    bettergiRenameOk: 'Rename',
+    bettergiRenamePlaceholder: 'Config group name',
+    bettergiRenameSource: 'Original name',
+    bettergiRenameTip: 'Change the display name of the selected config group',
+    bettergiRenameTitle: 'Rename config group',
+    bettergiScriptGroupEmptyDir: 'Script group folder is empty',
+    bettergiStrategyPickerTip: 'Select the one-dragon common battle strategy',
+    bettergiTabJsEmpty: 'No JS scripts',
+    bettergiTabJsScript: 'JS scripts',
+    bettergiTabPathing: 'Pathing',
+    bettergiTabScriptGroup: 'Script group',
+    bettergiDomainPickerClear: 'Clear',
+    bettergiDomainPickerClearAll: 'Clear all',
+    bettergiDomainPickerClearAllConfirm: 'Clear all selected domains?',
+    bettergiDomainPickerNone: 'No domains available',
+    bettergiDomainPickerOk: 'OK',
+    bettergiDomainPickerTitle: 'Domain picker',
+    bettergiGroupSettingsPlaceholder: 'Select',
+    bettergiGroupSettingsTitle: 'Config group settings',
+    bettergiGroupSettingsZoom: 'Zoom',
+    bettergiProjectAddScript: 'Add script',
+    bettergiProjectClearSelection: 'Clear selection',
+    bettergiProjectConfigTab: 'Script config',
+    bettergiProjectEmpty: 'No project',
+    bettergiProjectIndependentSaveLater: 'Saved independently later in the script group',
+    bettergiProjectListTip: 'Select a project to view and edit its config',
+    bettergiProjectLoadFailed: 'Failed to load project',
+    bettergiProjectMultiHint: 'Multiple projects selected',
+    bettergiProjectNoSettingsFile: 'No settings file',
+    bettergiProjectReadmeEmpty: 'README is empty',
+    bettergiProjectReadmeTab: 'README',
+    bettergiProjectRemoveConfirm: 'Remove this project?',
+    bettergiProjectRemoveScript: 'Remove script',
+    bettergiProjectRowTip: 'Click to view and edit',
+    bettergiProjectSaved: 'Project saved',
+    bettergiProjectSettingsSave: 'Save settings',
+    bettergiProjectToolbarTip: 'Drag cards to reorder projects',
+    bettergiProjectUnselect: 'Unselect',
+    bettergiProjectZoom: 'Zoom',
   },
   emulator: {
     title: 'Emulators',
@@ -1938,6 +2097,7 @@ export default {
     start: 'Start',
     stop: 'Stop',
     hide: 'Hide window',
+    openStore: 'Open game center',
     settings: 'Settings',
     settingsTitle: 'Instance settings',
     settingsHint:
@@ -2018,6 +2178,7 @@ export default {
       creating: 'Creating',
       deleting: 'Deleting',
       operating: 'Working',
+      openingStore: 'Opening',
     },
     configGuard: 'Config guard',
     guardTip:
@@ -2052,6 +2213,8 @@ export default {
       batchPartial: '{ok} succeeded, {fail} failed',
       batchFailed: 'Batch settings failed',
       operateFailed: 'The device operation failed',
+      storeOpened: 'Game center opened',
+      storeOpenFailed: 'Failed to open the game center',
       createOk: 'Instance created as device #{slot}',
       createFailed: 'Failed to create the instance',
       deleteOk: 'Instance deleted',
@@ -2415,12 +2578,8 @@ export default {
       networkFailed: 'Network request failed — check your connection',
     },
     quickStart: {
-      mockDaily: 'Queue — daily automation',
-      mockGeneral: 'Script — general check',
-      mockNightly: 'Queue — nightly batch',
-      listUnavailable: 'Task list unavailable — showing placeholders',
+      listUnavailable: 'Task list unavailable — reopen the dropdown to retry',
       selectTask: 'Pick a task first',
-      mockNotStartable: 'This is a placeholder task; it can start once the real task list loads',
       fallbackLabel: 'Home quick task',
       started: 'Task started',
       startedCount: 'Started {p0}/{p1} tasks',
@@ -2439,6 +2598,8 @@ export default {
       'First-time setup usually takes a few minutes. Feel free to do something else.',
     slowHint: 'This is slower than usual. Still waiting for the backend.',
     viewLog: 'Open the log',
+    transferSource: 'from {source}',
+    probeUnavailable: '{source} unavailable',
   },
   init: {
     failure: {
@@ -2763,6 +2924,7 @@ export default {
       created: 'New queue created — consider giving it a clearer name.',
       createFailed: 'Could not create the queue: {error}',
       addQueueFailed: 'Could not add the queue: {error}',
+      loadQueueFailed: 'Could not load the queue details',
       deleted: 'Queue deleted',
       deleteFailed: 'Could not delete the queue: {error}',
       saveFailed: 'Save failed',
@@ -2892,7 +3054,7 @@ export default {
       Okww: 'ok-script line: runs tasks through the -t/-e launch arguments',
       OkNte: 'Neverness to Everness OK-NTE automation, -t/-e task launch',
       HSR: 'Honkai: Star Rail — March7th / SRA dual-script support',
-      BetterGI: 'BetterGI · auto-pickup/story/fishing and more for Genshin',
+      BetterGI: 'Genshin OneDragon automation script (BetterGI)',
       ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance (account) management',
       General: 'Generic automation for any script that writes a log file',
     },
@@ -2992,7 +3154,7 @@ export default {
         Okww: 'Dedicated ok-script task runner',
         OkNte: 'Neverness to Everness OK-NTE automation',
         HSR: 'March7th / SRA dual-script support',
-        BetterGI: 'BetterGI · auto-pickup/story/fishing and more for Genshin',
+        BetterGI: 'Genshin OneDragon automation script (BetterGI)',
         ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance management',
       },
     },
@@ -3136,10 +3298,11 @@ export default {
     display: {
       section: 'Virtual display',
       intro:
-        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS attaches a virtual display only when there is no real display output at all, and removes it when the run finishes. You must install the Parsec virtual display driver yourself; MAS does not ship it.',
+        'When every real display output goes away, Windows keeps a placeholder phantom screen: it still reports a normal-looking resolution, but nothing is actually driving it, so game rendering and screen capture may both be unreliable. A cold boot with no output is worse still: Windows comes up at a very small resolution, the game window shrinks, and the game remembers that size. Once enabled, MAS keeps watching the desktop: it attaches a virtual display whenever there is no real display output at all, and removes it as soon as a real monitor comes back. If a run is in progress it waits for that run to finish first, so the screen is never pulled out from under a running script. {driverLink}; MAS does not ship it.',
+      introDriverLink: 'You must install the Parsec virtual display driver yourself',
       enable: 'Enable virtual display',
       enableTip:
-        'Only attaches one when no real display output is detected; nothing is added while a monitor works normally. It is removed when the run finishes, and if the program is force-killed, the leftover display is cleaned up on the next start.',
+        'Monitored continuously while MAS runs: attached when no real display output is detected, removed once a real monitor comes back (waiting for the current run to finish if one is in progress). Nothing is added while a monitor works normally. If the program is force-killed, the leftover display is cleaned up on the next start.',
       mode: 'Refresh rate',
       modeTip:
         'The resolution is fixed at 1920x1080 — it is the only one Windows shows at 100%, so the game window never goes through DPI scaling. Higher resolutions get scaled up automatically, which brings the problem back. A virtual display only runs scripts, so a high refresh rate buys nothing.',
@@ -3153,9 +3316,11 @@ export default {
       checkPassed: 'Check passed',
       checkIssue: 'Check did not pass',
       monitors: 'Monitors during the check',
-      download: 'Download the Parsec virtual display driver',
-      driverUnavailable: 'No usable virtual display driver detected ({reason}); the switch is unavailable',
-      enabledButUnavailable: 'The switch is on, but no usable driver is detected ({reason}); this feature will not take effect',
+      download: 'Download the Parsec virtual display driver (GitHub)',
+      driverUnavailable:
+        'No usable virtual display driver detected ({reason}); the switch is unavailable',
+      enabledButUnavailable:
+        'The switch is on, but no usable driver is detected ({reason}); this feature will not take effect',
       stage: {
         installed: 'Driver installed',
         openable: 'Driver reachable',

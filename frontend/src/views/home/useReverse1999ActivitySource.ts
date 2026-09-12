@@ -46,7 +46,10 @@ const parseTime = (value: unknown): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-const formatTime = (date: Date | null): string => (date ? date.toISOString().slice(0, 19) : '')
+// 必须保留 toISOString() 末尾的 Z：切成裸 ISO 串后，消费端的 new Date(value) 会按
+// 本机时区解析，倒计时与「已结束」判定整体提前一个时区偏移量（东八区提前 8 小时）。
+// 被 #497 删掉的后端接口输出的也是带 +08:00 偏移的时间。
+const formatTime = (date: Date | null): string => (date ? date.toISOString() : '')
 
 /** 复刻后端的版本选择：进行中 > 即将开始 > 已结束 */
 const selectVersion = (data: Record<string, RawVersion>): RawVersion | null => {
@@ -191,13 +194,48 @@ export const useReverse1999ActivitySource = () => {
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1
-        retryTimer = window.setTimeout(() => {
-          retryTimer = null
-          void load()
-        }, RETRY_DELAY_MS)
+        if (active) {
+          scheduleRetry()
+        } else {
+          // 模块隐藏期间不重试，重新可见时补一次
+          retryPending = true
+        }
       }
     } finally {
       if (!disposed) loading.value = false
+    }
+  }
+
+  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
+  let active = false
+  let started = false
+  let retryPending = false
+
+  const scheduleRetry = () => {
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null
+      void load()
+    }, RETRY_DELAY_MS)
+  }
+
+  const start = () => {
+    if (disposed) return
+    active = true
+    if (!started) {
+      started = true
+      void load()
+    } else if (retryPending) {
+      retryPending = false
+      void load()
+    }
+  }
+
+  const stop = () => {
+    active = false
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+      retryPending = true
     }
   }
 
@@ -209,11 +247,11 @@ export const useReverse1999ActivitySource = () => {
     }
   })
 
-  void load()
-
   return {
     overview,
     loading,
+    start,
+    stop,
     refresh: () => {
       retryCount = 0
       void load()

@@ -660,6 +660,7 @@ def format_community_sign_results(
                 "status": item.get("status", "失败"),
                 "reward": item.get("reward", ""),
                 "reason": item.get("reason", ""),
+                "details": item.get("details", []),
             }
         )
 

@@ -233,7 +233,40 @@ export interface BootstrapProgressUpdate {
   message: string
   /** Runtime 没有可靠总量时为 true，界面改用持续活动进度而不是展示伪百分比。 */
   indeterminate?: boolean
+  /**
+   * 产生本条更新的 Runtime stage 原文（`network.probe` / `uv.download` …）。
+   *
+   * 界面段只有三段，分不出「测速」和「下载」；渲染层按这个稳定字段决定把下面的
+   * 网络细节画成测速列表还是文件进度，不解析 `message` 文案。桥接自己合成的更新
+   * （接管段、段收口、失败）没有这个字段。
+   */
+  runtimeStage?: string
+  /** 产生本条更新的 `progress.status` 原文；state 事件与桥接合成的更新没有。 */
+  runtimeStatus?: string
+  /** 当前条目：正在下载的文件名，或测速时的源 key。 */
+  item?: string
+  /** 当前字节来自哪个源的 key。 */
+  source?: string
+  /** 最近 1 秒窗口的吞吐（字节/秒）；测速时 `0` 表示探测失败、缺失表示只测了首字节。 */
+  bytesPerSecond?: number
+  /** 已下载字节数；只有下载类 stage 给，测速的「已完成源数」不透传。 */
+  current?: number
+  /** 总字节数；同上。 */
+  total?: number
 }
+
+/** `observe` 的第四个参数：progress 事件上除 stage / message / percent 之外的可选字段。 */
+export interface BootstrapProgressDetail {
+  status?: string
+  current?: number
+  total?: number
+  item?: string
+  source?: string
+  bytesPerSecond?: number
+}
+
+/** 下载前测速的 stage：它的 `current` / `total` 是源数不是字节，不能推进主进度条。 */
+export const NETWORK_PROBE_STAGE = 'network.probe'
 
 /** bootstrap 实际经过的三个界面段，按现有界面的固定先后顺序排列。 */
 export const RUNTIME_BOOTSTRAP_STAGE_ORDER: readonly InitializationRunStage[] = [
@@ -267,6 +300,11 @@ const STAGE_STARTED_PROGRESS = 10
  * 里装着好几个 Runtime stage（`uv.download` 之后还有校验、解压、`python.*`），段没结束就
  * 不能让渲染层看到 100，所以 running 的百分比钳在 [10, 99]，100 只由段收口发出。段内进度
  * 还要单调：镜像轮换会让下载从 0 重来，后续无 percent 的事件也不能把数字压回段起始值。
+ *
+ * M14 起下载类 stage 带真实字节 `current` / `total`：换文件时 `current` 不会倒退，但分母
+ * `total` 可能在中途增大（依赖同步边解析边下载），所以百分比按 `current / total` 现算，
+ * 再走同一套单调钳位——数字最多停一会儿，不会倒退。`network.probe` 的 `current` / `total`
+ * 是源数不是字节，只把源 key 与实测速度透传给渲染层，不推进主进度条。
  */
 export class BootstrapProgressBridge {
   private index = -1
@@ -294,9 +332,30 @@ export class BootstrapProgressBridge {
     }
   }
 
-  /** 消费一条 Runtime 事件。 */
-  observe(stage: RuntimeStage, message: string, percent?: number): void {
+  /**
+   * 消费一条 Runtime 事件。
+   *
+   * `detail` 只有 progress 事件才有；state 事件只有 stage 与 message。
+   */
+  observe(
+    stage: RuntimeStage,
+    message: string,
+    rawPercent?: number,
+    detail: BootstrapProgressDetail = {}
+  ): void {
     if (this.closed) return
+
+    const probing = stage === NETWORK_PROBE_STAGE
+    const percent = probing ? undefined : resolveProgressPercent(rawPercent, detail)
+    const extra: Partial<BootstrapProgressUpdate> = {
+      runtimeStage: stage,
+      runtimeStatus: detail.status,
+      item: detail.item,
+      source: detail.source,
+      bytesPerSecond: detail.bytesPerSecond,
+      current: probing ? undefined : detail.current,
+      total: probing ? undefined : detail.total,
+    }
 
     const mapped = mapRuntimeStage(stage)
     const wanted = RUNTIME_BOOTSTRAP_STAGE_ORDER.indexOf(mapped)
@@ -316,6 +375,7 @@ export class BootstrapProgressBridge {
         progress: this.stageProgress,
         message,
         indeterminate: percent === undefined,
+        ...extra,
       })
       return
     }
@@ -329,6 +389,7 @@ export class BootstrapProgressBridge {
       progress: this.stageProgress,
       message,
       indeterminate: percent === undefined,
+      ...extra,
     })
   }
 
@@ -367,6 +428,23 @@ export class BootstrapProgressBridge {
   }
 }
 
+/**
+ * 有真实字节时按 `current / total` 现算百分比，否则用 Runtime 给的 `percent`。
+ *
+ * 分母中途增大时算出的数会比上一条小，交给调用方的单调钳位兜住；`total` 为 0 或缺失时
+ * 字节数没有分母，退回 `percent`。
+ */
+export function resolveProgressPercent(
+  percent: number | undefined,
+  detail: Pick<BootstrapProgressDetail, 'current' | 'total'>
+): number | undefined {
+  const { current, total } = detail
+  if (current !== undefined && total !== undefined && total > 0) {
+    return (Math.min(current, total) / total) * 100
+  }
+  return percent
+}
+
 /** running 途中的百分比钳在 [段起始值, 99]：100 留给段收口，避免段内多个 stage 提前显示完成。 */
 function clampRunningPercent(percent: number): number {
   if (!Number.isFinite(percent)) return STAGE_STARTED_PROGRESS
@@ -403,6 +481,49 @@ export interface RuntimeStageOutcome {
 export function readRuntimeLogPath(details: Record<string, unknown>): string | undefined {
   const logPath = details.logPath
   return typeof logPath === 'string' && logPath.length > 0 ? logPath : undefined
+}
+
+/** `describeRuntimeFailureDetails` 序列化后的长度上限，超出截断。 */
+const MAX_FAILURE_DETAIL_CHARS = 1000
+
+/**
+ * 已由别处单独取用、不重复进失败日志那一行的 details 键。
+ *
+ * `logPath` 走 `readRuntimeLogPath`，`stderr` 已经并进 `logs`，`checks` 是 doctor 的
+ * 整份体检结果（自己有专门的展示路径，塞进一行日志只会把它冲掉）。
+ */
+const REDUNDANT_FAILURE_DETAIL_KEYS = new Set(['logPath', 'stderr', 'checks'])
+
+/**
+ * 把失败 result 的 `details` 压成一行日志后缀。
+ *
+ * 定位失败真正需要的东西 Runtime 全放在这里，而此前只打 code + message：
+ * `UPDATE_STATE_AMBIGUOUS` 在 Runtime 侧有二十来个抛出点，只有 `details.reason` 分得出
+ * 是 `environment_unreadable` 还是 `prepared_update_missing`；镜像轮换失败也只有
+ * `details.attempts` 说得出是哪个源、因为什么挂的。真机日志里这些一条都看不到，
+ * 用户把日志发来也无从下手。
+ *
+ * 返回值带前导分隔符，可直接拼在消息后面；没有可打的内容时返回空串。
+ */
+export function describeRuntimeFailureDetails(details: Record<string, unknown>): string {
+  const kept: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(details)) {
+    if (REDUNDANT_FAILURE_DETAIL_KEYS.has(key) || value === undefined) continue
+    kept[key] = value
+  }
+  if (Object.keys(kept).length === 0) return ''
+
+  let text: string
+  try {
+    text = JSON.stringify(kept)
+  } catch {
+    // details 来自 NDJSON，正常情况下一定可序列化；真出了环引用也不该把失败日志本身搞挂。
+    return ' details=<无法序列化>'
+  }
+  if (text.length > MAX_FAILURE_DETAIL_CHARS) {
+    text = `${text.slice(0, MAX_FAILURE_DETAIL_CHARS)}…(已截断)`
+  }
+  return ` details=${text}`
 }
 
 /** 可注入的客户端工厂，便于单元测试替换掉真实子进程。 */
@@ -662,7 +783,15 @@ export class RuntimeInitializationService {
         onStarted: control => {
           this.activeControl = control
         },
-        onProgress: event => bridge.observe(event.stage, event.message, event.percent),
+        onProgress: event =>
+          bridge.observe(event.stage, event.message, event.percent, {
+            status: event.status,
+            current: event.current,
+            total: event.total,
+            item: event.item,
+            source: event.source,
+            bytesPerSecond: event.bytesPerSecond,
+          }),
         onState: event => bridge.observe(event.stage, event.message),
         onLog: event => {
           if (event.stream === 'stderr') {
@@ -713,7 +842,9 @@ export class RuntimeInitializationService {
     this.lastRemediation.set(failedStage, remediation)
 
     const message = outcome.result.message || `Runtime 命令失败（${outcome.code}）`
-    logger.error(`Runtime 命令失败: ${outcome.code} ${message}`)
+    logger.error(
+      `Runtime 命令失败: ${outcome.code} ${message}${describeRuntimeFailureDetails(outcome.result.details)}`
+    )
     return {
       success: false,
       error: message,

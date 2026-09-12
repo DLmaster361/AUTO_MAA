@@ -1,6 +1,6 @@
 # 专项适配 · 代码规范（必遵守）
 
-新增或维护 `ScriptType` 时按表实现，**不要**依赖事后排查叙事。Okww 专项增量见 [examples-okww.md](./examples-okww.md#实现规范okww-必遵守)。
+新增或维护 `ScriptType` 时按表实现，**不要**依赖事后排查叙事。动手前先读 [黑箱边界](./blackbox-boundary.md)：推进顺序为「先降门槛、再补缺位」，能力归属决定哪些功能不得由 MAS 实现。Okww 专项增量见 [examples-okww.md](./examples-okww.md#实现规范okww-必遵守)。
 
 ## 1. 注册与 API
 
@@ -259,6 +259,8 @@ else:
 
 ## 10. 提交前自检
 
+- [ ] 门槛优先：本次改动消除了用户当前哪一步手工操作？（答不出即不立项）
+- [ ] 能力归属已判定：未实现上游领域能力，未在上游私有格式之上建模型、映射表或自造判定信号
 - [ ] hasattr() 消除：所有属性在 `__init__` 显式初始化
 - [ ] 原子化 I/O：配置写入用 tmp+rename
 - [ ] DRY：`final_task` / `on_crash` 共用逻辑已提取

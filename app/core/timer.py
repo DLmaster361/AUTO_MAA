@@ -45,16 +45,6 @@ class _MainTimer:
         self.hour_timer: asyncio.Task[None] | None = None
         self.community_sign_task: asyncio.Task | None = None
 
-    @property
-    def game_sign_task(self) -> asyncio.Task | None:
-        """兼容旧调用方，返回社区签到后台任务。"""
-
-        return self.community_sign_task
-
-    @game_sign_task.setter
-    def game_sign_task(self, task: asyncio.Task | None) -> None:
-        self.community_sign_task = task
-
     async def start(self):
         """启动定时器"""
 
@@ -195,11 +185,6 @@ class _MainTimer:
         self.community_sign_task = task
         task.add_done_callback(self._on_community_sign_done)
 
-    def schedule_game_sign_for_startup(self) -> None:
-        """兼容旧调用方，转发到社区签到启动入口。"""
-
-        self.schedule_community_for_startup()
-
     def _on_community_sign_done(self, task: asyncio.Task) -> None:
         """清理社区签到任务并记录未处理异常。"""
 
@@ -211,12 +196,7 @@ class _MainTimer:
         try:
             task.result()
         except Exception as e:
-            logger.error("游戏社区签到后台任务异常", exc_info=e)
-
-    def _on_game_sign_check_done(self, task: asyncio.Task) -> None:
-        """兼容旧调用方，转发到社区签到完成回调。"""
-
-        self._on_community_sign_done(task)
+            logger.opt(exception=e).error("游戏社区签到后台任务异常")
 
     async def _execute_community_sign(
         self, *, source: CommunityTriggerSource = "scheduled"
@@ -310,13 +290,6 @@ class _MainTimer:
             return []
 
         return await self._execute_community_sign(source=source)
-
-    async def try_game_sign_for_task(
-        self, *, source: CommunityTriggerSource | None = None
-    ) -> list[dict[str, object]]:
-        """兼容旧调用方，转发到社区签到任务入口。"""
-
-        return await self.try_community_for_task(source=source)
 
 
 MainTimer = _MainTimer()

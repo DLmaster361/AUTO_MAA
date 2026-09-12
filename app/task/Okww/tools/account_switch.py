@@ -446,21 +446,24 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
+    items_full: list[OCRItem] = []
+    on_login_page = False
     iter_count = 0
     while time.monotonic() < deadline:
         frame = _capture_window(hwnd, activate=False)
-        items_full = ocr_image(frame)
-        if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
-            _dump_ocr_items(items_full)
-        if (
-            _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
-            or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None
-        ):
-            return
         sig = _frame_signature(frame)
         if sig != last_sig:
+            # 画面有变化才跑 OCR；帧哈希未变时沿用上次识别结果
+            items_full = ocr_image(frame)
+            on_login_page = (
+                _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
+            )
             last_sig = sig
             last_progress = time.monotonic()
+        if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
+            _dump_ocr_items(items_full)
+        if on_login_page or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None:
+            return
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:

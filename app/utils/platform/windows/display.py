@@ -22,7 +22,6 @@ QDC_ONLY_ACTIVE_PATHS = 0x00000002
 # 之后变成 0x01(IN_USE)，拆掉又回到 0x11。
 DISPLAYCONFIG_TARGET_FORCED_AVAILABILITY_SYSTEM = 0x00000010
 DISPLAY_DEVICE_ATTACHED_TO_DESKTOP = 0x00000001
-MONITOR_DEFAULTTONEAREST = 0x00000002
 MDT_EFFECTIVE_DPI = 0
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
 # 普通可调整大小的窗口。用它换算「客户区 -> 窗口外框」的非客户区开销。
@@ -423,7 +422,7 @@ def _adapters_have_monitor_child() -> bool | None:
 
 
 def real_display_devices() -> set[str]:
-    """当前**有真实输出**的显示设备名集合（`\\.\DISPLAYn`）。
+    r"""当前**有真实输出**的显示设备名集合（`\\.\DISPLAYn`）。
 
     幻影屏不算：它同样挂在桌面上、同样有设备名，但没有 monitor 子设备。这个区别很重要
     ——无头时挂上虚拟屏，Windows 会**复用同一个设备名**（幻影屏是被替换而不是并存），

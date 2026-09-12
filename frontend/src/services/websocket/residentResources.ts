@@ -25,7 +25,3 @@ export function bootstrapResidentResources(): void {
 export function disposeResidentResources(): void {
   for (const resource of [...resources.values()].reverse()) resource.dispose()
 }
-
-export function residentResourceCount(): number {
-  return resources.size
-}

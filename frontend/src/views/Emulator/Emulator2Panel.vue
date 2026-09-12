@@ -10,6 +10,7 @@ import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
+  AppstoreOutlined,
   DeleteOutlined,
   LoadingOutlined,
   EyeInvisibleOutlined,
@@ -21,6 +22,7 @@ import {
 } from '@ant-design/icons-vue'
 
 import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
+import { usePerformanceStore } from '@/stores/performance'
 import type {
   Emulator2AffectedScript,
   Emulator2BatchResult,
@@ -34,6 +36,7 @@ const props = defineProps<{ emulatorId: string }>()
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('Emulator2')
+const performanceStore = usePerformanceStore()
 
 const loading = ref(false)
 const paths = ref<Emulator2PathItem[]>([])
@@ -509,7 +512,7 @@ const confirmBatch = async () => {
  * 新建和删除都要跑好几秒（雷电删完还得复核一次自动重建），期间那一行必须锁住并
  * 显示在干什么，否则用户会以为没反应而重复点。
  */
-type RowBusy = 'creating' | 'deleting' | 'operating'
+type RowBusy = 'creating' | 'deleting' | 'operating' | 'openingStore'
 const rowBusy = ref<Map<string, RowBusy>>(new Map())
 
 const setBusy = (slot: string, what: RowBusy | null) => {
@@ -550,6 +553,33 @@ const operate = async (device: Emulator2DeviceItem, action: EmulatorOperateIn.op
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`操作设备 #${device.slot} 失败: ${detail}`)
     message.error(t('emulator2.toast.operateFailed'))
+  } finally {
+    setBusy(device.slot, null)
+  }
+}
+
+// 雷电开了纯净模式之后 launcher 会把游戏中心从桌面藏掉，这是用户唯一的图形入口。
+// 拉不起来后端回 ok=false 加一句说明（不是接口错误），照原话提示即可。
+const openStore = async (device: Emulator2DeviceItem) => {
+  setBusy(device.slot, 'openingStore')
+  try {
+    const response = await Emulator20Service.openStoreApiEmulator2InstancesStoreOpenPost({
+      emulatorId: props.emulatorId,
+      slot: device.slot,
+    })
+    if (response.code !== 200) {
+      message.error(response.message)
+      return
+    }
+    if (!response.ok) {
+      message.warning(response.message)
+      return
+    }
+    message.success(t('emulator2.toast.storeOpened'))
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    logger.error(`打开设备 #${device.slot} 的游戏中心失败: ${detail}`)
+    message.error(t('emulator2.toast.storeOpenFailed'))
   } finally {
     setBusy(device.slot, null)
   }
@@ -703,19 +733,44 @@ watch(
 const AUTO_REFRESH_MS = 15000
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-onMounted(() => {
-  loadDevices()
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+const startAutoRefresh = () => {
+  stopAutoRefresh()
   refreshTimer = setInterval(() => {
     // 有行正在增删时不打扰：那会儿列表正被我们自己改
     if (!loading.value && !rowBusy.value.size && !pendingRows.value.length) {
       loadDevices({ silent: true })
     }
   }, AUTO_REFRESH_MS)
+}
+
+// 窗口进后台时停掉轮询，回到前台立即拉一次再继续
+watch(
+  () => performanceStore.isBackgrounded,
+  backgrounded => {
+    if (backgrounded) {
+      stopAutoRefresh()
+    } else {
+      loadDevices({ silent: true })
+      startAutoRefresh()
+    }
+  }
+)
+
+onMounted(() => {
+  loadDevices()
+  if (!performanceStore.isBackgrounded) {
+    startAutoRefresh()
+  }
 })
 
-onUnmounted(() => {
-  if (refreshTimer) clearInterval(refreshTimer)
-})
+onUnmounted(stopAutoRefresh)
 
 defineExpose({ reload: loadDevices, applyStableMode, captureBaselines, openPaths })
 </script>
@@ -874,6 +929,16 @@ defineExpose({ reload: loadDevices, applyStableMode, captureBaselines, openPaths
                   :loading="rowBusy.get(record.slot) === 'operating'"
                   :disabled="isBusy(record.slot) || !isOnline(record)"
                   @click="operate(record, EmulatorOperateIn.operate.SHOW)"
+                />
+              </a-tooltip>
+              <a-tooltip :title="t('emulator2.openStore')">
+                <a-button
+                  size="small"
+                  type="text"
+                  :icon="h(AppstoreOutlined)"
+                  :loading="rowBusy.get(record.slot) === 'openingStore'"
+                  :disabled="isBusy(record.slot) || !isOnline(record)"
+                  @click="openStore(record)"
                 />
               </a-tooltip>
               <a-tooltip

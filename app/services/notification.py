@@ -46,6 +46,7 @@ logger = get_logger("通知服务")
 Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
+DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
 
 # Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
 # UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
@@ -78,6 +79,47 @@ def clip_notify_text(text: str, limit: int) -> str:
     clipped = encoded[: (limit - 1) * 2].decode("utf-16-le", errors="ignore")
 
     return f"{clipped}…"
+
+
+def webhook_body_failure(text: str, url: str = "") -> str | None:
+    """从 HTTP 2xx 的响应体里识别机器人平台的业务失败。
+
+    钉钉、企业微信自定义机器人被关键词/签名校验拦下、飞书 token 无效、OneBot
+    动作失败时都回 200，只在 JSON 里写 ``errcode`` / ``code`` / ``status``；
+    只看状态码会把这些记成「推送成功」，用户以为通知没发。识别出失败时返回
+    平台给的原因，正常或看不懂的响应返回 None。
+    """
+
+    if not text:
+        return None
+    try:
+        body = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+
+    def _reason(*keys: str) -> str:
+        for key in keys:
+            value = body.get(key)
+            if value:
+                return str(value)
+        return text[:200]
+
+    # 钉钉 / 企业微信：成功一律 errcode 0。
+    errcode = body.get("errcode")
+    if isinstance(errcode, int) and not isinstance(errcode, bool) and errcode != 0:
+        return f"errcode={errcode} {_reason('errmsg', 'msg')}"
+    # OneBot v11：status 为 failed 才算失败，retcode 只是补充。
+    if str(body.get("status", "")).lower() == "failed":
+        return f"retcode={body.get('retcode')} {_reason('msg', 'message', 'wording')}"
+    # 飞书：只在飞书域名下解读 code，别的服务常拿 code=200 当成功。
+    host = (urlparse(url).hostname or "").lower()
+    if host.endswith(("feishu.cn", "larksuite.com")):
+        code = body.get("code")
+        if isinstance(code, int) and not isinstance(code, bool) and code != 0:
+            return f"code={code} {_reason('msg', 'message')}"
+    return None
 
 
 def _webhook_client_kwargs(url: str) -> dict:
@@ -311,10 +353,7 @@ class Notification:
             raise ValueError("Webhook URL 不能为空")
 
         # 解析模板
-        template = (
-            webhook.get("Data", "Template")
-            or '{"title": "{title}", "content": "{content}"}'
-        )
+        template = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
 
         # 替换模板变量
         try:
@@ -346,8 +385,7 @@ class Notification:
                             not image_base64
                             and obj.get("type") == "image"
                             and isinstance(obj.get("data"), dict)
-                            and obj["data"].get("file")
-                            == "base64://{image_base64}"
+                            and obj["data"].get("file") == "base64://{image_base64}"
                         ):
                             return {
                                 "type": "text",
@@ -422,14 +460,16 @@ class Notification:
                 response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
-        if response.status_code == 200:
-            logger.success(
-                f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
-            )
-        else:
+        if not response.is_success:
             raise Exception(
                 f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}: {response.text}"
             )
+        failure = webhook_body_failure(response.text, url)
+        if failure is not None:
+            raise Exception(f"[{webhook.get('Info', 'Name')}] 服务端拒绝: {failure}")
+        logger.success(
+            f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
+        )
 
     async def send_koishi(
         self,

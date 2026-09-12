@@ -160,6 +160,21 @@ def is_package_missing(pm_path_output: str) -> bool:
     return not (pm_path_output or "").strip()
 
 
+def is_package_present(pm_path_output: str) -> bool:
+    """从 ``pm path <包名>`` 的输出里判断这个包是否**确定装了**。
+
+    与 :func:`is_package_missing` 不是互补的：设备掉线时 adb 打印
+    ``adb.exe: device 'emulator-5562' not found``——既不是「空」也不是「装了」。
+    2026-09-12 生产实测就栽在这里：拿「非空」当「装了」，把所有**关着的**雷电实例
+    都判成了 MuMu，缓存 30 秒后实例启动时 ADB 地址被清空、MAA 直接报连接异常。
+    只有真正的 ``package:`` 行才算装了。
+    """
+    return any(
+        line.strip().startswith("package:")
+        for line in (pm_path_output or "").splitlines()
+    )
+
+
 def parse_launch_component(resolve_output: str, package_name: str) -> str | None:
     """从 ``cmd package resolve-activity --brief <包名>`` 的输出里取启动组件。
 

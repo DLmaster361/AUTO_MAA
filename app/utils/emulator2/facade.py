@@ -258,6 +258,15 @@ class Emulator2Manager(DeviceBase):
         manager, native_index = await self._dispatch(idx)
         return await manager.launch_app(native_index, package_name)
 
+    async def open_store(self, idx: str) -> AppLaunchResult:
+        """打开设备所属模拟器自带的游戏中心，不重开模拟器。
+
+        包名由后端自己决定（雷电 ``com.android.flysilkworm``、MuMu ``com.mumu.store``），
+        这里只负责按设备号找到后端。拉不起来返回 ``ok=False``，不抛异常。
+        """
+        manager, native_index = await self._dispatch(idx)
+        return await manager.open_store(native_index)
+
     async def close(self, idx: str) -> DeviceStatus:
         manager, native_index = await self._dispatch(idx)
         status = await manager.close(native_index)

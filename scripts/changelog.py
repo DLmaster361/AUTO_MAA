@@ -892,11 +892,17 @@ def check_pull_request(
         current_version, _, _ = parse_changelog(read_text(root / "CHANGELOG.md"))
         base_text = show_file(base, "CHANGELOG.md", root)
         if base_text:
+            # 过渡期目标分支顶部可能已经手工预留了同号的「未发布」段，所以只要求不倒退
             base_version, _, _ = parse_changelog(base_text)
-            if version_key(current_version) <= version_key(base_version):  # type: ignore[operator]
+            if version_key(current_version) < version_key(base_version):  # type: ignore[operator]
                 problems.append(
-                    f"发版 PR 的版本号 {current_version} 没有比 {base} 上的 {base_version} 更新"
+                    f"发版 PR 的版本号 {current_version} 比 {base} 上的 {base_version} 还旧"
                 )
+        latest = latest_version(reachable_tags("HEAD", root))
+        if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
+            problems.append(
+                f"发版 PR 的版本号 {current_version} 没有比最新 tag {latest} 新"
+            )
         return problems
 
     # normal

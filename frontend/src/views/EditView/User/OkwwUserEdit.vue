@@ -361,6 +361,7 @@ import { Service, type OkwwUserConfig } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_TASK_COMPLETED,
@@ -388,7 +389,8 @@ const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const okwwConfigLoading = ref(false)
 const okwwSubscriptionIds = ref<string[]>([])
 const okwwTaskId = ref<string | null>(null)
@@ -606,29 +608,28 @@ const createUserImmediately = async (): Promise<boolean> => {
 }
 
 const saveField = async (key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value || !userId.value) return
+  if (isInitializing.value || !userId.value) return
 
-  isSaving.value = true
-  try {
-    const parts = key.split('.')
-    const patch: Record<string, any> = {}
-    let current = patch
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
-
-    if (key === 'Info.Name') {
-      formData.userName = String(value || '')
-    }
-
-    await updateUser(scriptId, userId.value, patch)
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    isSaving.value = false
+  const parts = key.split('.')
+  const patch: Record<string, any> = {}
+  let current = patch
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    current[parts[i]] = {}
+    current = current[parts[i]]
   }
+  current[parts[parts.length - 1]] = value
+
+  if (key === 'Info.Name') {
+    formData.userName = String(value || '')
+  }
+
+  await enqueue(async () => {
+    try {
+      await updateUser(scriptId, userId.value, patch)
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e))
+    }
+  }, key)
 }
 
 const saveTaskConfig = async () => {

@@ -460,6 +460,7 @@ import {
 } from '@ant-design/icons-vue'
 import { Service, TaskCreateIn } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -482,7 +483,8 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
 const isDiscoveringOkww = ref(false)
 const isDiscoveringGame = ref(false)
@@ -637,10 +639,31 @@ const handleCheckUpdate = async () => {
     updateModal.users = users
     updateModal.selectedUserId = users[0].uid
     updateModal.log = ''
+    updateLogSeq = null
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error(t('edit.couldNotLoadUser'))
+  }
+}
+
+// 任务日志增量协议：append 为假 → 整体替换并记 seq；append 为真且 seq 连续 → 追加；
+// 否则视为失步：本地 seq 置空、保留已有内容并追加。缓冲上限 200,000 字符，丢头留尾。
+const UPDATE_LOG_MAX_CHARS = 200_000
+let updateLogSeq: number | null = null
+const applyUpdateLog = (data: { log: string; seq?: number; append?: boolean }) => {
+  if (!data.append) {
+    updateModal.log = data.log
+    updateLogSeq = data.seq ?? null
+  } else if (updateLogSeq !== null && data.seq === updateLogSeq + 1) {
+    updateModal.log += data.log
+    updateLogSeq = data.seq
+  } else {
+    updateLogSeq = null
+    updateModal.log += data.log
+  }
+  if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
+    updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
   }
 }
 
@@ -659,8 +682,9 @@ const startUpdate = async () => {
     updateSession.taskId = response.taskId
     updateSession.subscriptionIds = [
       subscribe({ id: response.taskId, type: WS_TASK_LOG_UPDATED }, wsMessage => {
-        const data = wsMessage.data as unknown as WSTaskLogUpdatedData
-        updateModal.log = data.log
+        applyUpdateLog(
+          wsMessage.data as unknown as WSTaskLogUpdatedData & { seq?: number; append?: boolean }
+        )
       }),
       subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
         const data = wsMessage.data as unknown as WSTaskNoticeData
@@ -722,20 +746,19 @@ const openCandidateModal = (kind: DiscoveryKind, candidates: PathDiscoveryCandid
 const handleCancel = () => router.push('/scripts')
 
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      logger.error(msg)
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    logger.error(msg)
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const validateGamePath = async (launcherPath: string) => {
@@ -775,23 +798,22 @@ const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww �
   const previousPath = okwwConfig.Info.RootPath
   okwwConfig.Info.RootPath = norm
 
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
-      Info: { RootPath: norm },
-    })
-    if (success) {
-      message.success(successMessage)
-      return true
+  return enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, {
+        Info: { RootPath: norm },
+      })
+      if (success) {
+        message.success(successMessage)
+        return true
+      }
+      okwwConfig.Info.RootPath = previousPath
+      return false
+    } catch (error) {
+      okwwConfig.Info.RootPath = previousPath
+      throw error
     }
-    okwwConfig.Info.RootPath = previousPath
-    return false
-  } catch (error) {
-    okwwConfig.Info.RootPath = previousPath
-    throw error
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const saveGamePath = async (launcherPath: string, successMessage: string) => {
@@ -799,25 +821,24 @@ const saveGamePath = async (launcherPath: string, successMessage: string) => {
   if (!(await validateGamePath(normalized))) return false
   const previousPath = okwwConfig.Game.Path
   okwwConfig.Game.Path = normalized
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
-      Game: { Path: normalized },
-    })
-    if (success) {
-      message.success(successMessage)
-      return true
+  return enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, {
+        Game: { Path: normalized },
+      })
+      if (success) {
+        message.success(successMessage)
+        return true
+      }
+      okwwConfig.Game.Path = previousPath
+      await validateGamePath(previousPath)
+      return false
+    } catch (error) {
+      okwwConfig.Game.Path = previousPath
+      await validateGamePath(previousPath)
+      throw error
     }
-    okwwConfig.Game.Path = previousPath
-    await validateGamePath(previousPath)
-    return false
-  } catch (error) {
-    okwwConfig.Game.Path = previousPath
-    await validateGamePath(previousPath)
-    throw error
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const loadScript = async () => {

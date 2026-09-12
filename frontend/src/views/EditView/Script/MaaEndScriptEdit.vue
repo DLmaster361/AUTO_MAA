@@ -427,6 +427,7 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_TASK_COMPLETED,
@@ -455,7 +456,8 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const maaEndOptionsLoading = ref(false)
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
@@ -537,19 +539,15 @@ const showManualEmulatorIndexInput = computed(
 )
 
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
 
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
-      [category]: { [key]: value },
-    })
-    if (success) {
-      await refreshScript()
-    }
-  } finally {
-    isSaving.value = false
-  }
+  await enqueue(
+    () =>
+      updateScript(scriptId, {
+        [category]: { [key]: value },
+      }),
+    `${category}.${key}`
+  )
 }
 
 const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
@@ -636,38 +634,36 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
   const protocol = controllerProtocols.value[value]
   if (!protocol) return
 
-  isSaving.value = true
-  try {
-    const gamePayload =
-      protocol === 'Adb'
-        ? {
-            ControllerType: value,
-            Path: '',
-            Arguments: '',
-            WaitTime: 60,
-          }
-        : {
-            ControllerType: value,
-            EmulatorId: '',
-            EmulatorIndex: '',
-          }
+  const gamePayload =
+    protocol === 'Adb'
+      ? {
+          ControllerType: value,
+          Path: '',
+          Arguments: '',
+          WaitTime: 60,
+        }
+      : {
+          ControllerType: value,
+          EmulatorId: '',
+          EmulatorIndex: '',
+        }
 
-    if (protocol !== 'Adb') {
-      clearEmulatorDeviceOptions()
-      maaEndConfig.Game.EmulatorId = ''
-      maaEndConfig.Game.EmulatorIndex = ''
-    } else {
-      maaEndConfig.Game.Path = ''
-      maaEndConfig.Game.Arguments = ''
-    }
+  if (protocol !== 'Adb') {
+    clearEmulatorDeviceOptions()
+    maaEndConfig.Game.EmulatorId = ''
+    maaEndConfig.Game.EmulatorIndex = ''
+  } else {
+    maaEndConfig.Game.Path = ''
+    maaEndConfig.Game.Arguments = ''
+  }
 
+  // 一次写回多个 Game 字段（含本地未同步的 WaitTime），成功后整份拉回保持一致
+  await enqueue(async () => {
     const success = await updateScript(scriptId, { Game: gamePayload })
     if (success) {
       await refreshScript()
     }
-  } finally {
-    isSaving.value = false
-  }
+  })
 
   if (protocol === 'Adb') {
     await loadEmulatorOptions()
@@ -682,20 +678,14 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
+  await enqueue(() =>
+    updateScript(scriptId, {
       Game: {
         EmulatorId: emulatorId,
         EmulatorIndex: '',
       },
     })
-    if (success) {
-      await refreshScript()
-    }
-  } finally {
-    isSaving.value = false
-  }
+  )
 }
 
 const selectMaaEndPath = async () => {
@@ -806,9 +796,9 @@ const handleCancel = () => {
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadMaaEndOptions()
-  await loadEmulatorOptions()
+  // MaaEnd 选项的默认控制器要看脚本里已有的 ControllerType, 必须排在 loadScript 之后;
+  // 模拟器列表与二者无关, 并行发出
+  await Promise.all([loadScript().then(loadMaaEndOptions), loadEmulatorOptions()])
   isInitializing.value = false
 })
 

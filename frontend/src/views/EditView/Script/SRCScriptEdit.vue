@@ -283,6 +283,7 @@ import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
@@ -308,7 +309,8 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formData = reactive({
   name: '',
@@ -353,44 +355,27 @@ const emulatorOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+  if (isInitializing.value) return
 
-  isSaving.value = true
-  try {
-    // 构建只包含单个修改字段的更新数据（遵循最小原则）
-    const updateData: any = { [category]: { [key]: value } }
+  await enqueue(async () => {
+    try {
+      // 构建只包含单个修改字段的更新数据（遵循最小原则）
+      const updateData: any = { [category]: { [key]: value } }
 
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-      // 保存成功后刷新数据
-      await refreshScript()
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-}
-
-// 刷新脚本配置
-const refreshScript = async () => {
-  try {
-    const scriptDetail = await getScript(scriptId)
-    if (scriptDetail) {
-      Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
-      formData.name = scriptDetail.name
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新配置失败: ${errorMsg}`)
-  }
+  }, `${category}.${key}`)
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -482,25 +467,23 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
   }
 
   // 保存模拟器选择和清空的实例字段
-  isSaving.value = true
-  try {
-    const updateData = {
-      Emulator: {
-        Id: emulatorId,
-        Index: '',
-      },
+  await enqueue(async () => {
+    try {
+      const updateData = {
+        Emulator: {
+          Id: emulatorId,
+          Index: '',
+        },
+      }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info('模拟器配置已保存')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存模拟器配置失败: ${errorMsg}`)
     }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('模拟器配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存模拟器配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 // 文件选择方法

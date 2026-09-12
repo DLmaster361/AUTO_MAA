@@ -57,7 +57,10 @@ from .stability import LDPLAYER_ITEMS, evaluate, safe_writes
 from .vbox import (
     VBOX_SERVICE_PROCESS,
     VmProbe,
+    complete_vbox_runtime,
     live_vm_pids,
+    missing_runtime_sentinels,
+    resolve_vbox_runtime_dir,
     restart_vbox_service,
     vm_is_missing,
 )
@@ -149,7 +152,11 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         而虚拟机进程根本不存在、adb 也看不到它，MAA 一连就是 ADB 异常；另一种形态是
         标志停在 2、父类等到超时。两种都在这里接住：确认整机没有别的虚拟机在跑之后，
         关掉僵尸窗口、重启 VBox 服务、再启动一次。详见 :mod:`.vbox`。
+
+        启动前先查一眼 VBox 运行时是否被修复工具修残（缺 GPU 库），缺了就从雷电安装目录
+        补回去；补不了就直接报错，不去启动一台注定几十秒内崩掉的虚拟机。
         """
+        await self._ensure_vbox_runtime(idx)
         try:
             info = await super()._open_locked(idx, package_name)
         except RuntimeError as e:
@@ -170,6 +177,41 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             )
         logger.info(f"雷电实例 {idx} 在重启 {VBOX_SERVICE_PROCESS} 后已正常启动")
         return info
+
+    async def _ensure_vbox_runtime(self, idx: str) -> None:
+        """VBox 运行时缺 GPU 库时从雷电安装目录补回；补不回就报错。详见 :mod:`.vbox`。"""
+        runtime_dir = await asyncio.to_thread(resolve_vbox_runtime_dir)
+        if runtime_dir is None:
+            return
+        missing = await asyncio.to_thread(missing_runtime_sentinels, runtime_dir)
+        if not missing:
+            return
+
+        install_dir = self.emulator_path.parent
+        logger.warning(
+            f"雷电 VBox 运行时 {runtime_dir} 缺少 {missing}，多半是雷电修复工具没修完；"
+            f"尝试从 {install_dir} 补回"
+        )
+        try:
+            copied = await asyncio.to_thread(
+                complete_vbox_runtime, runtime_dir, install_dir
+            )
+        except PermissionError as e:
+            raise RuntimeError(
+                f"雷电实例 {idx} 无法启动：VBox 运行时 {runtime_dir} 缺少 {missing}"
+                f"（雷电修复工具没修完），MAS 没有权限把文件补回去（{e}）。"
+                f"请以管理员身份运行，或{_REPAIR_HINT}"
+            ) from e
+
+        still_missing = await asyncio.to_thread(missing_runtime_sentinels, runtime_dir)
+        if still_missing:
+            raise RuntimeError(
+                f"雷电实例 {idx} 无法启动：VBox 运行时 {runtime_dir} 缺少 {still_missing}，"
+                f"雷电安装目录里也找不到可补的副本（已补 {len(copied)} 个），{_REPAIR_HINT}"
+            )
+        logger.warning(
+            f"已向雷电 VBox 运行时 {runtime_dir} 补回 {len(copied)} 个文件，继续启动实例 {idx}"
+        )
 
     async def _probe_instances(self) -> dict[str, VmProbe]:
         """给这条安装的每台实例做一次「虚拟机在不在」探测。查不到 list2 时返回空表。"""

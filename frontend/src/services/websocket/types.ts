@@ -106,9 +106,16 @@ export interface WSTaskInfoUpdatedData {
   cycleNextList?: WSTaskCyclePreviewData[]
 }
 
-/** 当前任务日志 (type=task.log.updated) */
+/**
+ * 当前任务日志 (type=task.log.updated)
+ *
+ * append 为 true 时 log 是相对上一次推送的差量；为 false 时 log 是尾部完整日志（≤200,000 字符）。
+ * seq 每个任务独立、从 1 起单调递增，订阅方据此判断是否漏了消息。
+ */
 export interface WSTaskLogUpdatedData {
   log: string
+  seq: number
+  append: boolean
 }
 
 /** 任务完成消息数据 (type=task.completed) */

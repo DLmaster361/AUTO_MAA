@@ -2289,12 +2289,8 @@ export default {
       networkFailed: '通信に失敗しました。接続を確認してください',
     },
     quickStart: {
-      mockDaily: 'キュー - 毎日の自動化',
-      mockGeneral: 'スクリプト - 汎用チェック',
-      mockNightly: 'キュー - 夜間バッチ',
-      listUnavailable: 'タスク一覧を取得できないため、仮のタスクを表示しています',
+      listUnavailable: 'タスク一覧を取得できません。ドロップダウンを開き直すと再試行します',
       selectTask: '先にタスクを選んでください',
-      mockNotStartable: 'これは仮のタスクです。実際のタスク一覧が読み込まれると起動できます',
       fallbackLabel: 'ホームのクイックタスク',
       started: 'タスクを開始しました',
       startedCount: '{p0}/{p1} 件のタスクを開始しました',

@@ -26,13 +26,15 @@ import type {
   RuntimeUpdateRetryAction,
 } from '../services/runtimeUpdateService'
 import {
-  abortRuntimeUpdateForShutdown,
   cancelBackendUpdate,
   retryBackendUpdate,
   updateBackendViaRuntime,
 } from '../services/runtimeUpdateService'
 
 const logger = getLogger('初始化处理器')
+
+// 防止重复注册：强退失败后重建窗口会再走一遍 createWindow
+let isRegistered = false
 const mirrorTypes = new Set<keyof MirrorConfig>(['python', 'get_pip', 'git', 'repo', 'pip_mirror'])
 const apiEndpointKeys = new Set<keyof ApiEndpoints>(['local', 'websocket'])
 
@@ -196,6 +198,12 @@ export async function checkCriticalFilesViaRuntime(): Promise<CriticalFilesCheck
  * 注册所有初始化相关的 IPC 处理器
  */
 export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
+  if (isRegistered) {
+    logger.info('初始化处理器已经注册，跳过重复注册')
+    return
+  }
+  isRegistered = true
+
   // ==================== 镜像源初始化 ====================
 
   ipcMain.handle('init-mirrors', async () => {
@@ -410,10 +418,6 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return resolveApiEndpoints()[key]
   })
 
-  ipcMain.handle('get-api-endpoints', async () => {
-    return resolveApiEndpoints()
-  })
-
   // ==================== 完整初始化流程（Runtime 首次初始化与旧链路共用） ====================
 
   ipcMain.handle(
@@ -447,22 +451,6 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   )
 
   // ==================== 仅更新模式 ====================
-
-  ipcMain.handle('update-only', async (event, targetBranch: string = 'dev') => {
-    logger.info(`开始更新模式 - 目标分支: ${targetBranch}`)
-
-    const initService = getInitService(targetBranch)
-
-    const result = await initService.updateOnly(progress => {
-      event.sender.send('initialization-progress', progress)
-    })
-
-    if (!result.success) {
-      logger.error(`更新失败: ${result.error}`)
-    }
-
-    return result
-  })
 
   // ==================== 后端服务管理 ====================
 
@@ -572,40 +560,4 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   ipcMain.handle('cancel-backend-update', () => cancelBackendUpdate())
 
   // ==================== 清理 ====================
-
-  ipcMain.handle('cleanup', async () => {
-    logger.info('清理初始化资源')
-
-    // 先让在途的 bootstrap 收到 cancel 并落地，否则它会在 Electron 退出后跑成孤儿。
-    await abortRuntimeUpdateForShutdown()
-
-    if (backendService) {
-      await backendService.cleanup()
-      backendService = null
-    }
-
-    initService = null
-
-    logger.info('资源清理完成')
-
-    return { success: true }
-  })
-}
-
-/**
- * 清理所有资源（应用退出时调用）
- */
-export async function cleanupInitializationResources() {
-  logger.info('清理初始化资源')
-
-  await abortRuntimeUpdateForShutdown()
-
-  if (backendService) {
-    await backendService.cleanup()
-    backendService = null
-  }
-
-  initService = null
-
-  logger.info('初始化资源清理完成')
 }

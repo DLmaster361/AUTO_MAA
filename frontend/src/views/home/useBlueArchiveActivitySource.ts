@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { BlueArchiveActivityIn, GetService } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -15,7 +16,11 @@ const FETCH_TIMEOUT_MS = 20_000
 const RETRY_DELAY_MS = 30_000
 const MAX_RETRIES = 8
 
-const SOURCE_URL = 'https://api.kivo.wiki/api/v1/timeline'
+/**
+ * 数据取自 Kivo 古书馆时间轴，但那个接口对 Origin 做了白名单校验（只放行
+ * kivo.wiki 自己的来源），浏览器直连必定 403，因此统一走本软件后端中转。
+ * 后端只做转发，筛选与格式转换仍在这里完成。
+ */
 
 /** 每页 50 条且按时间倒序，3 页足以覆盖最近数周 */
 const PAGE_SIZE = 50
@@ -32,10 +37,10 @@ const DESCRIPTION_MAX_LENGTH = 200
 const WANTED_TYPE = 'Event'
 
 /** 三个服与 Kivo 的 line_type 对应关系（国际服的原文拼写就是 Globle） */
-const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, string> = {
-  jp: 'JP',
-  global: 'Globle',
-  cn: 'CN',
+const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, BlueArchiveActivityIn.line_type> = {
+  jp: BlueArchiveActivityIn.line_type.JP,
+  global: BlueArchiveActivityIn.line_type.GLOBLE,
+  cn: BlueArchiveActivityIn.line_type.CN,
 }
 
 const SERVER_KEYS: BlueArchiveServerKey[] = ['jp', 'global', 'cn']
@@ -164,16 +169,29 @@ const fetchTimeline = async (
 ): Promise<KivoTimelineItem[]> => {
   const items: KivoTimelineItem[] = []
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const query =
-      'line_type=' + SERVER_LINE_TYPES[server] + '&page=' + page + '&page_size=' + PAGE_SIZE
-    const response = await fetch(SOURCE_URL + '?' + query, {
-      signal,
-      headers: { Accept: 'application/json' },
+    const request = GetService.getBluearchiveActivityApiInfoBluearchiveActivityPost({
+      line_type: SERVER_LINE_TYPES[server],
+      page,
+      page_size: PAGE_SIZE,
     })
-    if (!response.ok) {
-      throw new Error('HTTP ' + response.status)
+
+    // 生成的客户端返回 CancelablePromise、不接受 AbortSignal，
+    // 用它自带的 cancel 桥接外层的整体超时，避免超时后请求还悬着
+    const cancelOnAbort = () => request.cancel()
+    signal.addEventListener('abort', cancelOnAbort, { once: true })
+
+    let payload: KivoTimelineResponse
+    try {
+      const result = await request
+      if (result.code !== 200) {
+        throw new Error(result.message || 'HTTP ' + result.code)
+      }
+      // 后端把 Kivo 的响应原样放在 data 里
+      payload = result.data as unknown as KivoTimelineResponse
+    } finally {
+      signal.removeEventListener('abort', cancelOnAbort)
     }
-    const payload = (await response.json()) as KivoTimelineResponse
+
     const batch = payload.data?.timeline
     if (!Array.isArray(batch) || batch.length === 0) break
     items.push(...batch)

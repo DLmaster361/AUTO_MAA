@@ -10,14 +10,7 @@
           :staticity="70"
         />
         <div class="command-content">
-          <EncryptedText
-            v-if="!isBootstrapping"
-            :text="commandTitle"
-            class="command-title"
-            encrypted-class="command-title-encrypted"
-            :reveal-delay-ms="66"
-            :flip-delay-ms="500"
-          />
+          <ShatterText v-if="!isBootstrapping" :text="commandTitle" class="command-title" />
         </div>
         <div v-if="!isBootstrapping" class="command-footer">
           <a-tooltip :title="t('home.command.refresh')">
@@ -94,9 +87,9 @@ import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
-import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import ParticlesBg from '@/components/inspira/ParticlesBg.vue'
 import { useTheme } from '@/composables/useTheme'
+import ShatterText from '@/views/home/components/ShatterText.vue'
 
 const { t } = useI18n()
 
@@ -182,10 +175,6 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
   color: var(--ant-color-text);
 }
 
-.command-title :deep(.command-title-encrypted) {
-  color: var(--ant-color-text-secondary);
-}
-
 .command-footer {
   position: absolute;
   right: 0;
@@ -205,13 +194,11 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 
 .command-refresh {
   color: var(--ant-color-text-tertiary);
-  opacity: 0.55;
-  transition: color 0.2s ease, opacity 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 .command-refresh:hover {
   color: var(--ant-color-primary);
-  opacity: 1;
 }
 
 .command-refresh-icon {

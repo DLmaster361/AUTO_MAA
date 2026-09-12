@@ -689,12 +689,17 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     cancelText: t('edit.cancel'),
     onOk: async () => {
       try {
-        await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
           scriptId,
           userId,
           time: item.time,
           target,
         })
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('edit.configRestoreFailed'))
+        }
         restoreOpen.value = false
         if (target === 'mas') {
           await startSession(userId, true)

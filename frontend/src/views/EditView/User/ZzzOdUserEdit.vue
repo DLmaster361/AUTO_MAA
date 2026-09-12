@@ -2103,12 +2103,17 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     cancelText: t('edit.cancel'),
     onOk: async () => {
       try {
-        await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
           scriptId,
           userId: userId.value,
           time: item.time,
           target,
         })
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
+        // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('edit.configRestoreFailed'))
+        }
         restoreOpen.value = false
         if (isMas) {
           // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例

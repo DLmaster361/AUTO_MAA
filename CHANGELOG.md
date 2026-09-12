@@ -70,7 +70,7 @@
 - MFW专项 修复运行环境准备与脚本运行会被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题：依赖解析只按 MAS 自己选定的下载源进行，脚本与 Agent 不再继承宿主的 PYTHONPATH、PYTHONWARNINGS 等变量 by [@qiyinxi](https://github.com/qiyinxi)
 - MaaEnd专项 修复脚本更新移除旧任务后，自动代理重试反复报「没有启用的任务」并卡住的问题；现在会自动跳过这些任务并提示重做「MaaEnd 配置」 by [@1w1w11w1](https://github.com/1w1w11w1)
 - 修复脚本配置目录含只读文件（如脚本自带的 `.git` 版本库）时，任务收尾复原配置失败、整单被记为异常的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
-- OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题
+- OK-WW专项 修复脚本配置页点「检查更新」后任务立即报错、鸣潮客户端手动更新无法开始的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
 
 ### 开发流程
 

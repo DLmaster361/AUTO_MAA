@@ -2189,6 +2189,7 @@ export default {
       wutheringwaves: '鳴潮のイベント情報',
       nte: 'Neverness to Everness のイベント情報',
       reverse1999: 'リバース：1999 のイベント情報',
+      bluearchive: 'ブルーアーカイブのイベント情報',
       arknights: 'アークナイツのイベント情報',
     },
     empty: {
@@ -2233,6 +2234,21 @@ export default {
       nextVersionSoon: 'まもなく次のバージョンが始まります',
       versionTime: 'バージョン期間：',
       endedAt: '{time} 終了',
+    },
+    bluearchive: {
+      serverLabel: 'サーバー',
+      serverDragHint: 'ドラッグでサーバーの順番を変更できます',
+      server: {
+        jp: '日本版',
+        global: 'グローバル版',
+        cn: '中国版',
+      },
+      versionName: '{server}のイベント',
+      unavailable: '{server}のイベント情報を一時的に取得できません',
+      noActivity: '開催中のイベントはありません',
+      stale: 'キャッシュ',
+      staleMessage: '前回取得したイベント情報を表示しています',
+      source: 'Kivo 古書館',
     },
     command: {
       aria: 'タスクのクイック起動',

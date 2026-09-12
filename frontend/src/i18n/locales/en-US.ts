@@ -2525,6 +2525,7 @@ export default {
       wutheringwaves: 'Wuthering Waves events',
       nte: 'Neverness to Everness events',
       reverse1999: 'Reverse: 1999 events',
+      bluearchive: 'Blue Archive events',
       arknights: 'Arknights events',
     },
     empty: {
@@ -2569,6 +2570,21 @@ export default {
       nextVersionSoon: 'Next version starts soon',
       versionTime: 'Version window:',
       endedAt: 'Ends {time}',
+    },
+    bluearchive: {
+      serverLabel: 'Server',
+      serverDragHint: 'Drag to reorder servers',
+      server: {
+        jp: 'JP',
+        global: 'Global',
+        cn: 'CN',
+      },
+      versionName: '{server} events',
+      unavailable: '{server} event data is temporarily unavailable',
+      noActivity: 'No events running',
+      stale: 'Cached',
+      staleMessage: 'Using the last successfully fetched event data',
+      source: 'Kivo Wiki',
     },
     command: {
       aria: 'Quick task launcher',

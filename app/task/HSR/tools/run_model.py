@@ -25,6 +25,7 @@ from app.models.task import UserItem
 from app.utils import ProcessManager
 
 from .game_resolution import HSRGameResolutionOverride
+from .log_detect import select_failure_summary_lines
 from .m7a_runtime import M7ARunner
 from .sra_runtime import SRAProcessRegistry
 
@@ -165,6 +166,4 @@ def external_result_failure_summary(result: object) -> str:
     if not text:
         text = "未知错误"
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if len(lines) > 8:
-        lines = lines[-8:]
-    return "\n".join(lines)
+    return "\n".join(select_failure_summary_lines(lines))

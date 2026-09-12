@@ -91,14 +91,19 @@ HSR_BENIGN_FAILURE_MARKERS: tuple[str, ...] = (
     "cv::matchTemplate",
     "Assertion failed",
 )
-HSR_EOF_FAILURE_CONTEXT_MARKERS: tuple[str, ...] = (
-    "EOF when reading a line",
-    "pause_on_success",
+# M7A 收尾的「按任意键继续」写在 utils/console.py：走到 pause_on_success 说明
+# 任务正文已经跑完，之后再崩只是收尾输出失败。非交互启动下它必崩——早期是
+# stdin 被关掉的 EOFError，非中文系统区域下则是中文写不进 ANSI 代码页 stdout
+# 的 UnicodeEncodeError——判据因此锚在崩溃位置，而不是某一种异常类型。
+HSR_CONSOLE_PAUSE_SUCCESS_MARKER = "pause_on_success"
+HSR_NONINTERACTIVE_EOF_MARKER = "EOF when reading a line"
+# pause_on_error 是正文失败后的兜底路径，它自己崩不能证明正文成功。
+HSR_CONSOLE_PAUSE_ERROR_MARKERS: tuple[str, ...] = (
     "pause_on_error",
     "utils\\console.py",
     "utils/console.py",
 )
-HSR_EOF_FAILURE_LINE_MARKERS: tuple[str, ...] = (
+HSR_EXIT_CRASH_LINE_MARKERS: tuple[str, ...] = (
     "Traceback",
     "During handling of the above exception",
     "Failed to execute script",
@@ -113,6 +118,82 @@ HSR_SCREENSHOT_WINDOW_UNAVAILABLE_MARKERS: tuple[str, ...] = (
     "无法获取窗口客户区域",
     "窗口可能被最小化",
 )
+# M7A 自己关掉游戏只有两条路（tasks/game/__init__.py 的启动重试循环）：等
+# 6 分钟识不出任何界面，或者启动过程抛异常；两处都先打这行 ERROR 再
+# stop_game()，随后 continue 自行重启游戏。「游戏终止：」是 stop_game 成功后
+# 的 INFO，进程被 MAS 抢先杀掉时它多半来不及刷出，所以不能只认它。
+HSR_M7A_SELF_GAME_STOP_MARKERS: tuple[str, ...] = (
+    "获取当前界面超时",
+    "尝试启动游戏时发生错误",
+    "游戏终止：",
+)
+# M7A 冻结 exe 在非中文 ANSI 代码页（如 cp1252）下 stderr 走 backslashreplace，
+# 中文全变成 \uXXXX；它自己改不了，只能在读取侧还原。
+_BACKSLASH_U_RE = re.compile(
+    r"\\u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][c-fC-F][0-9a-fA-F]{2})"
+    r"|\\u([0-9a-fA-F]{4})"
+)
+# loguru 默认前缀「2026-09-12 02:14:35,242 | ERROR | 」，摘要里只留级别。
+_LOGURU_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[,.]\d{3}\s*\|\s*")
+_LOG_LEVEL_RE = re.compile(r"\|\s*(ERROR|CRITICAL)\s*\|")
+HSR_FAILURE_SUMMARY_KEEP_MARKERS: tuple[str, ...] = (
+    "错误截图已保存",
+    "Traceback",
+)
+
+
+def unescape_backslash_u(text: str) -> str:
+    """把 backslashreplace 产生的 ``\\uXXXX`` 还原成原字符。
+
+    只处理紧跟四位十六进制的形式，代理对合并成一个字符，落单的代理项换成
+    U+FFFD 以免后续写 UTF-8 日志时炸掉；不含 ``\\u`` 的文本原样返回。
+    """
+
+    if "\\u" not in text:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        high, low, single = match.groups()
+        if single is None:
+            code = 0x10000 + ((int(high, 16) - 0xD800) << 10) + (int(low, 16) - 0xDC00)
+            return chr(code)
+        code = int(single, 16)
+        if 0xD800 <= code <= 0xDFFF:
+            return "�"
+        return chr(code)
+
+    return _BACKSLASH_U_RE.sub(_replace, text)
+
+
+def select_failure_summary_lines(lines: list[str], limit: int = 8) -> list[str]:
+    """从外部脚本输出里挑出最能说明失败原因的几行。
+
+    M7A 失败前会连打十几条同样的 WARNING，真正的 ERROR 和错误截图路径排在
+    最后；单纯截尾会让通知首行落在一条「按 ESC 后重试」的 WARNING 上。有
+    ERROR 级别行时只保留它们和截图/回溯行，否则退回截尾。
+    """
+
+    picked = [
+        line
+        for line in lines
+        if _LOG_LEVEL_RE.search(line)
+        or any(marker in line for marker in HSR_FAILURE_SUMMARY_KEEP_MARKERS)
+    ]
+    if not any(_LOG_LEVEL_RE.search(line) for line in picked):
+        picked = list(lines)
+    picked = [_LOGURU_PREFIX_RE.sub("", line) for line in picked]
+    if len(picked) > limit:
+        picked = picked[-limit:]
+    return picked
+
+
+def find_m7a_self_game_stop(lines: list[str]) -> str | None:
+    """返回 M7A 自行关闭游戏的那行输出；没有则返回 None。"""
+
+    for line in reversed(lines):
+        if any(marker in line for marker in HSR_M7A_SELF_GAME_STOP_MARKERS):
+            return line
+    return None
 
 
 # ===== 模块级 final marker（审计 HSR-外部脚本日志语义审计.md §4.3）=====
@@ -188,11 +269,9 @@ def has_failure_output(*texts: str) -> bool:
     """判断外部脚本输出中是否包含明确的失败语义。"""
 
     full_text = "\n".join(str(text) for text in texts if text)
-    has_noninteractive_eof = all(
-        marker in full_text for marker in HSR_EOF_FAILURE_CONTEXT_MARKERS[:2]
-    ) or (
-        "EOF when reading a line" in full_text
-        and any(marker in full_text for marker in HSR_EOF_FAILURE_CONTEXT_MARKERS[2:])
+    is_exit_pause_crash = HSR_CONSOLE_PAUSE_SUCCESS_MARKER in full_text or (
+        HSR_NONINTERACTIVE_EOF_MARKER in full_text
+        and any(marker in full_text for marker in HSR_CONSOLE_PAUSE_ERROR_MARKERS)
     )
 
     for text in texts:
@@ -204,8 +283,8 @@ def has_failure_output(*texts: str) -> bool:
                 continue
             if any(marker in line for marker in HSR_BENIGN_FAILURE_MARKERS):
                 continue
-            if has_noninteractive_eof and any(
-                marker in line for marker in HSR_EOF_FAILURE_LINE_MARKERS
+            if is_exit_pause_crash and any(
+                marker in line for marker in HSR_EXIT_CRASH_LINE_MARKERS
             ):
                 continue
             if HSR_ENGLISH_FAILURE_RE.search(line):

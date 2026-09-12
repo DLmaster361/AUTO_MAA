@@ -58,10 +58,12 @@ class LogCollect:
         *,
         sink: Optional[_Sink] = None,
         start_from_end: bool = True,
+        rotated_name: Optional[str] = None,
     ):
         self.paths = resolve_sources(paths)
         self.sources = [
-            LogSource(item, start_from_end=start_from_end) for item in self.paths
+            LogSource(item, start_from_end=start_from_end, rotated_name=rotated_name)
+            for item in self.paths
         ]
         # sink：MAS 进程宿主注入；缺省时走 @@LOGBOX@@ 标记回传（脚本宿主）
         self.sink = sink

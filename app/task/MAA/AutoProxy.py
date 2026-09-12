@@ -79,6 +79,10 @@ _ANNIHILATION_PROGRESS_RE = re.compile(
     r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
     re.IGNORECASE,
 )
+_MAA_SANITY_RECOGNITION_RE = re.compile(r"理智\s*[:：]\s*\d+\s*/\s*\d+")
+# MAA 走到能看到理智的界面（进到副本门口）后，gui.log 才会出现无时间戳的
+# 「理智: X/Y」识别行（v6.17.5 国服实测，繁服同字）；其余界面语言样本未核实，
+# 命中不到时一律视为未进入战斗流程。
 _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 理智作战",
     "完成任务: 活动关优先",
@@ -146,12 +150,26 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
 
 
 def _has_completed_annihilation_week(log: str) -> bool:
-    """判断剿灭日志是否表明本周额度已完成。"""
+    """判断剿灭日志是否表明本周额度已完成。
+
+    MAA 剿灭结束都会打印「完成任务: 剿灭作战」，以理智识别行区分战斗流程：
+
+    - 无理智识别行：MAA 未进到副本门口，完成即周内剿灭在代理开始前已完成；
+    - 有理智识别行但无进度行：进到门口却因理智不足没有开战，未达标；
+    - 有进度行但 current < total：开战了但理智不足没能打满进度，未达标；
+    - 进度 current >= total：本周剿灭已完成。
+
+    未达标时不记周完成标记，宁可下次代理重试。
+    """
+
+    if "完成任务: 剿灭作战" not in log:
+        return False
+
+    if not _MAA_SANITY_RECOGNITION_RE.search(log):
+        return True
 
     progress = _parse_annihilation_weekly_progress(log)
-    return "完成任务: 剿灭作战" in log and (
-        progress is None or progress[0] >= progress[1]
-    )
+    return progress is not None and progress[0] >= progress[1]
 
 
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
@@ -805,14 +823,17 @@ class AutoProxyTask(TaskExecuteBase):
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
-        # 多配置使用默认配置
+        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
         if gui_set["Current"] != "Default":
             gui_set["Configurations"]["Default"] = gui_set["Configurations"][
                 gui_set["Current"]
             ]
-            gui_new_set["Configurations"]["Default"] = gui_new_set["Configurations"][
-                gui_set["Current"]
-            ]
+            gui_new_configurations = gui_new_set.setdefault("Configurations", {})
+            if gui_set["Current"] in gui_new_configurations:
+                gui_new_configurations["Default"] = gui_new_configurations[
+                    gui_set["Current"]
+                ]
+            gui_new_configurations.setdefault("Default", {})
             gui_set["Current"] = "Default"
 
         # 各配置部分的引用
@@ -1321,15 +1342,6 @@ class AutoProxyTask(TaskExecuteBase):
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if f"完成任务: {zh_task}" in log or f"{zh_task} 任务跳过" in log:
                     self.task_dict[en_task] = False
-
-            if self.mode == "Routine" and (
-                "任务出错: 理智作战" in log
-                or any(
-                    f"理智作战: {task_name} 添加任务失败" in log
-                    for task_name in ("活动关优先", "理智作战", "剩余理智")
-                )
-            ):
-                self.task_dict["Fight"] = True
 
             if any(self.task_dict.values()):
                 self.cur_user_log.status = "MAA 部分任务执行失败"

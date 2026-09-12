@@ -206,7 +206,10 @@ class AutoProxyTask(TaskExecuteBase):
                     result_message = queue_error or "未配置任务队列或队列为空"
                     logger.warning(f"用户 {self.cur_user_uid} {result_message}")
                     self.cur_user_item.status = "异常"
-                    self.cur_user_item.result = result_message
+                    # UserItem.result 是只读 property（由 log_record 拼出），直接赋值会
+                    # 抛 AttributeError，把本该看到的提示换成一句 Python 报错。原因写进
+                    # 本轮的 LogRecord，result 自然带上它。
+                    self.cur_user_log.status = result_message
                     return
 
                 queue = self._filter_queue_for_run(queue)

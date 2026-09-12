@@ -334,21 +334,31 @@ import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
 
 const { t } = useI18n()
 
+/**
+ * 游戏服务器口径的「现在」：星铁在服务器时间（UTC+8）周一 04:00 重置，等价于 UTC+4 的
+ * 零点。后端 HSRAutoProxyTask._period_markers 就是按 UTC+4 算日期和 ISO 周的，这里必须
+ * 用同一口径——按本机时区算的话，跨周边界时前端写下的周标记和后端判定的周对不上：
+ * 页面显示「本周已完成」，运行时却当成新一周照样去打。
+ *
+ * 全程用 UTC 取值（在时间戳上加偏移后读 getUTC*），顺带避开本机夏令时对天数差的干扰。
+ */
+const nowAtServerDayBoundary = (): Date => new Date(Date.now() + 4 * 3600 * 1000)
+
 const getCurrentISOWeek = (): string => {
-  const d = new Date()
-  const dayNum = d.getDay() || 7
+  const d = nowAtServerDayBoundary()
+  const dayNum = d.getUTCDay() || 7
   const thursday = new Date(d)
-  thursday.setDate(d.getDate() + 4 - dayNum)
-  const yearStart = new Date(thursday.getFullYear(), 0, 1)
+  thursday.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1))
   const weekNo = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
-  return `${thursday.getFullYear()}-W${String(weekNo).padStart(2, '0')}`
+  return `${thursday.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
 }
 
 const getCurrentDate = (): string => {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
+  const d = nowAtServerDayBoundary()
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}`
 }
 

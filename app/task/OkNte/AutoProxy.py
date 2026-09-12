@@ -397,6 +397,12 @@ class AutoProxyTask(TaskExecuteBase):
                 paths=[self._resolve_log_file_path()],
                 sink=self._append_push_log,
                 start_from_end=True,
+                # ok-script 框架跨零点把日志滚动为 stem.YYYY-MM-DD.suffix
+                # （日期在中段），声明模板让轮转补偿命中旧文件；从原始
+                # LogPath 派生，不随 LogPathFormat 解析结果漂移
+                rotated_name=(
+                    f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}"
+                ),
             )
             self.log_collect.open()
             for rule in OKNTE_PUSH_RULES:

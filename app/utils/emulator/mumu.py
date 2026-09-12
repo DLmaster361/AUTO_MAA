@@ -32,6 +32,7 @@ if IS_WINDOWS:
     import win32gui
     import win32process
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
@@ -96,7 +97,10 @@ class MumuManager(DeviceBase):
             return None
 
         try:
-            data = json.loads(result.stdout)
+            data = self._decode_polluted_json(
+                result.stdout,
+                lambda v: isinstance(v, dict) and isinstance(v.get("state"), str),
+            )
         except json.JSONDecodeError as e:
             logger.warning(f"解析 MuMu 应用状态失败: {e}")
             return None
@@ -422,6 +426,59 @@ class MumuManager(DeviceBase):
         target_text = f"{proc_name} {proc_exe}".lower()
         return any(keyword in target_text for keyword in MUMU_FORCE_KILL_KEYWORDS)
 
+    @staticmethod
+    def _decode_polluted_json(
+        text: str, prefer: Callable[[object], bool] | None = None
+    ) -> object:
+        """从可能被污染的命令输出里取出 JSON。
+
+        MuMu 会把埋点 (``add record:{...}``) 和 C++ 日志
+        (``[*** LOG ERROR #0001 ***] ... {bad_weak_ptr}``) 写进同一份 stdout,
+        对整段裸调 ``json.loads`` 会抛 ``Extra data`` 或 ``Expecting value``,
+        而其中那份设备 JSON 本身是完整可用的。
+
+        这里逐个候选位置尝试解码, 收集输出里所有顶层 JSON 值:
+        ``prefer`` 命中的优先返回 (避免把埋点对象当成设备信息),
+        都不命中时退回第一个, 一个都解不出来才抛 ``JSONDecodeError``。
+
+        Args:
+            text: 命令输出原文。
+            prefer: 判断某个候选值是否为期望的那一份, 为 ``None`` 时取第一个。
+
+        Returns:
+            object: 解析出的 JSON 值。
+
+        Raises:
+            json.JSONDecodeError: 输出里没有任何可解析的 JSON。
+        """
+
+        decoder = json.JSONDecoder()
+        candidates: list[object] = []
+        i = 0
+        while i < len(text):
+            if text[i] not in "{[":
+                i += 1
+                continue
+            try:
+                value, end = decoder.raw_decode(text, i)
+            except ValueError:
+                i += 1
+                continue
+            candidates.append(value)
+            i = end
+
+        if prefer is not None:
+            for value in candidates:
+                if prefer(value):
+                    return value
+        if candidates:
+            return candidates[0]
+        raise json.JSONDecodeError("输出中未找到 JSON", text, 0)
+
+    @classmethod
+    def _has_device_entries(cls, value: object) -> bool:
+        return bool(cls._extract_device_entries(value))
+
     async def getStatus(self, idx: str, data: str | None = None) -> DeviceStatus:
         if data is None:
             try:
@@ -430,7 +487,7 @@ class MumuManager(DeviceBase):
                 logger.error(f"获取模拟器 {idx} 信息失败: {e}")
                 return DeviceStatus.ERROR
         try:
-            data_json = json.loads(data)
+            data_json = self._decode_polluted_json(data, self._has_device_entries)
         except json.JSONDecodeError as e:
             logger.error(f"JSON解析错误: {e}")
             return DeviceStatus.UNKNOWN
@@ -483,7 +540,9 @@ class MumuManager(DeviceBase):
 
         try:
             adb_data = await self.get_adb_info(index)
-            adb_json = json.loads(adb_data)
+            adb_json = self._decode_polluted_json(
+                adb_data, lambda v: self._resolve_adb_address(v) is not None
+            )
         except Exception as e:
             logger.debug(
                 f"获取 MuMu 模拟器 {index} ADB 信息失败，使用默认端口兜底: {e}"
@@ -502,7 +561,7 @@ class MumuManager(DeviceBase):
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         data = await self.get_device_info(idx or "all")
 
-        data_json = json.loads(data)
+        data_json = self._decode_polluted_json(data, self._has_device_entries)
 
         result: dict[str, DeviceInfo] = {}
 
@@ -518,7 +577,9 @@ class MumuManager(DeviceBase):
         return result
 
     async def list_devices(self) -> dict[str, str]:
-        data_json = json.loads(await self.get_device_info("all"))
+        data_json = self._decode_polluted_json(
+            await self.get_device_info("all"), self._has_device_entries
+        )
 
         return {
             str(value["index"]): str(value["name"])

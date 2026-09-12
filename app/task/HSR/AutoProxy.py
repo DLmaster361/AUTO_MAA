@@ -35,7 +35,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
-from app.utils.constants import UTC4, UTC8
+from app.utils.constants import UTC4
 
 from .task_mapping import (
     HSR_TASK_MODULES,
@@ -53,7 +53,11 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.extra_script import run_script_after_task, run_script_before_task
-from .tools.log_detect import detect_echo_of_war_completion
+from .tools.log_detect import (
+    detect_echo_of_war_completion,
+    find_m7a_self_game_stop,
+    select_failure_summary_lines,
+)
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
@@ -79,6 +83,9 @@ logger = get_logger("HSR 自动代理")
 # 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
 HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
 HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
+# 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
+# ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
+GAME_EXIT_SETTLE_SECONDS = 2
 
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
@@ -117,6 +124,22 @@ def resolve_daily_native_modes(
         }
     )
     return bool(values.get("build_target_enable", False)), activity_enabled
+
+
+def _server_day_clock(now_dt: datetime | None = None) -> datetime:
+    """把一个时刻换算成游戏换日口径（UTC+4）的挂钟时间。
+
+    星铁在服务器时间（UTC+8）周一 04:00 重置，等价于 UTC+4 的零点，按 UTC+4 取
+    `isocalendar()` / `%A` / `%Y-%m-%d` 就会在正确时刻翻页。日 / 周标记是「那个瞬间」
+    的属性，与调用方或用户本机在哪个时区无关，所以带时区的输入一律换算过去；naive
+    输入按已经是 UTC+4 处理。
+    """
+
+    if now_dt is None:
+        return datetime.now(tz=UTC4)
+    if now_dt.tzinfo is None:
+        return now_dt.replace(tzinfo=UTC4)
+    return now_dt.astimezone(UTC4)
 
 
 def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
@@ -195,8 +218,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return
         # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
         # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
-        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
-        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        # 注意别把周常重置日、历战余响开始日那几处一起改掉，那些是游戏服务器
+        # 日期语义，用 UTC+4 表达：星铁的日 / 周边界是服务器时间周一 04:00，
+        # 正好等于 UTC+4 的零点，`isocalendar()` 与 `%A` 因此会在正确时刻翻页。
         now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         appended_lines: list[str] = []
         for line in text.splitlines():
@@ -347,10 +371,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _period_markers(
         now_dt: datetime | None = None,
     ) -> tuple[str, str]:
-        """返回当前日期和 ISO 周标记。"""
+        """返回当前日期和 ISO 周标记（游戏服务器口径）。
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        用 UTC+4 而不是 UTC+8：星铁在服务器时间周一 04:00 重置，UTC+4 的零点正是
+        这一刻。按 UTC+8 算会提前四小时翻页——周一 00:00~04:00（北京时间，对 UTC+2
+        用户就是周日晚上）跑的那一轮，会把「上一周已完成」的结果写成新一周的完成态，
+        真正重置后整周都不再尝试。
+        """
+
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         return (
             now_dt.strftime("%Y-%m-%d"),
@@ -383,8 +412,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> list[tuple[str, str, object]]:
         """构造日常代理状态写回字段，口径与用户列表标签保持一致。"""
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC4)
+        now_dt = _server_day_clock(now_dt)
 
         today = now_dt.strftime("%Y-%m-%d")
         last_proxy_date = str(user_config.get("Data", "LastProxyDate") or "")
@@ -602,8 +630,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if eow_target not in weekday_options:
             eow_target = "Monday"
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -638,8 +666,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """解析周常是否本周已完成，不写用户 Data。"""
         weekly_enabled = _has_enabled_phase_module(user_config, "weekly")
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -1432,21 +1460,54 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     break
                 if self.runtime.game_transitioning:
                     continue
-                if not is_process_running(HSR_GAME_PROCESS_NAME):
-                    await self._stop_external_processes()
-                    run_task.cancel()
-                    with suppress(BaseException):
-                        await run_task
-                    raise HSRGameExitedError(
-                        "检测到星穹铁道进程已退出，已终止当前外部脚本；"
-                        "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
-                    )
+                if is_process_running(HSR_GAME_PROCESS_NAME):
+                    continue
+                # 进程刚消失时先让出一拍：让读输出的协程把 M7A 关游戏前打的
+                # 那行 ERROR 收进来，也给「脚本自己关掉游戏后紧接着退出」留出
+                # 自然结束的机会。
+                await asyncio.sleep(GAME_EXIT_SETTLE_SECONDS)
+                if run_task.done():
+                    break
+                reason = self._describe_game_exit(item)
+                await self._stop_external_processes()
+                run_task.cancel()
+                with suppress(BaseException):
+                    await run_task
+                raise HSRGameExitedError(reason)
             return await run_task
         except asyncio.CancelledError:
             run_task.cancel()
             with suppress(BaseException):
                 await run_task
             raise
+
+    def _describe_game_exit(self, item: HSRRunItem) -> str:
+        """游戏进程消失时给出准确归因。
+
+        M7A 等 6 分钟识不出任何界面会自己 stop_game() 再 continue 重启游戏，
+        这时把失败写成「进程已退出，若是用户主动关闭…」既冤枉用户，也把真正
+        的原因（画面卡在哪、错误截图在哪）藏进了几十行 WARNING 里。
+        """
+
+        runner = self.runtime.m7a_runner
+        if item.script == "M7A" and runner is not None:
+            recent = runner.recent_output_lines
+            if find_m7a_self_game_stop(recent) is not None:
+                cause = (
+                    "长时间未识别出游戏界面"
+                    if any("获取当前界面超时" in line for line in recent)
+                    else "启动或检查游戏时出错"
+                )
+                detail = "\n".join(select_failure_summary_lines(recent))
+                return (
+                    f"M7A {cause}，已自行关闭游戏；"
+                    "MAS 已终止本次 M7A，补跑前会重新启动游戏。M7A 最后的报错："
+                    f"\n{detail}"
+                )
+        return (
+            "检测到星穹铁道进程已退出，已终止当前外部脚本；"
+            "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
+        )
 
     def _format_queue_failures(
         self,

@@ -104,14 +104,17 @@ class ScriptConfigTask(TaskExecuteBase):
         gui_set = read_file(self.maa_set_path / "gui.json")
         gui_new_set = read_file(self.maa_set_path / "gui.new.json")
 
-        # 多配置使用默认配置
+        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
         if gui_set["Current"] != "Default":
             gui_set["Configurations"]["Default"] = gui_set["Configurations"][
                 gui_set["Current"]
             ]
-            gui_new_set["Configurations"]["Default"] = gui_new_set["Configurations"][
-                gui_set["Current"]
-            ]
+            gui_new_configurations = gui_new_set.setdefault("Configurations", {})
+            if gui_set["Current"] in gui_new_configurations:
+                gui_new_configurations["Default"] = gui_new_configurations[
+                    gui_set["Current"]
+                ]
+            gui_new_configurations.setdefault("Default", {})
             gui_set["Current"] = "Default"
 
         # 各配置部分的引用

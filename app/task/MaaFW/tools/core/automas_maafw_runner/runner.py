@@ -32,7 +32,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Literal, TextIO
+from typing import Any, BinaryIO, Callable, TextIO
 
 import maa as maa_package
 from maa.agent_client import AgentClient
@@ -58,10 +58,15 @@ from pydantic import BaseModel, Field
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
     describe_runtime_architecture_mismatch,
+    pin_agent_maafw_requirement,
     project_maafw_runtime_path,
+)
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
 )
 
 try:
+    from .models import MaaFWDeviceConfig
     from .run_plan import (
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -73,6 +78,7 @@ try:
         route_managed_python_agents_to_shared_runtime,
     )
 except ImportError:
+    from models import MaaFWDeviceConfig  # type: ignore[no-redef]
     from run_plan import (  # type: ignore[no-redef]
         MaaFWResourceBundlePlan,
         MaaFWRunPlan,
@@ -104,7 +110,6 @@ _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
 
 
-MaaFWControllerType = Literal["Adb", "Win32"]
 AGENT_CONNECT_RETRY_COUNT = 30
 AGENT_CONNECT_RETRY_INTERVAL = 0.2
 AGENT_CONNECT_TIMEOUT_MS = 1000
@@ -277,7 +282,9 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
         packages.append(AGENT_BOOTSTRAP_PACKAGE)
-    return packages
+    # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
+    # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
+    return pin_agent_maafw_requirement(project_path, packages)
 
 
 def _project_agent_requirements_hash(project_path: Path) -> str:
@@ -409,6 +416,27 @@ def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
     return project_print != binding_print
 
 
+def _installed_maafw_version(venv_path: Path) -> str | None:
+    """读 venv 里已安装的 maafw 版本，读不出就返回 None。
+
+    走 ``dist-info`` 目录名而不是起解释器去 import：诊断发生在失败路径上，
+    不该再多花一次进程启动，也不该因为那个 venv 本身有问题而再抛一个异常。
+    """
+
+    roots = [venv_path / "Lib" / "site-packages"]
+    roots.extend(sorted(venv_path.glob("lib/python*/site-packages")))
+    for root in roots:
+        try:
+            matches = sorted(root.glob("maafw-*.dist-info"))
+        except OSError:
+            continue
+        for match in matches:
+            version = match.name[len("maafw-") : -len(".dist-info")]
+            if version:
+                return version
+    return None
+
+
 def _normalize_maafw_version(value: str) -> str:
     """把版本串归一到可比较的形式。
 
@@ -502,17 +530,11 @@ def _ensure_maafw_global_init(
         _MAAFW_INITIALIZED = True
 
 
-class MaaFWDeviceConfig(BaseModel):
-    type: MaaFWControllerType
-    adbPath: str | None = None
-    address: str | None = None
-    hWnd: int | None = None
-    screencapMethods: int = MaaAdbScreencapMethodEnum.Default
-    inputMethods: int = MaaAdbInputMethodEnum.Default
-    screencapMethod: int = MaaWin32ScreencapMethodEnum.DXGI_DesktopDup
-    mouseMethod: int = MaaWin32InputMethodEnum.Seize
-    keyboardMethod: int = MaaWin32InputMethodEnum.Seize
-    config: dict[str, Any] = Field(default_factory=dict)
+# MaaFWDeviceConfig 统一从 models 导入（见文件头部的 import）。这里原本还有一份同名
+# 类，比 models 那份少了 adbReadyTimeout；宿主按 models 那份序列化 job 文件、worker 按
+# 这份反序列化，pydantic 默认 extra="ignore" 把该字段静默丢掉，模拟器等待时长设置因此
+# 从落地起就没生效过。各方法的默认值不会因此改变：宿主每次都显式写全本 controller 用到
+# 的字段，另一类 controller 的字段消费点本来就写成 `... or XxxEnum.Default`。
 
 
 class MaaFWRunResult(BaseModel):
@@ -1107,6 +1129,7 @@ class MaaFWRunner:
                     agent_client,
                     process,
                     Path(command[0]).name,
+                    agent_plan,
                 )
             except Exception:
                 with suppress(Exception):
@@ -1765,6 +1788,7 @@ class MaaFWRunner:
         agent_client: AgentClient,
         process: subprocess.Popen,
         label: str,
+        agent_plan: Any = None,
     ) -> None:
         last_error: Exception | None = None
         if not agent_client.set_timeout(AGENT_CONNECT_TIMEOUT_MS):
@@ -1791,7 +1815,36 @@ class MaaFWRunner:
             time.sleep(AGENT_CONNECT_RETRY_INTERVAL)
 
         detail = f": {last_error}" if last_error else ""
-        raise RuntimeError(f"AgentClient 连接超时: {label}{detail}")
+        hint = self._describe_agent_maafw_mismatch(agent_plan)
+        raise RuntimeError(f"AgentClient 连接超时: {label}{detail}{hint}")
+
+    def _describe_agent_maafw_mismatch(self, agent_plan: Any) -> str:
+        """连不上时补一句版本诊断。
+
+        AgentServer 与 AgentClient 之间有协议版本号，跨版本会被直接拒绝握手；
+        原生日志里写着 ``Protocol version mismatch``，但传到用户眼前只剩一句
+        「连接超时」，看不出该动什么。这里现读两侧版本拼出真正的原因。
+
+        **只在失败路径上跑**：正常连上时零开销，也不会因为判断失误挡下本来
+        能跑起来的组合。
+        """
+
+        venv_path = getattr(agent_plan, "isolatedVenvPath", None)
+        if not venv_path:
+            return ""
+        agent_version = _installed_maafw_version(Path(venv_path))
+        runner_version, _ = describe_loaded_maafw()
+        if not agent_version or not runner_version:
+            return ""
+        if _normalize_maafw_version(agent_version) == _normalize_maafw_version(
+            runner_version
+        ):
+            return ""
+        return (
+            f"；agent 隔离 venv 里的 maafw 是 {agent_version}，runner 加载的"
+            f" MaaFramework 是 {_display_maafw_version(runner_version)}，"
+            "两者的 Agent 协议版本不兼容。删掉该 venv 让它重建即可"
+        )
 
     def _start_agent_output_reader(
         self,
@@ -1870,18 +1923,16 @@ class MaaFWRunner:
         再显式设置当前项目所需的 PYTHONPATH；PATH 前置 agent Python 目录、
         Scripts 目录、项目根目录与项目必要 dll 目录。
         """
-        env = os.environ.copy()
+        # 先按共用名单剔除 worker 自己与宿主的 Python 变量，再叠加项目 interface 声明的
+        # 环境：项目给自己 agent 设的值要保留。worker 自己需要 PYTHONSAFEPATH（见
+        # build_runner_environment），但不能透传给项目 agent：agent 以 `python ./agent/main.py`
+        # 启动，靠脚本目录进 sys.path[0] 才能 import 同级模块，官方模板就是这么写的，
+        # 继承过去会当场 ModuleNotFoundError——它随 PYTHON* 前缀一起被剔除。
+        env = strip_host_python_environment()
         env.update(self.plan.piEnv)
 
         project_path = Path(self.plan.path)
 
-        # 清理 AUTO-MAS 自身环境变量，防止 agent 串到 MAS .venv
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONUSERBASE", None)
-        env.pop("PIP_TARGET", None)
-        env.pop("PIP_PREFIX", None)
-        env.pop("PIP_USER", None)
         # 不继承 MAS 的 PYTHONPATH，显式设置为当前项目根目录
         python_path_items: list[str] = []
         if getattr(agent_plan, "runtimeKind", None) == "isolated_venv":
@@ -2198,6 +2249,8 @@ class MaaFWRunner:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                # 引导解释器同样不能被宿主 PYTHONHOME / PYTHONPATH 带偏。
+                env=strip_host_python_environment(),
             )
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or "").strip()
@@ -2217,13 +2270,8 @@ class MaaFWRunner:
 
         与 _build_agent_env 不同的是，此方法不依赖 agent_plan，用于 pip 检测阶段。
         """
-        env = os.environ.copy()
-        env.pop("VIRTUAL_ENV", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONUSERBASE", None)
-        env.pop("PIP_TARGET", None)
-        env.pop("PIP_PREFIX", None)
-        env.pop("PIP_USER", None)
+        # 与 _build_agent_env 同一份剔除名单（含 agent 侧不能带的 PYTHONSAFEPATH）。
+        env = strip_host_python_environment()
         env["PYTHONPATH"] = str(project_path)
         return env
 

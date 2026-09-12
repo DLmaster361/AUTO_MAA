@@ -50,7 +50,6 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
     UTC4,
-    UTC8,
 )
 
 from . import schema as schema_model
@@ -1974,7 +1973,10 @@ class HSRUserConfig(ConfigBase):
         # 剩余天数标签
         tags.append(_tag_remained_days(self))
 
-        now = datetime.now(tz=UTC8)
+        # 与 HSRAutoProxyTask._period_markers 同口径：星铁在服务器时间周一 04:00
+        # 重置，UTC+4 的零点正是这一刻。两边必须一致，否则用户列表上的「本周已完成」
+        # 标签会和实际跑不跑这个任务对不上。
+        now = datetime.now(tz=UTC4)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -2064,6 +2066,49 @@ class HSRConfig(ConfigBase):
         self.Run_LowPerformanceMode = ConfigItem(
             "Run", "LowPerformanceMode", False, BoolValidator()
         )
+        ## Update ----------------------------------------------------------
+        ## 外部脚本（M7A / SRA）的自动更新。默认关闭：这两个是用户自己安装、
+        ## 自带更新器的第三方工具，未经开启就改写它们的目录属于越界；停留在
+        ## 某个旧版也是真实需求。
+        ## 只有 AfterRun 一档，没有 BeforeRun：更新的收益本来就落在下一次运行
+        ## 上，没有理由让当前这轮先等一个 170–750MB 的下载。想立刻更新走配置
+        ## 页的手动按钮。留成枚举而非布尔，是为了日后要加档时不必做
+        ## bool→enum 迁移（MaaFW 正为此背着一个废弃字段）。
+        ## 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**，
+        ## 不是这里的默认值，Off 必须排在最前。
+        self.Update_AutoUpdateMode = ConfigItem(
+            "Update", "AutoUpdateMode", "Off", OptionsValidator(["Off", "AfterRun"])
+        )
+        ## 更新渠道，两个引擎共用。Mirror 酱还支持 alpha，**故意不开放**——
+        ## 那是项目方的内部验证档。这两个值必须与前端选项和 schema 的 Literal
+        ## 一致，三处任一多给一档，用户选了就会 422 或被静默纠回默认值。
+        self.Update_Channel = ConfigItem(
+            "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
+        )
+        ## 下载源按引擎拆开：两者可用的源本就不同，共用一项给不出不同默认值。
+        ## 版本检查恒走 Mirror 酱的免 CDK 接口（自建站没有 latest 接口，只能用
+        ## tag 拼 URL，靠这条口径补上）；这里只决定字节从哪来，且**不做自动
+        ## 分流**——选了 Mirror 酱而 CDK 不可用时报明原因并跳过，不悄悄换成
+        ## GitHub，用户得知道自己在从哪下载。
+        ## M7A 没有上 AUTO-MAS 自建站，所以只有两个源，默认 GitHub。
+        self.Update_M7ASource = ConfigItem(
+            "Update", "M7ASource", "GitHub", OptionsValidator(["GitHub", "MirrorChyan"])
+        )
+        ## SRA 默认自建站：免 CDK、不限流、sha256 与 GitHub 逐字节一致，且
+        ## SRA 上游 CI 会主动往这里推送，其自带更新器也有 AUTO-MAS 这一档。
+        self.Update_SRASource = ConfigItem(
+            "Update",
+            "SRASource",
+            "AutoSite",
+            OptionsValidator(["AutoSite", "GitHub", "MirrorChyan"]),
+        )
+        ## Mirror 酱 CDK，由用户自己填，**不做全局兜底**：全局那个服务的是
+        ## AUTO-MAS 自身的更新，和外部脚本不是一回事，串在一起只会让人猜自己
+        ## 在用哪个。选 Mirror 酱作为下载源时这一项必填。
+        self.Update_MirrorChyanCDK = ConfigItem(
+            "Update", "MirrorChyanCDK", "", EncryptValidator()
+        )
+
         ## TaskMapping -----------------------------------------------------
         ## 模块脚本分配（延迟导入以避免循环依赖）
         from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
@@ -2297,7 +2342,8 @@ class MaaFWUserConfig(ConfigBase):
         ## Task ------------------------------------------------------------
         ## 当前选中的 interface preset 名称，留空时使用 interface 默认逻辑
         self.Task_SelectedPreset = ConfigItem("Task", "SelectedPreset", "")
-        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions
+        ## 当前用户的任务快照，结构为 taskOrder/taskChecked/taskOptions；
+        ## 三者的键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）
         self.Task_TaskSnapshot = ConfigItem(
             "Task", "TaskSnapshot", "{ }", JSONValidator(dict)
         )
@@ -2486,6 +2532,10 @@ class MaaFWConfig(ConfigBase):
         )
         ## DirectExe 模式下 MAS 启动的游戏 exe
         self.Game_LaunchPath = ConfigItem("Game", "LaunchPath", "", FileValidator())
+        ## 安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。
+        ## 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）；
+        ## 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。
+        self.Game_PackageName = ConfigItem("Game", "PackageName", "")
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 游戏启动后等待窗口就绪的时间（秒）
@@ -3232,16 +3282,18 @@ class OkNteUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
-# BetterGI 一条龙内置配置组（按 BetterGI 默认顺序，与 tools/one_dragon.py 保持同步）
+# BetterGI 一条龙内置配置组（MAS 默认顺序，与 tools/one_dragon.py 保持同步）。
+# 「体力作战」为 MAS 前端预留的虚拟项（尚未开展制作，前端默认隐藏，不在此表），
+# 恢复展示后在 initDragonList 插入「合成树脂」之后；此处仅列 BetterGI 官方内置 8 组。
 _BGI_BUILTIN_ONE_DRAGON_GROUPS = [
     "领取邮件",
     "合成树脂",
-    "自动地脉花",
-    "自动秘境",
-    "自动首领讨伐",
     "自动幽境危战",
-    "领取每日奖励",
+    "自动地脉花",
+    "自动首领讨伐",
+    "自动秘境",
     "领取尘歌壶奖励",
+    "领取每日奖励",
 ]
 
 # 旧版「国际服服务器(Servers)」→ 新版「游戏资源(Resource)」的映射。
@@ -3319,6 +3371,20 @@ class BetterGIUserConfig(ConfigBase):
         self.OneDragon_CustomGroups = ConfigItem(
             "OneDragon", "CustomGroups", "[]", JSONValidator(list)
         )
+        ## 一条龙队列（可视化编排）：JSON 数组字符串，按执行顺序存储，元素为
+        ## {"kind": str, "name": str}（kind ∈ builtin/js/pathing/scriptgroup/custom，
+        ## 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例），
+        ## 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为
+        ## （按副本 TaskOrder 相对顺序，不重排）。
+        self.OneDragon_Queue = ConfigItem("OneDragon", "Queue", "[]", JSONValidator(list))
+        ## 一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。
+        ## 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段
+        ## 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。
+        self.OneDragon_Plan = ConfigItem("OneDragon", "Plan", "", StringValidator())
+        ## 是否启用「直连执行层」：战斗 4 项由 MAS 自编排 Plan 驱动（按需求恒开，预留开关）。
+        self.OneDragon_UseExecutionLayer = ConfigItem(
+            "OneDragon", "UseExecutionLayer", True, BoolValidator()
+        )
 
         ## Switch ----------------------------------------------------------
         ## 切换账号配置（BetterGI「切换账号多模式」脚本专项适配）
@@ -3395,7 +3461,11 @@ class BetterGIUserConfig(ConfigBase):
         last_status = self.get("Data", "LastProxyStatus")
         tags.append({"text": f"上次：{last_status}", "color": "green"})
 
-        config_name = self.get("Task", "OneDragonConfigName") or "未设置"
+        # 用户独立配置：一条龙固定走「MAS独立配置」槽位（名称冻结），仅直控模式显示所选实配名
+        if self.get("Info", "IfUseMasConfig"):
+            config_name = "MAS独立配置"
+        else:
+            config_name = self.get("Task", "OneDragonConfigName") or "未设置"
         tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
 
         # 剩余天数标签
@@ -3887,10 +3957,29 @@ class ZzzOdUserConfig(ConfigBase):
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        tags.append(
+            {
+                "text": f"上次：{last_status}",
+                "color": "red" if last_status == "失败" else "green",
+            }
+        )
 
         mode = str(self.get("Info", "Mode") or "用户")
-        tags.append({"text": f"来源：{mode}", "color": "orange"})
+        if mode == "用户":
+            ## 一条龙任务编排仅用户模式消费（直控事实源是原生配置，MAS 字段会失真）
+            try:
+                app_list = json.loads(self.get("OneDragon", "AppList") or "[]")
+            except (TypeError, ValueError):
+                app_list = []
+            if not isinstance(app_list, list):
+                app_list = []
+            enabled_count = sum(
+                1 for item in app_list if isinstance(item, dict) and item.get("enabled")
+            )
+            if enabled_count > 0:
+                tags.append({"text": f"一条龙：{enabled_count} 项", "color": "orange"})
+            else:
+                tags.append({"text": "一条龙：未编排", "color": "orange"})
 
         remained_day = self.get("Info", "RemainedDay")
         if remained_day == -1:
@@ -3982,9 +4071,11 @@ class ZzzOdConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 单次运行超时时间（分钟）；一条龙含游戏内全流程，默认放宽
+        ## 单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是
+        ## 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层
+        ## 日志）也靠它兜底超时后切换启动器
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 180, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 40, RangeValidator(1, 9999)
         )
 
         self.UserData = MultipleConfig([ZzzOdUserConfig])

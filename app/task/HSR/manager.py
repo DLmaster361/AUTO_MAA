@@ -248,6 +248,97 @@ class HSRManager(TaskExecuteBase):
 
         logger.info("HSR 外部配置已恢复")
 
+    async def _rollback_pending_updates(self) -> None:
+        """收拾上一轮崩在中途的外部脚本更新。
+
+        只读 journal、只动改名，不联网。放在拿到路径锁之后、备份外部配置之前：
+        备份要拿到的是回滚之后的稳定状态。
+        """
+
+        from app.task.HSR.tools.update import rollback_pending
+
+        for engine in ("M7A", "SRA"):
+            root = resolve_script_path(self.script_config, engine)
+            if not root:
+                continue
+            try:
+                await rollback_pending(Path(root), send_log=self._append_log)
+            except Exception as e:  # noqa: BLE001 - 回滚失败不该挡住任务启动
+                logger.opt(exception=True).warning(f"HSR 更新：回滚 {engine} 残留失败")
+                self._append_log(f"{engine} 未完成更新的回滚失败，将按现状继续：{e}")
+
+    def _update_aborted(self) -> bool:
+        """用户是否已经要求停止——下载途中每收一块问一次。
+
+        收尾期的更新跑在 ``asyncio.shield`` 里（``models/task.py`` 的
+        ``_execute_task``），取消传不进来：``stopped_manually`` 只覆盖「停止落在
+        主任务里」，而停止落在更新途中时唯一的痕迹是根任务已经被取消。两个都
+        看，才不至于让用户按了停止还要等一个几百 MB 的下载走完、期间外部目录锁
+        一直被占着。
+        """
+
+        if self.stopped_manually:
+            return True
+        task_item = self.task_info
+        root_task = getattr(task_item, "task", None) if task_item else None
+        return bool(root_task is not None and root_task.cancelled())
+
+    async def _update_external_scripts(self) -> str | None:
+        """本轮正常跑完后更新外部脚本。返回非空字符串表示应判为异常。
+
+        更新失败本身不算任务失败——按现有版本继续跑就是了。只有目录真的被改
+        坏（回滚也失败）才必须让脚本进异常态，否则下一轮会在半坏的目录上反复
+        跑。
+        """
+
+        script_config = self.script_config
+        if script_config is None:
+            return None
+        if str(script_config.get("Update", "AutoUpdateMode") or "Off") != "AfterRun":
+            return None
+        # 取消或已经出错的这一轮不动目录：收尾期最不该起一个几百 MB 的下载。
+        # `stopped_manually` 是基类在任何 CancelledError 上置的（models/task.py），
+        # 且置于 final_task 之前，比只看 `crashed` 气密——HSR 只在用户循环里置
+        # `crashed`，取消若落在 check() 通过之后、用户循环开始之前就会漏掉。
+        if self.stopped_manually or self.crashed or self.check_result != "Pass":
+            return None
+
+        from app.task.HSR.tools.update import update_engine_if_needed
+
+        channel = str(script_config.get("Update", "Channel") or "stable")
+        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
+        # 与 MaaFW 更新缓存同一口径：下载包落 MAS 数据目录，不落安装卷。
+        download_dir = Path.cwd() / "data" / "hsr_update"
+
+        blocking: list[str] = []
+        for engine in ("M7A", "SRA"):
+            if self._update_aborted():
+                break
+            root = resolve_script_path(script_config, engine)
+            if not root:
+                continue
+            source = str(script_config.get("Update", f"{engine}Source") or "")
+            try:
+                outcome = await update_engine_if_needed(
+                    engine,
+                    Path(root),
+                    source=source,
+                    channel=channel,
+                    cdk=cdk,
+                    proxy=Config.proxy,
+                    download_dir=download_dir,
+                    send_log=self._append_log,
+                    should_abort=self._update_aborted,
+                )
+            except Exception as e:  # noqa: BLE001 - 更新绝不能拖垮任务收尾
+                logger.opt(exception=True).warning(f"HSR 更新：{engine} 更新时出错")
+                self._append_log(f"{engine} 更新异常，按现有版本继续：{e}")
+                continue
+            if outcome.blocking:
+                blocking.append(outcome.message)
+
+        return "；".join(blocking) if blocking else None
+
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         """向调度台日志追加一行 HSR 运行信息。"""
 
@@ -256,8 +347,8 @@ class HSRManager(TaskExecuteBase):
             return
         # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
         # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
-        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
-        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        # 注意别把周常重置日、历战余响开始日那几处一起改掉，那些是游戏服务器
+        # 日期语义，用 UTC+4 表达（服务器周一 04:00 重置 = UTC+4 零点）。
         now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         for line in text.splitlines():
             line = line.strip()
@@ -643,6 +734,7 @@ class HSRManager(TaskExecuteBase):
             )
             self._append_log("HSR 外部脚本目录运行锁已获取")
 
+            await self._rollback_pending_updates()
             self._backup_external_configs()
             self._append_log("HSR 外部脚本配置已备份")
             if resolve_script_path(self.script_config, "SRA"):
@@ -1012,6 +1104,13 @@ class HSRManager(TaskExecuteBase):
 
         try:
             restore_error = await self._restore_external_configs()
+            # 外部脚本更新是这一段关键区里的最后一件事：往前必须晚于配置恢复
+            # （恢复写的是打补丁前的用户配置，反过来会把旧配置盖到新版本上），
+            # 往后必须早于释放路径锁，否则更新期间目录不再独占。
+            if not final_errors and not restore_error:
+                update_error = await self._update_external_scripts()
+                if update_error:
+                    final_errors.append(update_error)
         finally:
             # 备份/运行/恢复是同一关键区；配置解锁与通知在锁释放后进行。
             self._release_external_path_lock()

@@ -20,8 +20,8 @@
 
 """Emulator 2.0 的 MuMu 6 后端。
 
-继承旧 ``MumuManager``，启动 / 关闭 / 状态 / 隐藏全部原样复用；这里只补三件事：
-读写四项设置、新建实例、删除实例。
+继承旧 ``MumuManager``，启动 / 关闭 / 状态 / 隐藏全部原样复用；这里只补四件事：
+读写四项设置、新建实例、删除实例、按旧版全局开关应用「大雷主人模式」（见 :mod:`.master_mode`）。
 
 **和雷电走的是完全不同的通道。** 雷电没有可用的命令行（没有帧率参数、CPU 内存只收有限
 档位、而且根本不能读），只能直接改实例配置文件；MuMu 的 ``MuMuManager setting`` 读写都
@@ -45,10 +45,21 @@ import json
 from pathlib import Path
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceRef
+from app.models.emulator import DeviceInfo, DeviceRef
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.mumu import MumuManager
 
+from .applaunch import AppLaunchMixin
+from .master_mode import (
+    MUMU_LAUNCHER_PACKAGE,
+    MUMU_SH_HELPER_IMAGE,
+    MUMU_SH_TIMEOUT,
+    apply_splash_placeholders,
+    is_master_mode_enabled,
+    mumu_component_applied,
+    mumu_component_shell,
+    mumu_splash_placeholder_paths,
+)
 from .settings import (
     FieldValue,
     InstanceSettings,
@@ -139,8 +150,138 @@ def parse_mem_list(raw: str | None) -> list[int]:
     return values
 
 
-class MuMu6Manager(MumuManager):
-    """一条 MuMu 6 安装的管理器。"""
+class MuMu6Manager(AppLaunchMixin, MumuManager):
+    """一条 MuMu 6 安装的管理器。
+
+    ``AppLaunchMixin`` 必须排在 ``MumuManager`` 前面：带包启动改走
+    「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``control launch -pkg``。
+    """
+
+    #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
+    store_package = "com.mumu.store"
+
+    async def vendor_launch_app(self, idx: str, package_name: str) -> object:
+        """``MuMuManager control -v N app launch -pkg``。
+
+        与被否掉的 ``control launch -pkg`` 不是同一条命令：那条是「开模拟器顺便开应用」，
+        这条是对**已经在跑**的实例启动应用。实测 0.06 秒到前台。
+        """
+        return await ProcessRunner.run_process(
+            self.emulator_path,
+            "control",
+            "-v",
+            idx,
+            "app",
+            "launch",
+            "-pkg",
+            package_name,
+            timeout=self.config.get("Info", "MaxWaitTime"),
+            if_merge_std=True,
+            breakaway=True,
+        )
+
+    async def prepare_launch(self, idx: str) -> None:
+        """启动前按旧版全局开关处理「大雷主人模式」的宿主缓存。
+
+        旧配置靠 ``EMULATOR_SPLASH_ADS_PATH_BOOK`` 在管理器构造时做同一件事，
+        表里没有 ``emulator2``，所以这里自己做。只记警告，不拦启动。
+        """
+        apply_splash_placeholders(
+            mumu_splash_placeholder_paths(), is_master_mode_enabled()
+        )
+
+    async def after_boot(self, idx: str, info: DeviceInfo) -> None:
+        """在线之后按旧版全局开关应用 / 恢复「大雷主人模式」的桌面组件。
+
+        组件状态跨重启保留，所以每次都设是幂等的：开着 ``pm disable``、关着 ``pm enable``。
+        禁用之后桌面已经画好的 widget 不会自己消失，要重启一次桌面才看得到；恢复时不动桌面，
+        桌面内容下次自然刷新。任何一步失败只记警告。
+        """
+        enabled = is_master_mode_enabled()
+        output = await self._root_shell(idx, mumu_component_shell(enabled))
+        if output is None:
+            return
+        if not mumu_component_applied(output, enabled):
+            logger.warning(
+                f"MuMu 实例 {idx} 的「大雷主人模式」组件没有全部{'禁用' if enabled else '恢复'}: "
+                f"{output.strip()}"
+            )
+            return
+        logger.info(f"MuMu 实例 {idx} 的「大雷主人模式」组件已{'禁用' if enabled else '恢复'}")
+        if enabled:
+            await self._restart_launcher(idx)
+
+    async def _root_shell(self, idx: str, command: str) -> str | None:
+        """``MuMuManager sh -v N -c``：uid=0 的 root 通道，不需要打开 ``root_permission``。
+
+        它底层的 ``NemuShell.exe`` 连不上实例的命名管道会**无限重试**，所以带短超时；超时后
+        ``ProcessRunner`` 只杀得掉 ``MuMuManager.exe`` 本身，孤儿 ``NemuShell.exe`` 得另外清，
+        不然它会一直占着 CPU 重试。失败返回 ``None``。
+        """
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "sh",
+                "-v",
+                idx,
+                "-c",
+                command,
+                timeout=MUMU_SH_TIMEOUT,
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"MuMu 实例 {idx} 的 root shell 超过 {MUMU_SH_TIMEOUT:.0f} 秒没有返回，"
+                f"清理残留的 {MUMU_SH_HELPER_IMAGE}"
+            )
+            await self._kill_sh_helpers()
+            return None
+        except Exception as e:  # noqa: BLE001 - 见 docstring
+            logger.warning(f"MuMu 实例 {idx} 的 root shell 执行失败: {e}")
+            return None
+        if result.returncode != 0:
+            logger.warning(
+                f"MuMu 实例 {idx} 的 root shell 返回 {result.returncode}: {result.stdout.strip()}"
+            )
+            return None
+        return str(result.stdout or "")
+
+    async def _kill_sh_helpers(self) -> None:
+        """清掉超时后留下的 ``NemuShell.exe``。"""
+        try:
+            await ProcessRunner.run_process(
+                "taskkill",
+                "/F",
+                "/IM",
+                MUMU_SH_HELPER_IMAGE,
+                timeout=10,
+                if_merge_std=True,
+            )
+        except Exception as e:  # noqa: BLE001 - 清不掉只记一笔
+            logger.warning(f"清理 {MUMU_SH_HELPER_IMAGE} 失败: {e}")
+
+    async def _restart_launcher(self, idx: str) -> None:
+        """重启安卓桌面，让已禁用的 widget 从桌面上消失。前台应用不受影响。"""
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "adb",
+                "-v",
+                idx,
+                "shell",
+                "am",
+                "force-stop",
+                MUMU_LAUNCHER_PACKAGE,
+                timeout=10,
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - 桌面没刷新不影响任务
+            logger.warning(f"重启 MuMu 实例 {idx} 的桌面失败: {e}")
+            return
+        if result.returncode != 0:
+            logger.warning(f"重启 MuMu 实例 {idx} 的桌面失败: {result.stdout.strip()}")
 
     async def _run(self, *args: str) -> str:
         result = await ProcessRunner.run_process(

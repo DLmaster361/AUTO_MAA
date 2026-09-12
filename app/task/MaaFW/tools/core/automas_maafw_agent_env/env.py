@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import Callable
 
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
+from ..automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
+from ..automas_maafw_runtime_pool.installer import (
+    is_package_index_offline,
+    resolve_package_index_candidates,
+)
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
@@ -21,6 +28,9 @@ AGENT_COMPAT_SHIM_DIR_NAME = ".auto_mas_shims"
 PIP_HEALTH_CHECK_TIMEOUT = 15
 PROJECT_PYTHON_HEALTH_TIMEOUT = 15
 PIP_INSTALL_TIMEOUT = 120
+# pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
+# 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
+PIP_INSTALL_PER_INDEX_TIMEOUT = 300
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
 UV_VENV_TIMEOUT = 300
@@ -286,10 +296,15 @@ def _prepare_isolated_venv_env(
     if install_dependencies:
         packages = _load_project_agent_requirements(project_path)
         log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
-        if not _pip_install(
+        installed, failure_detail = _pip_install(
             python_exe, packages, cwd=str(project_path), env=test_env, log=log
-        ):
-            raise MaaFWAgentEnvError(f"隔离 venv 依赖安装失败: {python_exe}")
+        )
+        if not installed:
+            # 原来只报解释器路径，用户拿它做不了任何事，真实原因还只写进一个
+            # 没人持久化的 list。带上原因，现有告警条就能自己说明白。
+            raise MaaFWAgentEnvError(
+                f"隔离 venv 依赖安装失败: {failure_detail or python_exe}"
+            )
     else:
         log("[Python环境] 当前调用禁用依赖安装，仅写入隔离 venv manifest")
 
@@ -339,6 +354,8 @@ def _ensure_isolated_venv(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                # 引导解释器同样不能被宿主 PYTHONHOME / PYTHONPATH 带偏。
+                env=strip_host_python_environment(),
             )
         except subprocess.TimeoutExpired as exc:
             raise MaaFWAgentEnvError(
@@ -367,12 +384,13 @@ def _create_venv_with_uv(venv_path: Path, log: Callable[[str], None]) -> None:
     log(f"[Python环境] 引导 Python 均缺少 venv 模块，改用 uv 创建: {venv_path}")
     try:
         result = subprocess.run(
-            [uv_exe, "venv", "--seed", str(venv_path)],
+            [uv_exe, "venv", "--seed", "--no-config", str(venv_path)],
             capture_output=True,
             timeout=UV_VENV_TIMEOUT,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=strip_host_python_environment(),
         )
     except subprocess.TimeoutExpired as exc:
         raise MaaFWAgentEnvError(
@@ -475,7 +493,15 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
         packages.append(AGENT_BOOTSTRAP_PACKAGE)
-    return packages
+    # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
+    # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
+    # 延迟导入：``automas_maafw_runner`` 的包初始化会 import ``run_plan``，而
+    # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
+    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        pin_agent_maafw_requirement,
+    )
+
+    return pin_agent_maafw_requirement(project_path, packages)
 
 
 def _project_agent_requirements_hash(project_path: Path) -> str:
@@ -496,13 +522,8 @@ def _project_interface_hash(project_path: Path) -> str:
 
 
 def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env.pop("VIRTUAL_ENV", None)
-    env.pop("PYTHONHOME", None)
-    env.pop("PYTHONUSERBASE", None)
-    env.pop("PIP_TARGET", None)
-    env.pop("PIP_PREFIX", None)
-    env.pop("PIP_USER", None)
+    # 剔除名单与运行池 / worker 共用；隔离 venv 里的 pip 只认项目根这一条 PYTHONPATH。
+    env = strip_host_python_environment()
     env["PYTHONPATH"] = str(project_path)
     return env
 
@@ -647,6 +668,27 @@ def _try_ensurepip(
     return False
 
 
+def _pip_index_arg_candidates() -> list[tuple[str, list[str]]]:
+    """按序返回 pip 的索引候选 ``(日志标签, 参数)``，与运行池 installer 同源。
+
+    Runtime 经 AUTO_MAS_MIRROR_PACKAGE_INDEX 注入镜像列表；键存在但为空表示
+    要求完全离线，此时只跑一次 --no-index，绝不联网（运行池遵守这条契约，
+    这里此前不遵守，属于契约漏洞）。用户显式设了 PIP_INDEX_URL 就尊重它，
+    不参与候选轮换——参数留空交给 pip 自己解析，但标签要如实写出用的是哪个，
+    否则日志里会和「谁都没配」长得一模一样。
+    """
+
+    if is_package_index_offline():
+        return [("离线", ["--no-index"])]
+    user_index = str(os.environ.get("PIP_INDEX_URL") or "").strip()
+    if user_index:
+        return [(f"PIP_INDEX_URL={user_index}", [])]
+    candidates = resolve_package_index_candidates()
+    if not candidates:
+        return [("PyPI 默认索引", [])]
+    return [(candidate, ["--index-url", candidate]) for candidate in candidates]
+
+
 def _pip_install(
     python_exe: str,
     packages: list[str],
@@ -654,28 +696,55 @@ def _pip_install(
     cwd: str | None,
     env: dict[str, str],
     log: Callable[[str], None],
-) -> bool:
-    try:
-        result = subprocess.run(
-            [python_exe, "-m", "pip", "install", "--quiet", *packages],
-            capture_output=True,
-            timeout=PIP_INSTALL_TIMEOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            cwd=cwd,
-            env=env,
-        )
-        if result.returncode == 0:
-            log(f"[Python环境] pip install 完成: {', '.join(packages)}")
-            return True
-        detail = (result.stderr or result.stdout or "").strip()
-        log(f"[Python环境] pip install 未成功: {detail[:300]}")
-    except subprocess.TimeoutExpired:
-        log(f"[Python环境] pip install 超时 ({PIP_INSTALL_TIMEOUT}s)")
-    except Exception as exc:
-        log(f"[Python环境] pip install 异常: {exc}")
-    return False
+) -> tuple[bool, str]:
+    """安装隔离 venv 依赖，返回 (是否成功, 最后一次失败原因)。
+
+    与运行池的 ``_run_with_source_rotation`` 有一处有意的分歧：那边超时直接抛出、
+    不换源，这里超时也接着试下一个候选。装不上的首要成因就是某个索引连不通，而
+    连不通的典型表现正是超时，不换源等于白轮换。反过来，解释器自己起不来
+    （``OSError``）与索引无关，立即停手，不必对着每个候选各失败一次。
+    """
+
+    last_detail = ""
+    for label, index_args in _pip_index_arg_candidates():
+        try:
+            result = subprocess.run(
+                [
+                    python_exe,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--quiet",
+                    *index_args,
+                    *packages,
+                ],
+                capture_output=True,
+                timeout=PIP_INSTALL_PER_INDEX_TIMEOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=cwd,
+                env=env,
+            )
+            if result.returncode == 0:
+                log(f"[Python环境] pip install 完成 ({label}): {', '.join(packages)}")
+                return True, ""
+            last_detail = (result.stderr or result.stdout or "").strip()
+            log(f"[Python环境] pip install 未成功 ({label}): {last_detail[:300]}")
+        except subprocess.TimeoutExpired:
+            last_detail = f"{label} 超时 ({PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
+            log(
+                f"[Python环境] pip install 超时 ({label}, {PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
+            )
+        except OSError as exc:
+            # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
+            last_detail = f"无法启动 {python_exe}: {exc}"
+            log(f"[Python环境] pip install 无法启动 ({label}): {exc}")
+            break
+        except Exception as exc:
+            last_detail = f"{label}: {exc}"
+            log(f"[Python环境] pip install 异常 ({label}): {exc}")
+    return False, last_detail[:300]
 
 
 def _python_supports_venv(python: str) -> bool:
@@ -690,6 +759,8 @@ def _python_supports_venv(python: str) -> bool:
             capture_output=True,
             timeout=VENV_PROBE_TIMEOUT,
             text=True,
+            # 宿主 PYTHONHOME 会让解释器起不来、PYTHONWARNINGS=error 会让探测误判成「不可用」。
+            env=strip_host_python_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return False

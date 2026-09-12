@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 from app.core.config import Config
 from app.models.config import Webhook
-from app.services.notification import Notify
+from app.services.notification import DEFAULT_WEBHOOK_TEMPLATE, Notify
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
@@ -65,6 +65,7 @@ class NotifyPayload:
     system_message: str | None = None
     system_ticker: str | None = None
     system_timeout: int = 5
+    standalone_title: str | None = None
 
     @property
     def signed_text(self) -> str:
@@ -106,29 +107,42 @@ class NotifyPayload:
         return self.signed_text
 
     def webhook_content_for(self, webhook: Webhook) -> str:
-        """只有明确支持 Markdown 的模板接收 Markdown 正文。"""
+        """按模板选择正文格式；仅正文模板需要补上独立通知标题。"""
 
-        if self.webhook_text is not None or self.markdown_text is None:
-            return self.webhook_content
-        try:
-            template = json.loads(webhook.get("Data", "Template") or "{}")
-            host = urlsplit(webhook.get("Data", "Url")).hostname
-        except (ValueError, TypeError):
-            return self.signed_text
-        if isinstance(template, dict) and (
-            template.get("msgtype") == "markdown"
-            or template.get("template") == "markdown"
-            or "desp" in template
+        if not self.standalone_title and (
+            self.webhook_text is not None or self.markdown_text is None
         ):
-            return self.markdown_text
-        if host in {
-            "discord.com",
-            "discordapp.com",
-            "canary.discord.com",
-            "ptb.discord.com",
-        }:
-            return self.markdown_text
-        return self.signed_text
+            return self.webhook_content
+        template_text = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
+        content = self.webhook_content
+        markdown = False
+        if self.webhook_text is None and self.markdown_text is not None:
+            try:
+                template = json.loads(template_text)
+                host = urlsplit(webhook.get("Data", "Url")).hostname
+            except (ValueError, TypeError):
+                content = self.signed_text
+            else:
+                markdown = (
+                    isinstance(template, dict)
+                    and (
+                        template.get("msgtype") == "markdown"
+                        or template.get("template") == "markdown"
+                        or "desp" in template
+                    )
+                ) or host in {
+                    "discord.com",
+                    "discordapp.com",
+                    "canary.discord.com",
+                    "ptb.discord.com",
+                }
+                content = self.markdown_text if markdown else self.signed_text
+        if self.standalone_title and "{title}" not in template_text:
+            heading = (
+                f"**{self.standalone_title}**" if markdown else self.standalone_title
+            )
+            return f"{heading}\n\n{content}"
+        return content
 
     @property
     def koishi_content(self) -> str:
@@ -143,14 +157,16 @@ class NotifyPayload:
         """返回微信（iLink）正文。"""
 
         text = self.signed_text
-        return text if text.startswith(f"【{self.title}】") else f"{self.title}\n\n{text}"
+        heading = self.standalone_title or self.title
+        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
 
     @property
     def openclaw_qq_content(self) -> str:
         """返回 QQ 官方机器人正文。"""
 
         text = self.signed_text
-        return text if text.startswith(f"【{self.title}】") else f"{self.title}\n\n{text}"
+        heading = self.standalone_title or self.title
+        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
 
     @property
     def system_content(self) -> str:
@@ -186,6 +202,8 @@ class DispatchResult:
     attempted: int = 0
     succeeded: tuple[str, ...] = ()
     failed: tuple[str, ...] = ()
+    # 内部投递记录使用 ID，用户可见的 succeeded/failed 继续保留渠道名称。
+    succeeded_ids: tuple[str, ...] = ()
 
 
 def _webhooks(config: Any) -> tuple[tuple[str, Any], ...]:
@@ -300,30 +318,39 @@ def _webhook_name(uid: str, webhook: Any) -> str:
         return uid
 
 
-def target_channel_names(target: NotifyTarget) -> tuple[str, ...]:
-    """目标可能覆盖的渠道名（与 ``dispatch`` 实际发送时命名的格式一致）。
+def _target_channels(target: NotifyTarget) -> dict[str, str]:
+    """枚举目标的投递 ID 和显示名称，避免同名 Webhook 共用补发记录。"""
 
-    供按渠道跳过（如签到汇总只重试失败渠道）时枚举与过滤使用。
-    """
-
-    names = []
+    channels = {}
     if target.system:
-        names.append(f"{target.name}系统")
+        channel = f"{target.name}系统"
+        channels[channel] = channel
     if target.mail_to is not None:
-        names.append(f"{target.name}邮件")
+        channel = f"{target.name}邮件"
+        channels[channel] = channel
     if target.serverchan_key is not None:
-        names.append(f"{target.name} ServerChan")
-    names.extend(
-        f"{target.name} Webhook {_webhook_name(uid, webhook)}"
-        for uid, webhook in target.webhooks
-    )
+        channel = f"{target.name} ServerChan"
+        channels[channel] = channel
+    for uid, webhook in target.webhooks:
+        channels[f"{target.name} Webhook {uid}"] = (
+            f"{target.name} Webhook {_webhook_name(uid, webhook)}"
+        )
     if target.koishi:
-        names.append(f"{target.name} Koishi")
+        channel = f"{target.name} Koishi"
+        channels[channel] = channel
     if target.openclaw_weixin:
-        names.append(f"{target.name} 微信（iLink）")
+        channel = f"{target.name} 微信（iLink）"
+        channels[channel] = channel
     if target.openclaw_qq:
-        names.append(f"{target.name} QQ（官方机器人）")
-    return tuple(names)
+        channel = f"{target.name} QQ（官方机器人）"
+        channels[channel] = channel
+    return channels
+
+
+def target_channel_names(target: NotifyTarget) -> tuple[str, ...]:
+    """返回用户可见的渠道名，保持既有名称枚举接口。"""
+
+    return tuple(_target_channels(target).values())
 
 
 async def _send(
@@ -375,34 +402,45 @@ async def dispatch(
     attempts: int = 1,
     retry_delay: float = 0,
     skip_channels: Iterable[str] = (),
+    skip_channel_ids: Iterable[str] = (),
 ) -> DispatchResult:
     """向所有目标分发通知，返回实际尝试/成功/失败渠道。
 
     ``skip_channels`` 中的渠道不会被发送（也不计入尝试次数），用于签到汇总
     等场景只向尚未送达的渠道重试，避免已成功渠道收到重复内容。
+    ``skip_channel_ids`` 按稳定 ID 跳过，不受 Webhook 同名或改名影响。
     """
 
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
 
     skip = set(skip_channels)
+    skip_ids = set(skip_channel_ids)
     succeeded: list[str] = []
+    succeeded_ids: list[str] = []
     failed: list[str] = []
     attempted = 0
 
-    async def attempt(channel: str, send: Callable[[], Awaitable[Any]]) -> None:
+    async def attempt(
+        channel: str,
+        send: Callable[[], Awaitable[Any]],
+        *,
+        channel_id: str | None = None,
+    ) -> None:
         nonlocal attempted
-        if channel in skip:
+        delivery_id = channel_id or channel
+        if channel in skip or delivery_id in skip_ids:
             return
         attempted += 1
         if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
             succeeded.append(channel)
+            succeeded_ids.append(delivery_id)
         else:
             failed.append(channel)
 
     def miss(channel: str) -> None:
         nonlocal attempted
-        if channel in skip:
+        if channel in skip or channel in skip_ids:
             return
         attempted += 1
         failed.append(channel)
@@ -469,17 +507,20 @@ async def dispatch(
                     image_base64=payload.webhook_image_base64 or "",
                     webhook=w,
                 ),
+                channel_id=f"{target.name} Webhook {uid}",
             )
 
         if target.koishi:
             await attempt(
                 f"{target.name} Koishi",
-                lambda: Notify.send_koishi(
-                    payload.koishi_content,
-                    msgtype=payload.koishi_msgtype,
-                )
-                if payload.koishi_msgtype != "text"
-                else Notify.send_koishi(payload.koishi_content),
+                lambda: (
+                    Notify.send_koishi(
+                        payload.koishi_content,
+                        msgtype=payload.koishi_msgtype,
+                    )
+                    if payload.koishi_msgtype != "text"
+                    else Notify.send_koishi(payload.koishi_content)
+                ),
             )
 
         if target.openclaw_weixin:
@@ -504,6 +545,7 @@ async def dispatch(
         attempted=attempted,
         succeeded=tuple(succeeded),
         failed=tuple(failed),
+        succeeded_ids=tuple(succeeded_ids),
     )
 
 
@@ -604,14 +646,14 @@ async def dispatch_task_report(
         )
     else:
         channels = {
-            channel for target in targets for channel in target_channel_names(target)
+            channel for target in targets for channel in _target_channels(target)
         }
         with_summary = await dispatch(
             payload,
             targets,
             attempts=attempts,
             retry_delay=retry_delay,
-            skip_channels=delivered,
+            skip_channel_ids=delivered,
         )
         # 只给本轮开始前已送达摘要的渠道发原始报告，避免同一轮发送两次。
         without_summary = (
@@ -620,12 +662,12 @@ async def dispatch_task_report(
                 targets,
                 attempts=attempts,
                 retry_delay=retry_delay,
-                skip_channels=channels - delivered,
+                skip_channel_ids=channels - delivered,
             )
             if delivered & channels
             else DispatchResult()
         )
-        delivered.update(with_summary.succeeded)
+        delivered.update(with_summary.succeeded_ids)
         if task_info is not None:
             setattr(task_info, "game_sign_summary_delivered", delivered)
             setattr(task_info, "game_sign_summary_pending", with_summary.failed)
@@ -635,6 +677,7 @@ async def dispatch_task_report(
             attempted=with_summary.attempted + without_summary.attempted,
             succeeded=with_summary.succeeded + without_summary.succeeded,
             failed=with_summary.failed + without_summary.failed,
+            succeeded_ids=with_summary.succeeded_ids + without_summary.succeeded_ids,
         )
 
     await _publish_task_notification_failure(task_info, result)

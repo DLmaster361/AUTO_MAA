@@ -42,7 +42,7 @@ from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 from app.utils.platform import IS_WINDOWS
 
 from .adb import parse_adb_devices, resolve_serial
-from .applaunch import AppLaunchMixin, is_package_missing
+from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
 from .bosskey import BossKey, read_boss_key
 from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
 from .settings import (
@@ -493,8 +493,9 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         :func:`~.adb.resolve_serial` 照样会把它标成「核对通过」。
 
         判据用「认出别人」而不是「认出自己」，理由见 :data:`_FOREIGN_MARKER_PACKAGES`。
-        查不动（没有 adb、命令失败）时一律返回 ``False``：拿不准就维持原样，
-        不要凭一次查询失败把一台好设备判死。
+        查不动（没有 adb、命令失败、设备掉线）时一律返回 ``False`` **且不缓存**：
+        拿不准就维持原样，不要凭一次查询失败把一台好设备判死。只有 ``pm path``
+        真打出 ``package:`` 行才算「装着别家的包」。
         """
         now = time.monotonic()
         cached = self._ownership_cache.get(serial)
@@ -522,9 +523,15 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             except Exception as e:  # noqa: BLE001 - 查不动就不下结论, 见 docstring
                 logger.debug(f"核对 {serial} 的归属失败: {e}")
                 return False
-            if not is_package_missing(str(getattr(result, "stdout", "") or "")):
+            output = str(getattr(result, "stdout", "") or "")
+            if is_package_present(output):
                 foreign = True
                 break
+            if not is_package_missing(output):
+                # 「device not found」「offline」这类：设备根本没连上，判不了归属，
+                # 也不能把这个结论缓存起来——它可能几秒后就上线了
+                logger.debug(f"核对 {serial} 的归属无结论: {output.strip()[:120]}")
+                return False
 
         self._ownership_cache[serial] = (foreign, now + _OWNERSHIP_CACHE_SECONDS)
         if foreign:
@@ -565,7 +572,12 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             outcome = resolve_serial(native_index, serials, others)
             address = outcome.serial
 
-            if await self._is_foreign_serial(address):
+            # 只核对在线实例：关着的和正在启动的 adb 连不上，查了只会得到
+            # 「device not found」；而且启动期间查出的结论会被缓存，等它真上线时
+            # 反而把地址清空。
+            if info.status == DeviceStatus.ONLINE and await self._is_foreign_serial(
+                address
+            ):
                 # 宁可交白卷也不交错的：把别家的设备当成本实例发出去，后面每一条
                 # adb 操作（连接、装包、启动应用）都会打到另一台模拟器上，
                 # 而日志还显示「核对通过」。原因由 _is_foreign_serial 记一次。

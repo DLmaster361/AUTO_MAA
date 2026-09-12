@@ -303,6 +303,9 @@ export default {
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
     maaDaily: 'Daily tasks',
+    maaSwitchTheme: 'Switch theme',
+    maaSwitchThemeHint:
+      'Theme names are configured in MAA\'s "Switch Theme" task. Multiple names are picked at random each run; an empty list skips the task. Requires MAA v6.17.3 or later',
     maaRoguelike: 'Integrated Strategies',
     maaRoguelikeHint: 'A long run may be mistaken for a timeout',
     maaGreenTicketStore: 'Green Ticket Store',

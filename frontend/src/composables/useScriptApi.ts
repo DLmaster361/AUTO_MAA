@@ -268,6 +268,10 @@ export function useScriptApi() {
                           maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
                         IfAward:
                           maaUserData.Task?.IfAward !== undefined ? maaUserData.Task.IfAward : true,
+                        IfSwitchTheme:
+                          maaUserData.Task?.IfSwitchTheme !== undefined
+                            ? maaUserData.Task.IfSwitchTheme
+                            : false,
                         IfRoguelike:
                           maaUserData.Task?.IfRoguelike !== undefined
                             ? maaUserData.Task.IfRoguelike

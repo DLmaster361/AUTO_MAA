@@ -113,6 +113,7 @@ MAA_TASKS = [
     "Mall",
     "Award",
     "Roguelike",
+    "SwitchTheme",
 ]
 """MAA任务列表"""
 
@@ -125,6 +126,7 @@ MAA_TASKS_ZH = [
     "信用收支",
     "领取奖励",
     "自动肉鸽",
+    "更换主题",
 ]
 """MAA任务列表"""
 

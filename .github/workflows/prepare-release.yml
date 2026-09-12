@@ -38,7 +38,7 @@ on:
         default: beta
         options: [beta, stable, patch, explicit]
       version:
-        description: 'kind=explicit 时填版本号，如 v6.0.0-beta.1；必须大于所有已有 tag'
+        description: 'kind=explicit 时填版本号，如 v6.0.0-beta.1；必须比所选分支可达的最新 tag 新，且不能与任何已有 tag 重号'
         type: string
         required: false
 
@@ -54,8 +54,17 @@ jobs:
   prepare:
     name: 编译碎片并开发版 PR
     runs-on: ubuntu-latest
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
     steps:
+      # 分支限制不写进 job 级 if：那样误选 main 只会看到整个运行灰色 skipped，没有任何说明。
+      - name: 只允许在 dev 或 release/* 上运行
+        if: github.ref_name != 'dev' && !startsWith(github.ref_name, 'release/')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "::error::「准备发版」只能在 dev 或 release/* 分支上运行，当前选的是 ${REF_NAME}。请在 Run workflow 的分支下拉框里改选。"
+          exit 1
+
       - name: 检出代码
         uses: actions/checkout@v7.0.1
         with:

@@ -113,9 +113,9 @@ FRAGMENT_NAME = re.compile(
 )
 # 目录里允许存在、但不是碎片的文件
 FRAGMENT_IGNORED = {"README.md", ".gitkeep"}
-FRAGMENT_AUTHOR = re.compile(
-    r"^author:\s*@?(?P<login>[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\s*$"
-)
+LOGIN = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+LOGIN_PATTERN = re.compile(rf"^{LOGIN}$")
+FRAGMENT_AUTHOR = re.compile(rf"^author:\s*@?(?P<login>{LOGIN})\s*$")
 
 # 改了这些路径的 PR 被视为用户可见，必须带碎片（除非打了 skip-changelog 标签）
 USER_VISIBLE_PREFIXES = ("app/", "frontend/src/", "frontend/electron/", "main.py")
@@ -135,8 +135,14 @@ RELEASE_HEADING = re.compile(
 )
 # 底部的版本对比链接，由 render_changelog 重新生成，解析时跳过
 LINK_DEFINITION = re.compile(r"^\[[^\]]+\]:\s+\S+$")
-# 条目末尾的署名，可能连着好几个
+# 一个署名；碎片正文里出现它就是手写了署名
 SIGNATURE = re.compile(r" by \[@(?P<login>[^\]]+)\]\((?P<url>[^)]*)\)")
+# 条目末尾的整串署名：第一个必带 ` by `，后面的可以只用空格连着——旧机器人给多人条目
+# 补署名时写的就是 ` by [@a](..) [@b](..)`，已发布段里有几十条，两种写法都要认
+SIGNATURE_TAIL = re.compile(
+    r" by \[@[^\]]+\]\([^)]*\)(?:(?: by)? \[@[^\]]+\]\([^)]*\))*$"
+)
+SIGNATURE_LOGIN = re.compile(r"\[@(?P<login>[^\]]+)\]\([^)]*\)")
 
 # 发版日期按北京时间取，维护者与用户都在这个时区；不用 zoneinfo 是因为 Windows 上
 # 没有 tzdata 包时它会直接抛错。
@@ -425,7 +431,8 @@ def next_version(
     - beta：最新是 beta 则 N+1；最新是正式版则下一个次版本的 beta.1。
     - stable：最新必须是 beta，转正同号。
     - patch：最新必须是正式版，Z+1。
-    - explicit：用给定的版本号，但必须大于最新 tag。
+    - explicit：用给定的版本号，但必须大于当前分支可达的最新 tag（在 release 线上打补丁时，
+      dev 上更新的 tag 不算；与任何已有 tag 重号由 release 另行拒绝）。
     """
 
     if kind == "explicit":
@@ -648,11 +655,19 @@ def signature(login: str) -> str:
 
 
 def split_signatures(entry: str) -> Tuple[str, List[str]]:
-    """把条目拆成 (正文, [署名登录名])，署名可能连着好几个。"""
+    """把条目拆成 (正文, [署名登录名])。
 
-    logins = [m.group("login") for m in SIGNATURE.finditer(entry)]
-    text = SIGNATURE.sub("", entry).rstrip()
-    return text, logins
+    只认条目末尾那一串署名，正文中间提到某人的链接不算；末尾那串里第一个带 ` by `，
+    后面的可以只用空格连着（旧机器人的多人写法），否则转正合并时跨 beta 段按正文去重
+    对不上、贡献者名单也会漏人。
+    """
+
+    stripped = entry.rstrip()
+    matched = SIGNATURE_TAIL.search(stripped)
+    if matched is None:
+        return stripped, []
+    logins = [m.group("login") for m in SIGNATURE_LOGIN.finditer(matched.group(0))]
+    return stripped[: matched.start()].rstrip(), logins
 
 
 def join_signatures(text: str, logins: Sequence[str]) -> str:
@@ -700,7 +715,7 @@ def fragment_author(
 
     squash 合并时就是 PR 作者，rebase 合并保留原作者，直推就是推的人。不读
     Co-authored-by，否则 AI 助手会被签进更新日志。noreply 邮箱直接拆出登录名，
-    其余经 commits API 解析；解析不到就退回 git 里的作者名。
+    其余经 commits API 解析；解析不到时，git 作者名长得像登录名才拿来用，否则不署名。
     """
 
     if fragment.author:
@@ -728,7 +743,11 @@ def fragment_author(
         login = resolve_login_via_api(repo, sha, token)
         if login:
             return login
-    return name.strip() or None
+    # 退回 git 作者名，但只有长得像登录名的才用：squash 提交里的作者名往往是显示名
+    # （中文昵称、带空格的全名），签进去会渲染成 https://github.com/<昵称> 这种坏链接，
+    # 不如不署名，让发版 PR 的「解析不到作者」提示把它点出来
+    name = name.strip()
+    return name if LOGIN_PATTERN.match(name) else None
 
 
 # ---------------------------------------------------------------------------
@@ -1071,7 +1090,8 @@ def merge_entries(target: Dict[str, List[str]], source: Dict[str, List[str]]) ->
                 )
             else:
                 index[text] = len(bucket)
-                bucket.append(item)
+                # 重新拼一次署名：旧机器人写的 ` by [@a](..) [@b](..)` 借此归一成每个都带 by
+                bucket.append(join_signatures(text, logins))
 
 
 def unconfirmed_commits(

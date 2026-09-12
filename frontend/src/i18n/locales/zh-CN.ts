@@ -1566,8 +1566,6 @@ export default {
       '开启后，本次运行的 BAAH 任务节点（执行成功/跳过/失败）会随任务报告一起推送；关闭后不采集任务节点，任务日志记录与结果判定不受影响',
     baahEmulatorHint:
       '选择本软件要调度的模拟器；运行前由本软件启动它并等待设备就绪，BAAH 只负责连接，无需在 BAAH 内填写模拟器路径与端口',
-    baahCloseEmulatorOnFinish: '结束后关闭模拟器',
-    baahCloseEmulatorOnFinishHint: '开启后，本次任务结束时由本软件关闭所选的模拟器实例',
     baahNotBaahScript: '脚本类型不是 BAAH',
     baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
     baahRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',

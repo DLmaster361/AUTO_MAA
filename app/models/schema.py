@@ -2105,9 +2105,6 @@ class BAAHConfig_Run(BaseModel):
 class BAAHConfig_Emulator(BaseModel):
     Id: Optional[str] = Field(default=None, description="模拟器ID")
     Index: Optional[str] = Field(default=None, description="模拟器多开实例索引")
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭模拟器"
-    )
 
 
 class BAAHConfig(BaseModel):

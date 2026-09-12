@@ -51,6 +51,31 @@ MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
 
 
+#: ``MuMuManager info`` 里值得带给用户的诊断字段，按这个顺序展示。
+_LAUNCH_DIAGNOSIS_FIELDS = (
+    ("launch_err_code", "启动错误码"),
+    ("launch_err_msg", "启动错误"),
+    ("error_code", "实例错误码"),
+    ("player_state", "实例状态"),
+)
+
+
+def format_launch_diagnosis(entry: dict[str, object]) -> str:
+    """从一条 ``info`` 记录里挑出 MuMu 自己给的启动诊断，格式化成可直接拼进报错的后缀。
+
+    只挑非空、非 0 的字段；一个都没有就返回空串，报错文案与以前完全一样。
+    """
+    parts = []
+    for key, label in _LAUNCH_DIAGNOSIS_FIELDS:
+        value = entry.get(key)
+        if value in (None, "", 0, False):
+            continue
+        parts.append(f"{label}={value}")
+    if not parts:
+        return ""
+    return "；MuMu 诊断: " + ", ".join(parts)
+
+
 class MumuManager(DeviceBase):
     """
     基于MuMuManager.exe的模拟器管理
@@ -342,9 +367,38 @@ class MumuManager(DeviceBase):
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
+            diagnosis = await self._describe_launch_failure(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
-            raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
+                raise RuntimeError(
+                    f"模拟器 {idx} 启动失败, 状态码: {status}{diagnosis}"
+                )
+            raise RuntimeError(
+                f"模拟器 {idx} 启动超时, 当前状态码: {status}{diagnosis}"
+            )
+
+    async def _describe_launch_failure(self, idx: str) -> str:
+        """把 MuMu 自己对这次启动的诊断拼成一段话，拼不出来返回空串。
+
+        ``MuMuManager info`` 除了在不在线，还会给 ``launch_err_code`` / ``launch_err_msg`` /
+        ``player_state`` / ``error_code``——启动失败的原因 MuMu 自己是说了的，只报「超时」
+        等于把它丢掉。任何一步失败都不能影响原本的报错。
+        """
+        try:
+            data = await self.get_device_info(idx)
+            entries = self._extract_device_entries(
+                self._decode_polluted_json(data, self._has_device_entries)
+            )
+        except Exception as e:  # noqa: BLE001 - 诊断只是锦上添花
+            logger.debug(f"读取 MuMu 模拟器 {idx} 启动诊断失败: {e}")
+            return ""
+        entry = next(
+            (item for item in entries if str(item.get("index")) == str(idx)), None
+        )
+        if entry is None and entries:
+            entry = entries[0]
+        if entry is None:
+            return ""
+        return format_launch_diagnosis(entry)
 
     async def close(self, idx: str) -> DeviceStatus:
         try:

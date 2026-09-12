@@ -23,6 +23,7 @@
 继承旧 ``LDManager`` 的启动、关闭、状态、实例锁和配置守卫。
 「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
 老板键按实例读取；设置写入与配置守卫使用同一把实例锁。
+启动后多一道「虚拟机真的起来了吗」的核对，VBox 服务卡住时自愈一次，见 :mod:`.vbox`。
 """
 
 import asyncio
@@ -31,6 +32,8 @@ import os
 import shutil
 import time
 from pathlib import Path
+
+import psutil
 
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
@@ -51,6 +54,13 @@ from .settings import (
     validate_changes,
 )
 from .stability import LDPLAYER_ITEMS, evaluate, safe_writes
+from .vbox import (
+    VBOX_SERVICE_PROCESS,
+    VmProbe,
+    live_vm_pids,
+    restart_vbox_service,
+    vm_is_missing,
+)
 
 
 def _dig_flat(config: dict, key: str) -> str | None:
@@ -90,6 +100,12 @@ _FOREIGN_MARKER_PACKAGES = ("com.mumu.store", "com.netease.mumu.cloner")
 #: 但它也不会几秒一变, 所以比 adb devices 的缓存放宽一些。
 _OWNERSHIP_CACHE_SECONDS = 30.0
 
+#: 自愈前先 ``quit`` 那个只有窗口没有虚拟机的实例，等它从 list2 里下线的上限。
+#: 僵尸窗口对 quit 的响应不可靠，超时就直接结束播放器进程。
+_ZOMBIE_QUIT_TIMEOUT = 15.0
+#: 雷电修复工具的提示，自愈做不了或做了没用时都指到这里。
+_REPAIR_HINT = "请关闭所有雷电实例后运行雷电修复工具（安装目录下的 dnrepairer.exe）"
+
 
 class BossKeyUnavailableError(RuntimeError):
     """无法确定该实例的老板键，隐藏操作不可用。
@@ -125,6 +141,164 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     #: 序列号 -> (是不是别家的, 缓存到什么时候)。同上放类属性；
     #: 「谁占着这个端口」本来就是整机的事实，几个管理器实例共用一份反而更对。
     _ownership_cache: dict[str, tuple[bool, float]] = {}
+
+    async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
+        """在父类启动流程之上核对虚拟机是否真的起来，没起来就自愈一次。
+
+        父类只看 ``list2`` 的「Android 已启动」标志。VBox 服务卡住时这个标志照样会置 1，
+        而虚拟机进程根本不存在、adb 也看不到它，MAA 一连就是 ADB 异常；另一种形态是
+        标志停在 2、父类等到超时。两种都在这里接住：确认整机没有别的虚拟机在跑之后，
+        关掉僵尸窗口、重启 VBox 服务、再启动一次。详见 :mod:`.vbox`。
+        """
+        try:
+            info = await super()._open_locked(idx, package_name)
+        except RuntimeError as e:
+            if not await self._vm_missing(idx):
+                raise
+            reason = str(e)
+        else:
+            if not await self._vm_missing(idx):
+                return info
+            reason = "雷电报告 Android 已启动，但没有虚拟机进程，adb 也看不到它"
+
+        await self._recover_vbox_service(idx, reason)
+
+        info = await super()._open_locked(idx, package_name)
+        if await self._vm_missing(idx):
+            raise RuntimeError(
+                f"雷电实例 {idx} 重启 {VBOX_SERVICE_PROCESS} 后仍然起不来，{_REPAIR_HINT}"
+            )
+        logger.info(f"雷电实例 {idx} 在重启 {VBOX_SERVICE_PROCESS} 后已正常启动")
+        return info
+
+    async def _probe_instances(self) -> dict[str, VmProbe]:
+        """给这条安装的每台实例做一次「虚拟机在不在」探测。查不到 list2 时返回空表。"""
+        try:
+            devices = await self.get_device_info(None)
+        except Exception as e:  # noqa: BLE001 - 探测本身失败就不做自愈判断
+            logger.debug(f"探测雷电实例状态失败: {e}")
+            return {}
+
+        # 越过 adb devices 的缓存：这里要的是「现在」有没有，不是几秒前的视图
+        self._adb_cache = None
+        serials = await self._list_adb_serials()
+        probes: dict[str, VmProbe] = {}
+        for idx, device in devices.items():
+            others = [i for i in devices if str(i) != str(idx)]
+            outcome = resolve_serial(idx, serials, others)
+            probes[str(idx)] = VmProbe(
+                in_android=device.in_android,
+                vbox_pid=device.vbox_pid,
+                serial_online=outcome.source != "formula",
+            )
+        return probes
+
+    async def _vm_missing(self, idx: str) -> bool:
+        """这台实例是不是「有窗口没虚拟机」。查不到时按不缺处理，不扩大事故。"""
+        probe = (await self._probe_instances()).get(str(idx))
+        return probe is not None and vm_is_missing(probe)
+
+    async def _recover_vbox_service(self, idx: str, reason: str) -> None:
+        """关掉僵尸窗口并重启 VBox 服务。
+
+        只在**所有开着的实例都已经是僵尸**时才动手：服务一重启，它名下所有虚拟机一起死，
+        任何一台还好好的（或正在启动、状态说不清的）实例都会被强关。两道闸门：
+
+        - 整机没有任何 ``Ld9BoxHeadless.exe``——这条不分安装、不分归属，
+          启动早期 list2 的 VBox pid 也可能是 -1，进程在就当它活着
+        - 这条安装里其他开着的实例都是「Android 已启动但没虚拟机」的僵尸态；
+          「正在启动」（in_android=2）说不清是刚起还是卡住，一律按还活着处理
+        """
+        running = live_vm_pids()
+        if running:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
+                f"但整机仍有 {len(running)} 个雷电虚拟机进程在运行（可能包括本实例尚未就绪的），"
+                f"重启该服务会把它们一起关掉。只有所有实例都异常时才会自动修复，"
+                f"请关闭所有雷电实例后再重试，或{_REPAIR_HINT}"
+            )
+
+        probes = await self._probe_instances()
+        healthy_others = sorted(
+            other
+            for other, probe in probes.items()
+            if other != str(idx)
+            and probe.in_android != 0
+            and not (probe.in_android == 1 and vm_is_missing(probe))
+        )
+        if healthy_others:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
+                f"但实例 {', '.join(healthy_others)} 还在运行或正在启动，"
+                f"重启该服务会把它们一起关掉。只有所有实例都异常时才会自动修复，"
+                f"请关闭它们后再重试，或{_REPAIR_HINT}"
+            )
+
+        logger.warning(
+            f"雷电实例 {idx} 启动异常（{reason}），整机没有任何雷电虚拟机在运行、"
+            f"其他开着的实例也都是僵尸窗口，关闭该实例并重启 {VBOX_SERVICE_PROCESS} 后重试"
+        )
+        await self._quit_zombie_instance(idx)
+        try:
+            await restart_vbox_service()
+        except PermissionError as e:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），{e}；请以管理员身份运行，或{_REPAIR_HINT}"
+            ) from e
+
+    async def _quit_zombie_instance(self, idx: str) -> None:
+        """让只剩窗口的实例下线：先走 ``quit``，等不到就结束播放器进程。
+
+        必须等到 list2 真的变成关机再返回：父类启动流程先查状态，只要那行还是
+        「已启动」它就不 launch、直接当在线返回，自愈就成了空转。两手都没让它下线
+        时抛错，而不是让后面报一句会误导的「重启后仍起不来」。
+        """
+        try:
+            await ProcessRunner.run_process(
+                self.emulator_path,
+                "quit",
+                "--index",
+                idx,
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - quit 失败还有下面的兜底
+            logger.warning(f"雷电实例 {idx} quit 失败: {e}")
+
+        deadline = time.monotonic() + _ZOMBIE_QUIT_TIMEOUT
+        while time.monotonic() < deadline:
+            if await self.getStatus(idx) == DeviceStatus.OFFLINE:
+                return
+            await asyncio.sleep(0.5)
+
+        try:
+            device = (await self.get_device_info(idx))[idx]
+        except Exception as e:  # noqa: BLE001 - 取不到 pid 就没法再兜底
+            raise RuntimeError(
+                f"雷电实例 {idx} 对 quit 无响应，且取不到进程信息: {e}"
+            ) from e
+        if device.pid > 0:
+            try:
+                proc = psutil.Process(device.pid)
+                proc.kill()
+                await asyncio.to_thread(proc.wait, 10)
+                logger.warning(
+                    f"雷电实例 {idx} 对 quit 无响应，已结束播放器进程 {device.pid}"
+                )
+            except psutil.NoSuchProcess:
+                pass
+            except Exception as e:  # noqa: BLE001 - 下面按 list2 复核, 这里只记原因
+                logger.warning(
+                    f"结束雷电实例 {idx} 的播放器进程 {device.pid} 失败: {e}"
+                )
+
+        deadline = time.monotonic() + _ZOMBIE_QUIT_TIMEOUT
+        while time.monotonic() < deadline:
+            if await self.getStatus(idx) == DeviceStatus.OFFLINE:
+                return
+            await asyncio.sleep(0.5)
+        raise RuntimeError(f"雷电实例 {idx} 的窗口关不掉，无法自愈，{_REPAIR_HINT}")
 
     async def vendor_launch_app(self, idx: str, package_name: str) -> object:
         """``ldconsole runapp``。

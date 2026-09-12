@@ -791,6 +791,10 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
         ## 是否领取奖励
         self.Task_IfAward = ConfigItem("Task", "IfAward", True, BoolValidator())
+        ## 是否更换主题（主题名称在 MAA 侧配置，MAS 仅透传）
+        self.Task_IfSwitchTheme = ConfigItem(
+            "Task", "IfSwitchTheme", False, BoolValidator()
+        )
         ## 是否自动肉鸽
         self.Task_IfRoguelike = ConfigItem(
             "Task", "IfRoguelike", False, BoolValidator()

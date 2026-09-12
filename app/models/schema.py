@@ -1227,6 +1227,7 @@ class ScriptIndexItem(BaseModel):
         "HSRConfig",
         "BetterGIConfig",
         "ZzzOdConfig",
+        "BAAHConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1244,6 +1245,7 @@ class UserIndexItem(BaseModel):
         "HSRUserConfig",
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
+        "BAAHUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1325,6 +1327,7 @@ class MaaUserConfig_Task(BaseModel):
     IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
+    IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
     IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
@@ -1778,6 +1781,43 @@ class ZzzOdUserConfig(BaseModel):
     )
 
 
+class BAAHUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    ConfigName: Optional[str] = Field(default=None, description="BAAH 配置文件名")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class BAAHUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+
+
+class BAAHUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件通知")
+    ToAddress: Optional[str] = Field(default=None, description="邮件接收地址")
+    IfServerChan: Optional[bool] = Field(
+        default=None, description="是否使用Server酱推送"
+    )
+    ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
+
+
+class BAAHUserConfig(BaseModel):
+    Info: Optional[BAAHUserConfig_Info] = Field(default=None, description="用户信息")
+    Data: Optional[BAAHUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[BAAHUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -2026,6 +2066,45 @@ class ZzzOdConfig(BaseModel):
     Info: Optional[ZzzOdConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[ZzzOdConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[ZzzOdConfig_Run] = Field(default=None, description="运行配置")
+
+
+class BAAHConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="脚本名称")
+
+
+class BAAHConfig_Script(BaseModel):
+    BAAHPath: Optional[str] = Field(
+        default=None,
+        description="BAAH 主程序路径；程序目录、配置目录与日志目录均由此派生",
+    )
+    IfManageConfig: Optional[bool] = Field(
+        default=None, description="是否托管 BAAH 运行所需的关键配置"
+    )
+    PushLogEnabled: Optional[bool] = Field(
+        default=None, description="是否在任务报告中保留 BAAH 的运行日志"
+    )
+
+
+class BAAHConfig_Run(BaseModel):
+    RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制")
+
+
+class BAAHConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器ID")
+    Index: Optional[str] = Field(default=None, description="模拟器多开实例索引")
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭模拟器"
+    )
+
+
+class BAAHConfig(BaseModel):
+    Info: Optional[BAAHConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[BAAHConfig_Script] = Field(default=None, description="脚本配置")
+    Run: Optional[BAAHConfig_Run] = Field(default=None, description="运行配置")
+    Emulator: Optional[BAAHConfig_Emulator] = Field(
+        default=None, description="模拟器配置"
+    )
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -3712,9 +3791,10 @@ class ScriptCreateIn(BaseModel):
         "HSR",
         "BetterGI",
         "ZzzOd",
+        "BAAH",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -3735,6 +3815,7 @@ class ScriptCreateOut(OutBase):
         HSRConfig,
         BetterGIConfig,
         ZzzOdConfig,
+        BAAHConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -3760,6 +3841,7 @@ class ScriptGetOut(OutBase):
             HSRConfig,
             BetterGIConfig,
             ZzzOdConfig,
+            BAAHConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -3778,6 +3860,7 @@ class ScriptUpdateIn(BaseModel):
         HSRConfig,
         BetterGIConfig,
         ZzzOdConfig,
+        BAAHConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -3833,6 +3916,7 @@ class UserGetOut(OutBase):
             HSRUserConfig,
             BetterGIUserConfig,
             ZzzOdUserConfig,
+            BAAHUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -3851,6 +3935,7 @@ class UserCreateOut(OutBase):
         HSRUserConfig,
         BetterGIUserConfig,
         ZzzOdUserConfig,
+        BAAHUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -3868,6 +3953,7 @@ class UserUpdateIn(UserInBase):
         HSRUserConfig,
         BetterGIUserConfig,
         ZzzOdUserConfig,
+        BAAHUserConfig,
     ] = Field(..., description="用户更新数据")
 
 

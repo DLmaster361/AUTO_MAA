@@ -305,6 +305,9 @@ export default {
     maaCustomInfrastPlan: 'カスタム基地のシフト',
     maaCustomInfrastPlanHint: 'インポート済みの設定から使用するシフトを選びます',
     maaDaily: '日課タスク',
+    maaSwitchTheme: 'テーマ変更',
+    maaSwitchThemeHint:
+      'テーマ名は MAA の「テーマ変更」タスクで設定します。複数指定すると実行ごとに 1 つランダムに切り替わり、空の場合はスキップされます。MAA v6.17.3 以降が必要です',
     maaRoguelike: '自動ローグライク',
     maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
     maaGreenTicketStore: '緑チケット商店',
@@ -343,6 +346,7 @@ export default {
     item: 'アイテム',
     extractFieldsFromWindow: '開始／終了の正規表現で囲んだ範囲からフィールドを抽出します',
     targetStock: '目標在庫',
+    stock: '在庫',
     customBaseLayout: 'カスタム基地',
     resource: 'リソース',
     preset: 'プリセット',
@@ -2753,6 +2757,7 @@ export default {
       OkNte: 'ok-nte',
       HSR: 'HSR',
       BetterGI: 'BetterGI',
+      BAAH: 'BAAH',
       General: '汎用',
     },
     typeDesc: {
@@ -2765,6 +2770,7 @@ export default {
       OkNte: 'Neverness to Everness（OK-NTE）の自動化。-t/-e でタスクを起動',
       HSR: '崩壊：スターレイル — 三月なのか / SRA の 2 種類に対応',
       BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
+      BAAH: 'ブルーアーカイブのデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
     },
     mask: {
@@ -2873,6 +2879,7 @@ export default {
         OkNte: 'Neverness to Everness（OK-NTE）の自動化',
         HSR: '三月なのか / SRA の 2 種類に対応',
         BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
+        BAAH: 'ブルーアーカイブのデイリータスク自動化と複数アカウント管理',
       },
     },
     toast: {

@@ -63,6 +63,10 @@
             :depot-item-options="depotItemOptions"
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
+            :depot-stage-candidates="depotStageCandidates"
+            :depot-stage-candidates-loading="depotStageCandidatesLoading"
+            :depot-inventory="depotInventory"
+            :load-depot-stage-candidates="loadDepotStageCandidates"
             :fight-summary="fightSummary"
             :is-edit="isEdit"
             :infrastructure-importing="infrastructureImporting"
@@ -214,6 +218,11 @@ const infrastructureOptionsLoading = ref(false)
 const depotItemOptions = ref<Array<{ label: string; value: string }>>([])
 const depotItemOptionsLoading = ref(false)
 const depotItemOptionsError = ref('')
+
+// 库存保持关卡候选（按物品缓存，含每理智效率）与仓库库存
+const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
+const depotStageCandidatesLoading = ref<string[]>([])
+const depotInventory = ref<Record<string, number>>({})
 
 // 服务器选项
 const serverOptions = [
@@ -497,6 +506,7 @@ const getDefaultMAAUserData = () => ({
     IfFight: true,
     IfMall: true,
     IfAward: true,
+    IfSwitchTheme: false,
     IfRecruit: true,
     IfReclamation: false,
     IfRoguelike: false,
@@ -859,6 +869,52 @@ const loadDepotItemOptions = async () => {
     depotItemOptionsError.value = '加载 MAA 库存物品失败'
   } finally {
     depotItemOptionsLoading.value = false
+  }
+}
+
+const loadDepotStageCandidates = async (itemId: string) => {
+  if (!itemId || depotStageCandidates.value[itemId]) return
+  if (depotStageCandidatesLoading.value.includes(itemId)) return
+  depotStageCandidatesLoading.value.push(itemId)
+  try {
+    const response =
+      await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
+        script: { scriptId },
+        itemId,
+      })
+    // 失败/无候选时写入空数组作为"已完成"标记：编辑器据此回退全量关卡表
+    // （undefined 才表示加载中），同时避免失败后无限重试
+    depotStageCandidates.value[itemId] =
+      response.code === 200
+        ? response.data
+            .filter(option => option.value)
+            .map(option => ({ label: option.label, value: option.value as string }))
+        : []
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
+    depotStageCandidates.value[itemId] = []
+  } finally {
+    depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
+      id => id !== itemId
+    )
+  }
+}
+
+const loadDepotInventory = async () => {
+  try {
+    const response = await Service.getMaaDepotInventoryApiScriptsMaaDepotInventoryPost({
+      scriptId,
+    })
+    if (response.code !== 200) return
+    const inventory: Record<string, number> = {}
+    for (const option of response.data) {
+      if (option.value) inventory[option.value] = Number(option.label) || 0
+    }
+    depotInventory.value = inventory
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载 MAA 仓库库存失败: ${errorMsg}`)
   }
 }
 
@@ -1251,6 +1307,7 @@ onMounted(() => {
   loadStageModeOptions()
   loadActivityStageOptions()
   loadDepotItemOptions()
+  loadDepotInventory()
 
   // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
   // 如果是新建模式，也尝试加载基建配置选项（如果已经有用户ID）

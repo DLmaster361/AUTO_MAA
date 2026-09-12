@@ -45,6 +45,7 @@ TYPE_BOOK = {
     "HSRConfig": "HSR",
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
+    "BAAHConfig": "BAAH",
 }
 """配置类型映射表"""
 
@@ -113,6 +114,7 @@ MAA_TASKS = [
     "Mall",
     "Award",
     "Roguelike",
+    "SwitchTheme",
 ]
 """MAA任务列表"""
 
@@ -125,6 +127,7 @@ MAA_TASKS_ZH = [
     "信用收支",
     "领取奖励",
     "自动肉鸽",
+    "更换主题",
 ]
 """MAA任务列表"""
 
@@ -157,6 +160,10 @@ MAA_DEPOT_EXCLUDED_ITEM_IDS = {
     "30145",
     "30155",
     "30165",
+    # 无对应可刷关卡：家具零件（基建产出）、合成玉（源石兑换）、声望（战斗经验）
+    "3401",
+    "4003",
+    "5001",
 }
 """MAA 库存保持不可刷取物品 ID"""
 

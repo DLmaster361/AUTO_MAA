@@ -47,6 +47,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   HSR: ScriptCreateIn.type.HSR,
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
+  BAAH: ScriptCreateIn.type.BAAH,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -61,6 +62,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
+  BAAHConfig: 'BAAH',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -268,6 +270,10 @@ export function useScriptApi() {
                           maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
                         IfAward:
                           maaUserData.Task?.IfAward !== undefined ? maaUserData.Task.IfAward : true,
+                        IfSwitchTheme:
+                          maaUserData.Task?.IfSwitchTheme !== undefined
+                            ? maaUserData.Task.IfSwitchTheme
+                            : false,
                         IfRoguelike:
                           maaUserData.Task?.IfRoguelike !== undefined
                             ? maaUserData.Task.IfRoguelike
@@ -1260,6 +1266,70 @@ export function useScriptApi() {
                           zzzodUserData.Data?.LastProxyStatus !== undefined
                             ? zzzodUserData.Data.LastProxyStatus
                             : '未知',
+                      },
+                    }
+                  } else if (userIndex.type === 'BAAHUserConfig' && userData) {
+                    const baahUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: baahUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          baahUserData.Info?.Name !== undefined
+                            ? baahUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          baahUserData.Info?.Status !== undefined
+                            ? baahUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          baahUserData.Info?.RemainedDay !== undefined
+                            ? baahUserData.Info.RemainedDay
+                            : -1,
+                        ConfigName:
+                          baahUserData.Info?.ConfigName !== undefined
+                            ? baahUserData.Info.ConfigName
+                            : '',
+                        Notes:
+                          baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
+                        Tag:
+                          baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
+                      },
+                      Notify: {
+                        Enabled:
+                          baahUserData.Notify?.Enabled !== undefined
+                            ? baahUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          baahUserData.Notify?.IfSendStatistic !== undefined
+                            ? baahUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          baahUserData.Notify?.IfSendMail !== undefined
+                            ? baahUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          baahUserData.Notify?.ToAddress !== undefined
+                            ? baahUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          baahUserData.Notify?.IfServerChan !== undefined
+                            ? baahUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          baahUserData.Notify?.ServerChanKey !== undefined
+                            ? baahUserData.Notify.ServerChanKey
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          baahUserData.Data?.LastProxyDate !== undefined
+                            ? baahUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          baahUserData.Data?.ProxyTimes !== undefined
+                            ? baahUserData.Data.ProxyTimes
+                            : 0,
                       },
                     }
                   }

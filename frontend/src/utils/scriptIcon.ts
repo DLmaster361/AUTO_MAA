@@ -1,5 +1,6 @@
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
+import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import maafwIcon from '@/assets/maafw.png'
 import hsrIcon from '@/assets/hsr.png'
@@ -12,6 +13,7 @@ import srcIcon from '@/assets/SRC.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 const SCRIPT_ICON_BY_TYPE: Record<ScriptType, string> = {
+  BAAH: baahIcon,
   MAA: maaIcon,
   General: generalIcon,
   Okww: okwwIcon,

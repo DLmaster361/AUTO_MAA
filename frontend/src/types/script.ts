@@ -11,6 +11,7 @@ import type {
   M9AConfig,
   BetterGIConfig,
   ZzzOdConfig,
+  BAAHConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -36,11 +37,13 @@ export type ScriptType =
   | 'HSR'
   | 'BetterGI'
   | 'ZzzOd'
+  | 'BAAH'
 
 export type OkwwScriptConfig = OkwwConfig
 export type OkNteScriptConfig = OkNteConfig
 export type BetterGIScriptConfig = BetterGIConfig
 export type ZzzOdScriptConfig = ZzzOdConfig
+export type BAAHScriptConfig = BAAHConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -552,6 +555,7 @@ export interface Script {
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
+    | BAAHConfig
   users: User[]
 }
 
@@ -616,6 +620,7 @@ export interface User {
     IfFight: boolean
     IfMall: boolean
     IfAward: boolean
+    IfSwitchTheme: boolean
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
@@ -657,6 +662,7 @@ export interface AddScriptResponse {
     | HSRScriptConfig
     | BetterGIScriptConfig
     | ZzzOdScriptConfig
+    | BAAHScriptConfig
 }
 
 // 脚本索引项
@@ -674,6 +680,7 @@ export interface ScriptIndexItem {
     | 'HSRConfig'
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
+    | 'BAAHConfig'
 }
 
 // 获取脚本API响应
@@ -695,6 +702,7 @@ export interface GetScriptsResponse {
     | HSRScriptConfig
     | BetterGIScriptConfig
     | ZzzOdScriptConfig
+    | BAAHScriptConfig
   >
 }
 
@@ -715,6 +723,7 @@ export interface ScriptDetail {
     | HSRConfig
     | BetterGIConfig
     | ZzzOdConfig
+    | BAAHConfig
   users?: User[]
   createTime?: string
 }

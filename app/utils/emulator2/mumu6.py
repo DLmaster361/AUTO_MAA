@@ -72,6 +72,31 @@ from .stability import MUMU_ITEMS, evaluate, safe_writes
 
 logger = get_logger("Emulator2 MuMu管理")
 
+#: ``MuMuManager info`` 里值得带给用户的启动诊断字段，按这个顺序展示。
+_LAUNCH_DIAGNOSIS_FIELDS = (
+    ("launch_err_code", "启动错误码"),
+    ("launch_err_msg", "启动错误"),
+    ("error_code", "实例错误码"),
+    ("player_state", "实例状态"),
+)
+
+
+def format_launch_diagnosis(entry: dict[str, object]) -> str:
+    """从一条 ``info`` 记录里挑出 MuMu 自己给的启动诊断，格式化成可直接拼进报错的后缀。
+
+    只挑非空、非 0 的字段；一个都没有就返回空串，报错文案与以前完全一样。
+    """
+    parts = []
+    for key, label in _LAUNCH_DIAGNOSIS_FIELDS:
+        value = entry.get(key)
+        if value in (None, "", 0, False):
+            continue
+        parts.append(f"{label}={value}")
+    if not parts:
+        return ""
+    return "；MuMu 诊断: " + ", ".join(parts)
+
+
 #: 新建 / 删除实例后复核 ``info`` 的次数与间隔。
 _INSTANCE_MUTATION_RETRIES = 3
 _INSTANCE_MUTATION_DELAY_SECONDS = 2.0
@@ -160,6 +185,30 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
     #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
     store_package = "com.mumu.store"
 
+    async def _describe_launch_failure(self, idx: str) -> str:
+        """把 MuMu 自己对这次启动的诊断拼进父类的失败 / 超时报错，拼不出来返回空串。
+
+        ``MuMuManager info`` 除了在不在线，还会给 ``launch_err_code`` / ``launch_err_msg`` /
+        ``player_state`` / ``error_code``——启动失败的原因 MuMu 自己是说了的，只报「超时」
+        等于把它丢掉。任何一步失败都不能影响原本的报错。
+        """
+        try:
+            data = await self.get_device_info(idx)
+            entries = self._extract_device_entries(
+                self._decode_polluted_json(data, self._has_device_entries)
+            )
+        except Exception as e:  # noqa: BLE001 - 诊断只是锦上添花
+            logger.debug(f"读取 MuMu 实例 {idx} 启动诊断失败: {e}")
+            return ""
+        entry = next(
+            (item for item in entries if str(item.get("index")) == str(idx)), None
+        )
+        if entry is None and entries:
+            entry = entries[0]
+        if entry is None:
+            return ""
+        return format_launch_diagnosis(entry)
+
     async def vendor_launch_app(self, idx: str, package_name: str) -> object:
         """``MuMuManager control -v N app launch -pkg``。
 
@@ -207,7 +256,9 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
                 f"{output.strip()}"
             )
             return
-        logger.info(f"MuMu 实例 {idx} 的「大雷主人模式」组件已{'禁用' if enabled else '恢复'}")
+        logger.info(
+            f"MuMu 实例 {idx} 的「大雷主人模式」组件已{'禁用' if enabled else '恢复'}"
+        )
         if enabled:
             await self._restart_launcher(idx)
 

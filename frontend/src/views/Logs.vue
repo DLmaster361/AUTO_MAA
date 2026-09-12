@@ -26,6 +26,11 @@ const selectedLogFile = ref<'app' | 'frontend'>(
 const realTimeEnabled = ref(true)
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+// 已拿到的日志字节数，下一次只读这之后的新增部分；整份重载时归零
+let logOffset = 0
+// 换文件时让在途的旧请求作废
+let loadSeq = 0
+const REFRESH_INTERVAL_MS = 2000
 
 // 文件不存在时主进程返回空串。直接把空串塞进编辑器只会得到一片白，说一句人话。
 const emptyHint = computed(() =>
@@ -83,22 +88,67 @@ const toggleLogMode = () => {
   }
 }
 
-// 加载日志
+// 整体替换编辑器内容
+const replaceLogs = (content: string) => {
+  logs.value = content
+  // logs 没变时 value 监听不会写编辑器，但模型里已经追加过增量，直接对齐
+  const model = editorInstance?.getModel?.()
+  if (model && model.getValue() !== content) {
+    model.setValue(content)
+  }
+  if (logMode.value === 'follow') {
+    nextTick(() => scrollToBottom())
+  }
+}
+
+// 只把新增部分追加到文末，不再整份 setValue
+const appendLogs = (delta: string) => {
+  const model = editorInstance?.getModel?.()
+  if (!model) {
+    // 编辑器还没挂上（Monaco 异步加载中），先合进 value，挂载时一并带入
+    replaceLogs(logs.value + delta)
+    return
+  }
+  const lastLine = model.getLineCount()
+  const lastColumn = model.getLineMaxColumn(lastLine)
+  model.applyEdits([
+    {
+      range: {
+        startLineNumber: lastLine,
+        startColumn: lastColumn,
+        endLineNumber: lastLine,
+        endColumn: lastColumn,
+      },
+      text: delta,
+    },
+  ])
+  if (logMode.value === 'follow') {
+    nextTick(() => scrollToBottom())
+  }
+}
+
+// 加载日志：首次整份读取，之后只取增量
 const loadLogs = async (silent = false) => {
   if (!silent) {
     loading.value = true
+    logOffset = 0
   }
+  const seq = ++loadSeq
   try {
     const fileName = selectedLogFile.value === 'app' ? 'app.log' : 'frontend.log'
-    const logContent = await (window as any).electronAPI?.getLogs?.(0, fileName)
-    if (logContent) {
-      logs.value = logContent
-      // 只在保持最新模式下自动滚动
-      if (logMode.value === 'follow') {
-        nextTick(() => scrollToBottom())
-      }
-    } else {
-      logs.value = ''
+    const result = await window.electronAPI.getLogs?.(0, fileName, logOffset)
+    if (seq !== loadSeq) {
+      return
+    }
+    if (!result) {
+      replaceLogs('')
+      return
+    }
+    logOffset = result.size
+    if (!silent || result.reset || !logs.value) {
+      replaceLogs(result.content)
+    } else if (result.content) {
+      appendLogs(result.content)
     }
   } catch (error) {
     if (!silent) {
@@ -107,7 +157,7 @@ const loadLogs = async (silent = false) => {
       message.error('加载日志失败')
     }
   } finally {
-    if (!silent) {
+    if (!silent && seq === loadSeq) {
       loading.value = false
     }
   }
@@ -115,12 +165,14 @@ const loadLogs = async (silent = false) => {
 
 // 开始实时刷新
 const startRealTimeRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
+  stopRealTimeRefresh()
+  // 窗口不可见时不刷，visibilitychange 回来时再起
+  if (document.hidden) {
+    return
   }
   refreshInterval = setInterval(() => {
-    loadLogs(true) // 静默刷新
-  }, 2000) // 每2秒刷新一次
+    void loadLogs(true) // 静默刷新
+  }, REFRESH_INTERVAL_MS)
 }
 
 // 停止实时刷新
@@ -148,15 +200,23 @@ const onLogFileChange = () => {
   loadLogs()
 }
 
-// 监听日志内容变化
-watch(logs, value => {
-  // 内容清空时编辑器整个被 v-else 卸载，留着旧实例会拿到已 dispose 的 model
-  if (!value) {
-    editorInstance = null
+// 隐藏时停掉定时器，回到可见先补一次再继续
+const handleVisibilityChange = () => {
+  if (!realTimeEnabled.value) {
     return
   }
-  if (logMode.value === 'follow') {
-    nextTick(() => scrollToBottom())
+  if (document.hidden) {
+    stopRealTimeRefresh()
+  } else {
+    void loadLogs(true)
+    startRealTimeRefresh()
+  }
+}
+
+// 内容清空时编辑器整个被 v-else 卸载，留着旧实例会拿到已 dispose 的 model
+watch(logs, value => {
+  if (!value) {
+    editorInstance = null
   }
 })
 
@@ -165,6 +225,7 @@ onMounted(() => {
   if (realTimeEnabled.value) {
     startRealTimeRefresh()
   }
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   // 窗口已经开着时主进程不会重新载入，靠这条推送换文件
   window.electronAPI.onLogSelectFile?.(file => {
     selectedLogFile.value = file
@@ -174,6 +235,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopRealTimeRefresh()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.electronAPI.removeLogSelectFileListener?.()
 })
 </script>
@@ -213,7 +275,7 @@ onUnmounted(() => {
           <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
           <vue-monaco-editor
             v-else
-            v-model:value="logs"
+            :value="logs"
             language="logfile"
             :theme="editorTheme"
             :options="editorOptions"

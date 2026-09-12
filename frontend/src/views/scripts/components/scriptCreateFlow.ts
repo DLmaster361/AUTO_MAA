@@ -4,9 +4,9 @@ import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 export type ConfigMode = 'template' | 'custom'
 export type CreateStepKey = 'type' | 'config'
-export type ScriptTypeGroup = 'all' | 'specialized' | 'general'
+type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
-export interface ScriptTypeOption {
+interface ScriptTypeOption {
   value: ScriptType
   titleKey: string
   descriptionKey: string
@@ -16,12 +16,12 @@ export interface ScriptTypeOption {
   icon: string
 }
 
-export interface CreateStep {
+interface CreateStep {
   key: CreateStepKey
   titleKey: string
 }
 
-export interface CreateRequestState {
+interface CreateRequestState {
   type: ScriptType
   configMode: ConfigMode
   template: WebConfigTemplate | null

@@ -40,11 +40,4 @@ export const getScriptIcon = (value: unknown, preferredIcon?: string | null): st
   return generalIcon
 }
 
-export const handleScriptIconError = (event: Event, value: unknown): void => {
-  const image = event.currentTarget as HTMLImageElement | null
-  if (!image || image.dataset.scriptIconFallbackApplied === 'true') return
-  image.dataset.scriptIconFallbackApplied = 'true'
-  image.src = getScriptIcon(value)
-}
-
 export const maafwScriptIcon = maafwIcon

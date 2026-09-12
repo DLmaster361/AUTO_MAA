@@ -343,10 +343,6 @@ export const SANITY_TASK_TYPE_LABEL_MAP = Object.fromEntries(
   SANITY_TASK_TYPE_OPTIONS.map(option => [option.value, option.label])
 ) as Record<SanityTaskType, string>
 
-export const PROTOCOL_SPACE_LABEL_MAP = Object.fromEntries(
-  PROTOCOL_SPACE_OPTIONS.map(option => [option.value, option.label])
-) as Record<ProtocolSpaceTab, string>
-
 export const PROTOCOL_SPACE_TASK_LABEL_MAP = Object.fromEntries(
   Object.values(PROTOCOL_SPACE_TASK_OPTIONS_MAP)
     .flat()
@@ -482,11 +478,3 @@ export const normalizeMaaEndPlanKey = (rawSlot?: unknown): MaaEndPlanKey => {
     RewardsSetOption: config.RewardsSetOption,
   }
 }
-
-// 保留旧导出，兼容既有调用
-export const createDefaultProtocolSpaceConfig = (): ProtocolSpaceConfig =>
-  createDefaultMaaEndSanityConfig()
-
-export const normalizeProtocolSpaceConfig = (
-  rawConfig?: Partial<ProtocolSpaceConfig> | null
-): ProtocolSpaceConfig => normalizeMaaEndSanityConfig(rawConfig)

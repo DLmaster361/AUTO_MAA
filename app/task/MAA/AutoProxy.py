@@ -79,6 +79,10 @@ _ANNIHILATION_PROGRESS_RE = re.compile(
     r"(?:剿灭模式|剿滅模式|Annihilation(?: Mode| weekly limit)|殲滅作戦|섬멸 모드)\s*[:：]\s*(\d+)\s*/\s*(\d+)",
     re.IGNORECASE,
 )
+_MAA_SANITY_RECOGNITION_RE = re.compile(r"理智\s*[:：]\s*\d+\s*/\s*\d+")
+# MAA 走到能看到理智的界面（进到副本门口）后，gui.log 才会出现无时间戳的
+# 「理智: X/Y」识别行（v6.17.5 国服实测，繁服同字）；其余界面语言样本未核实，
+# 命中不到时一律视为未进入战斗流程。
 _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 理智作战",
     "完成任务: 活动关优先",
@@ -148,14 +152,24 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
 def _has_completed_annihilation_week(log: str) -> bool:
     """判断剿灭日志是否表明本周额度已完成。
 
-    MAA 理智不足无法开战时同样打印「完成任务: 剿灭作战」且无进度行，
-    与已达上限在日志上不可区分，故无进度行一律视为未达标，宁可下次重试。
+    MAA 剿灭结束都会打印「完成任务: 剿灭作战」，以理智识别行区分战斗流程：
+
+    - 无理智识别行：MAA 未进到副本门口，完成即周内剿灭在代理开始前已完成；
+    - 有理智识别行但无进度行：进到门口却因理智不足没有开战，未达标；
+    - 有进度行但 current < total：开战了但理智不足没能打满进度，未达标；
+    - 进度 current >= total：本周剿灭已完成。
+
+    未达标时不记周完成标记，宁可下次代理重试。
     """
 
+    if "完成任务: 剿灭作战" not in log:
+        return False
+
+    if not _MAA_SANITY_RECOGNITION_RE.search(log):
+        return True
+
     progress = _parse_annihilation_weekly_progress(log)
-    return "完成任务: 剿灭作战" in log and (
-        progress is not None and progress[0] >= progress[1]
-    )
+    return progress is not None and progress[0] >= progress[1]
 
 
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
@@ -839,10 +853,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "Routine" and self.cur_user_config.get(
             "Task", "IfActivityFirst"
         ):
+            # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
                 server=self.cur_user_config.get("Info", "Server"),
-                refresh=True,
             )
             activity_stage = _resolve_activity_stage(
                 stage_info.get("Activity", []),
@@ -851,8 +865,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-            # 默认关闭时不写入新任务，兼容尚未支持库存保持的 MAA 版本
-            if en_task == "DepotMaintain" and not self.task_dict[en_task]:
+            # 默认关闭时不写入新任务，兼容尚未支持该任务类型的 MAA 版本
+            # （库存保持、更换主题；更换主题需 MAA v6.17.3+，旧版无法反序列化未知任务类型）
+            if (
+                en_task in ("DepotMaintain", "SwitchTheme")
+                and not self.task_dict[en_task]
+            ):
                 continue
 
             task_set[en_task] = _find_task_source(

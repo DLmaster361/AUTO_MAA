@@ -848,7 +848,7 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      if (String(userIndex?.type) === 'MaaFWUserConfig' && userData) {
+      if (userIndex?.type === 'MaaFWUserConfig' && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
         await syncControllerResourceSelection()

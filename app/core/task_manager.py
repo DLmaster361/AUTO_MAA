@@ -217,16 +217,27 @@ class TaskInfo(TaskItem):
         )
         if self.current_index != -1:
             log = self.script_list[self.current_index].log
+            if log == self._last_pushed_log:
+                return
+            # 日志只在尾部追加时只推增量；首次推送或日志被重置/变短时整体替换。
             # 部分任务模式（MAA/SRC/General/M9A）无上限累积脚本日志，全量 JSON
-            # 序列化超大字符串会在 iterencode 阶段 MemoryError；在共享推送点做
+            # 序列化超大字符串会在 iterencode 阶段 MemoryError；整体替换时做
             # 防御性限长（保留最新日志），一处覆盖所有任务模式。
-            if len(log) > 200_000:
-                log = log[-200_000:]
+            if self._last_pushed_log and log.startswith(self._last_pushed_log):
+                payload = log[len(self._last_pushed_log) :]
+                append = True
+            else:
+                payload = log[-200_000:]
+                append = False
+            self._log_seq += 1
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
-                data=WSTaskLogUpdatedData(log=log),
+                data=WSTaskLogUpdatedData(
+                    log=payload, seq=self._log_seq, append=append
+                ),
             )
+            self._last_pushed_log = log
 
 
 class Task(TaskExecuteBase):
@@ -648,7 +659,7 @@ class Task(TaskExecuteBase):
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
             self.task_info.community_results = (
-                await MainTimer.try_game_sign_for_task(source=sign_source)
+                await MainTimer.try_community_for_task(source=sign_source)
             )
 
         await self.prepare()
@@ -886,9 +897,6 @@ class _TaskManager:
 
         tasks: list[TaskRuntimeSnapshotItem] = []
         for task_uid, task_info in list(self.task_info.items()):
-            log = ""
-            if 0 <= task_info.current_index < len(task_info.script_list):
-                log = task_info.script_list[task_info.current_index].log
             handler = self.task_handler.get(task_uid)
             tasks.append(
                 TaskRuntimeSnapshotItem(
@@ -905,7 +913,9 @@ class _TaskManager:
                         WSTaskCyclePreviewData(**item)
                         for item in task_info.cycle_next_list
                     ],
-                    log=log,
+                    # 返回上次推送的日志而非当前日志, 保证与下一条增量推送衔接
+                    log=task_info._last_pushed_log[-200_000:],
+                    logSeq=task_info._log_seq,
                 )
             )
         return TaskRuntimeSnapshot(

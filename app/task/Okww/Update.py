@@ -93,6 +93,9 @@ class WuwaUpdateTask(TaskExecuteBase):
         )
         self.cur_user_item.status = "完成"
 
+    async def final_task(self) -> None:
+        """一次性更新任务不持有需要释放的资源，结果状态由 main_task / on_crash 落定。"""
+
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"鸣潮更新任务出现异常: {e}")

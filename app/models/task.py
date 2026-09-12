@@ -150,6 +150,9 @@ class TaskItem(ABC):
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
+    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
     def community_results(self) -> list[dict[str, object]]:

@@ -48,7 +48,12 @@
               :max-tag-count="'responsive'"
               :placeholder="t('home.command.placeholder')"
               @dropdown-visible-change="$emit('dropdown-visible-change', $event)"
-            />
+            >
+              <!-- 拉取失败时列表为空：说明原因，展开下拉本身就会重试 -->
+              <template v-if="schedulerTasksUnavailable" #notFoundContent>
+                <span class="launcher-select-hint">{{ t('home.quickStart.listUnavailable') }}</span>
+              </template>
+            </a-select>
             <a-button
               type="primary"
               size="large"
@@ -86,6 +91,7 @@ const props = defineProps<{
   commandAuthor: string
   schedulerTaskOptions: ComboBoxItem[]
   schedulerTasksLoading: boolean
+  schedulerTasksUnavailable: boolean
   startingHomeTask: boolean
   selectedTaskIds: string[]
 }>()
@@ -213,6 +219,10 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 .launcher-select,
 .launcher-start {
   width: 100%;
+}
+
+.launcher-select-hint {
+  color: var(--ant-color-text-tertiary);
 }
 
 @media (max-width: 1240px) {

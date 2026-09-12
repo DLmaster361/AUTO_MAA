@@ -966,16 +966,6 @@ const weeklyRewardEnabled = (row: WeeklyDomainTableRow): boolean => {
   if (!String(props.dragonSettings[row.domainKey] ?? '').trim()) return false
   return !weeklyIsArtifactDomain(row)
 }
-// 切换秘境：非圣遗物保留原奖励；若改成圣遗物本（无档位），奖励强制回到默认
-const weeklyDomainChanged = (row: WeeklyDomainTableRow, value: unknown): void => {
-  const domain = value == null ? '' : String(value)
-  emit('update', tableCellField(row, 'domain'), domain)
-  const hit = props.domainCatalog.find(item => item.name === domain)
-  if (hit?.category === 'BlessDomain') {
-    emit('update', tableCellField(row, 'reward'), '0')
-  }
-}
-
 // ---- 秘境三级级联弹窗（地区 → 地点-类型 → 奖励物品）----
 const domainPickerOpen = ref(false)
 // 正在编辑的周表行（点击秘境列时记录）
@@ -1006,11 +996,6 @@ const pickRewards = computed<string[]>(() => pickDomainItem.value?.rewards || []
 const pickDomainItemLabel = (item: BetterGIDomainCatalogItem): string => {
   const typeLabel = domainCategoryLabel(item.category)
   return typeLabel ? `${item.name}-${typeLabel}` : item.name
-}
-// 当前编辑行已存奖励档位（用于弹窗回显高亮）
-const weeklyRewardDisplayValueOfRow = (): string => {
-  const row = domainPickerRow.value
-  return row ? weeklyRewardDisplayValue(row) : ''
 }
 // 弹窗打开：以该行已存秘境/奖励预置高亮
 const openDomainPicker = (row: WeeklyDomainTableRow): void => {

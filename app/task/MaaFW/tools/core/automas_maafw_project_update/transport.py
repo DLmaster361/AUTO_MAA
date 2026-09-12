@@ -32,14 +32,6 @@ RETRY_DELAY = 1.0
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
 
-class DownloadPaused(RuntimeError):
-    """The operation requested a pause; its partial file remains reusable."""
-
-
-class DownloadCancelled(RuntimeError):
-    """The operation was cancelled while preserving its partial file."""
-
-
 @dataclass(frozen=True)
 class DownloadOutcome:
     artifact_id: str
@@ -346,8 +338,6 @@ async def download_resumable(
                     f"MaaFW update package downloaded: {outcome.size} bytes"
                 )
                 return outcome
-            except (DownloadPaused, DownloadCancelled):
-                raise
             except _RestartFromZero:
                 partial_path.unlink(missing_ok=True)
                 metadata = _read_json(metadata_path)
@@ -540,33 +530,17 @@ async def _download_attempt(
                     async for chunk in response.aiter_bytes(chunk_size=CHUNK_SIZE):
                         if not chunk:
                             continue
-                        control = operation.read()
                         downloaded += len(chunk)
                         if downloaded > max_bytes:
                             raise RuntimeError("update package exceeds size limit")
                         await handle.write(chunk)
-                        if control.get("cancelRequested"):
-                            await handle.flush()
-                            _sync_file(partial_path)
-                            operation.update("cancelled", downloadedBytes=downloaded)
-                            raise DownloadCancelled(
-                                "MaaFW update download cancelled; partial retained"
-                            )
-                        if control.get("pauseRequested"):
-                            await handle.flush()
-                            _sync_file(partial_path)
-                            _atomic_json_write(
-                                metadata_path,
-                                {**metadata, "downloadedBytes": downloaded},
-                            )
-                            operation.update("paused", downloadedBytes=downloaded)
-                            raise DownloadPaused(
-                                "MaaFW update download paused; partial retained"
-                            )
                         if downloaded % (CHUNK_SIZE * 16) < len(chunk):
+                            # 每 1MB 落一次断点：fsync 与元数据原子改写都是同步
+                            # IO，放到线程里，别每兆一次卡住事件循环。
                             await handle.flush()
-                            _sync_file(partial_path)
-                            _atomic_json_write(
+                            await asyncio.to_thread(
+                                _write_checkpoint,
+                                partial_path,
                                 metadata_path,
                                 {**metadata, "downloadedBytes": downloaded},
                             )
@@ -650,6 +624,13 @@ async def _finalize_partial(
     )
 
 
+def _write_checkpoint(
+    partial_path: Path, metadata_path: Path, metadata: dict[str, Any]
+) -> None:
+    _sync_file(partial_path)
+    _atomic_json_write(metadata_path, metadata)
+
+
 def _sync_file(path: Path) -> None:
     try:
         with path.open("rb") as handle:
@@ -667,8 +648,6 @@ def _optional_int(value: Any) -> int | None:
 
 
 __all__ = [
-    "DownloadCancelled",
     "DownloadOutcome",
-    "DownloadPaused",
     "download_resumable",
 ]

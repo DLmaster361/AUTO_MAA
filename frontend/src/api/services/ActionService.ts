@@ -21,7 +21,6 @@ import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
-import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
@@ -39,25 +38,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
-        });
-    }
-    /**
-     * 导出脚本配置到文件
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static exportScriptToFileApiScriptsExportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/export/file',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
         });
     }
     /**

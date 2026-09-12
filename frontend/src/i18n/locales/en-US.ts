@@ -303,6 +303,9 @@ export default {
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
     maaDaily: 'Daily tasks',
+    maaSwitchTheme: 'Switch theme',
+    maaSwitchThemeHint:
+      'Theme names are configured in MAA\'s "Switch Theme" task. Multiple names are picked at random each run; an empty list skips the task. Requires MAA v6.17.3 or later',
     maaRoguelike: 'Integrated Strategies',
     maaRoguelikeHint: 'A long run may be mistaken for a timeout',
     maaGreenTicketStore: 'Green Ticket Store',
@@ -341,6 +344,7 @@ export default {
     item: 'Item',
     extractFieldsFromWindow: 'Extract fields from a window bounded by the start and end patterns',
     targetStock: 'Target stock',
+    stock: 'Stock',
     customBaseLayout: 'Custom base layout',
     resource: 'Resource',
     preset: 'Preset',
@@ -1163,7 +1167,7 @@ export default {
     hsrUpdateSectionHint:
       'March7th Assistant and SRA are third-party tools you installed yourself, so MAS never rewrites their folders unless you turn this on. Auto update only runs after the whole run has finished and never makes the current run wait for a download; after enabling it, a full run has to complete before the first update happens. Use the manual buttons below to update right away.',
     hsrUpdateModeTip:
-      'Off: never update automatically; After run: check and update once every user in this run has finished. A failed update never affects the run result',
+      'Off: never update automatically; After run: check and update once every user in this run has finished normally. No update happens if the run was cancelled, failed, or did not pass the config check. A failed update is rolled back and skipped without affecting the run result; only if the rollback itself fails is the run marked abnormal',
     hsrUpdateModeOff: 'Off',
     hsrUpdateModeAfterRun: 'After run',
     hsrUpdateChannel: 'Update channel',
@@ -2606,12 +2610,8 @@ export default {
       networkFailed: 'Network request failed — check your connection',
     },
     quickStart: {
-      mockDaily: 'Queue — daily automation',
-      mockGeneral: 'Script — general check',
-      mockNightly: 'Queue — nightly batch',
-      listUnavailable: 'Task list unavailable — showing placeholders',
+      listUnavailable: 'Task list unavailable — reopen the dropdown to retry',
       selectTask: 'Pick a task first',
-      mockNotStartable: 'This is a placeholder task; it can start once the real task list loads',
       fallbackLabel: 'Home quick task',
       started: 'Task started',
       startedCount: 'Started {p0}/{p1} tasks',
@@ -2956,6 +2956,7 @@ export default {
       created: 'New queue created — consider giving it a clearer name.',
       createFailed: 'Could not create the queue: {error}',
       addQueueFailed: 'Could not add the queue: {error}',
+      loadQueueFailed: 'Could not load the queue details',
       deleted: 'Queue deleted',
       deleteFailed: 'Could not delete the queue: {error}',
       saveFailed: 'Save failed',

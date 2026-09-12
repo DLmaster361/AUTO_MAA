@@ -56,6 +56,7 @@ import { message } from 'ant-design-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import type { M9ATaskQueueItem } from '@/types/script'
 
 const logger = window.electronAPI.getLogger('M9A用户编辑')
@@ -76,7 +77,8 @@ const { getScript } = useScriptApi()
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
@@ -157,7 +159,7 @@ watch(
 watch(
   () => taskQueue.value,
   newVal => {
-    if (!isInitializing.value && !isSaving.value && userId) {
+    if (!isInitializing.value && userId) {
       handleFieldSave('Task.Queue', JSON.stringify(newVal))
     }
   },
@@ -165,32 +167,31 @@ watch(
 )
 
 const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || !userId) return
 
-  isSaving.value = true
-  try {
-    const parts = key.split('.')
-    let userData: Record<string, any> = {}
-    let current = userData
+  await enqueue(async () => {
+    try {
+      const parts = key.split('.')
+      let userData: Record<string, any> = {}
+      let current = userData
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
+      for (let i = 0; i < parts.length - 1; i++) {
+        current[parts[i]] = {}
+        current = current[parts[i]]
+      }
+      current[parts[parts.length - 1]] = value
+
+      if (key === 'userName') {
+        userData = { Info: { Name: value } }
+      }
+
+      await updateUser(scriptId, userId, userData)
+      logger.info(`用户配置已保存: ${key}`)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-    current[parts[parts.length - 1]] = value
-
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
-    }
-
-    await updateUser(scriptId, userId, userData)
-    logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 const loadScriptInfo = async () => {

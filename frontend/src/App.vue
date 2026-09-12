@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
@@ -10,7 +10,6 @@ import { useAppInitialization } from './composables/useAppInitialization.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
-import DebugPanel from './components/devtools/index.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
@@ -20,6 +19,11 @@ import { usePerformanceStore } from './stores/performance'
 import { useLocale } from './composables/useLocale.ts'
 
 const logger = window.electronAPI.getLogger('App组件')
+
+// 调试面板及其子页只进开发构建：编译期常量让生产包直接摇掉这近两千行
+const DebugPanel = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
+  : null
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
@@ -83,8 +87,8 @@ onMounted(async () => {
       <AppLayout />
     </div>
 
-    <!-- 开发环境调试面板 - 开发工具始终可用 -->
-    <DebugPanel />
+    <!-- 开发构建才带调试面板 -->
+    <DebugPanel v-if="DebugPanel" />
 
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">

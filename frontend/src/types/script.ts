@@ -620,6 +620,7 @@ export interface User {
     IfFight: boolean
     IfMall: boolean
     IfAward: boolean
+    IfSwitchTheme: boolean
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean

@@ -36,7 +36,7 @@ async def update_maa(maa_path: Path):
     try:
         new_set = read_file(maa_path / "config/gui.new.json")
         maa_update_package = new_set.get("Update", {}).get("UpdatePackage", "")
-    except (FileNotFoundError, json.JSONDecodeError):
+    except json.JSONDecodeError:
         maa_update_package = ""
     # OLD: Global.VersionUpdate.package
     if not maa_update_package:
@@ -45,7 +45,7 @@ async def update_maa(maa_path: Path):
             maa_update_package = old_set.get("Global", {}).get(
                 "VersionUpdate.package", ""
             )
-        except (FileNotFoundError, json.JSONDecodeError):
+        except json.JSONDecodeError:
             maa_update_package = ""
 
     if not maa_update_package or not (maa_path / maa_update_package).exists():

@@ -83,6 +83,9 @@ class InterceptHandler(logging.Handler):
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        # 访问日志降到 DEBUG: 不进 app.log (INFO), 开发时 stderr (DEBUG) 仍可见
+        if record.name == "uvicorn.access":
+            level = "DEBUG"
         # 过滤敏感信息并转发日志
         sanitized_message = sanitize_log_message(record.getMessage())
         logger.opt(depth=6, exception=record.exc_info).log(level, sanitized_message)

@@ -53,7 +53,11 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.extra_script import run_script_after_task, run_script_before_task
-from .tools.log_detect import detect_echo_of_war_completion
+from .tools.log_detect import (
+    detect_echo_of_war_completion,
+    find_m7a_self_game_stop,
+    select_failure_summary_lines,
+)
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
@@ -79,6 +83,9 @@ logger = get_logger("HSR 自动代理")
 # 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
 HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
 HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
+# 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
+# ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
+GAME_EXIT_SETTLE_SECONDS = 2
 
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
@@ -750,12 +757,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
-        try:
-            only_when_changed = self.script_config.get(
-                "Game", "RedeemCodesOnlyWhenChanged"
-            )
-        except (AttributeError, KeyError, TypeError):
-            only_when_changed = True
+        only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
         if only_when_changed is False:
             return True, None
         try:
@@ -1369,8 +1371,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         return failures
                     continue
                 except Exception as e:  # noqa: BLE001
+                    # 非 HSRRetryableTaskError 的异常是配置或代码错误, 补跑也不会
+                    # 变好: 记录堆栈、记为失败但标记不可重试, 后续模块照常继续
                     item.last_error = str(e)
+                    item.retryable = False
                     failures.append(item)
+                    logger.opt(exception=True).warning(
+                        f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
+                        f"{item.last_error}"
+                    )
                     self._append_log(
                         f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
@@ -1385,11 +1394,18 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             failures=failures,
                             reason=HSR_ABORT_REASON_LOGIN_FAILED,
                         )
+                        for skipped in remaining:
+                            skipped.retryable = False
+                        if remaining:
+                            self._append_log(
+                                f"用户「{item.user_name}」{HSR_ABORT_REASON_LOGIN_FAILED}"
+                                f"（共 {len(remaining)} 项）"
+                            )
                         failures.extend(remaining)
                         return failures
                     continue
 
-                if bool(getattr(result, "success", True)):
+                if bool(getattr(result, "success", False)):
                     if item.on_success is not None:
                         item.on_success(result)
                     # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
@@ -1453,21 +1469,54 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     break
                 if self.runtime.game_transitioning:
                     continue
-                if not is_process_running(HSR_GAME_PROCESS_NAME):
-                    await self._stop_external_processes()
-                    run_task.cancel()
-                    with suppress(BaseException):
-                        await run_task
-                    raise HSRGameExitedError(
-                        "检测到星穹铁道进程已退出，已终止当前外部脚本；"
-                        "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
-                    )
+                if is_process_running(HSR_GAME_PROCESS_NAME):
+                    continue
+                # 进程刚消失时先让出一拍：让读输出的协程把 M7A 关游戏前打的
+                # 那行 ERROR 收进来，也给「脚本自己关掉游戏后紧接着退出」留出
+                # 自然结束的机会。
+                await asyncio.sleep(GAME_EXIT_SETTLE_SECONDS)
+                if run_task.done():
+                    break
+                reason = self._describe_game_exit(item)
+                await self._stop_external_processes()
+                run_task.cancel()
+                with suppress(BaseException):
+                    await run_task
+                raise HSRGameExitedError(reason)
             return await run_task
         except asyncio.CancelledError:
             run_task.cancel()
             with suppress(BaseException):
                 await run_task
             raise
+
+    def _describe_game_exit(self, item: HSRRunItem) -> str:
+        """游戏进程消失时给出准确归因。
+
+        M7A 等 6 分钟识不出任何界面会自己 stop_game() 再 continue 重启游戏，
+        这时把失败写成「进程已退出，若是用户主动关闭…」既冤枉用户，也把真正
+        的原因（画面卡在哪、错误截图在哪）藏进了几十行 WARNING 里。
+        """
+
+        runner = self.runtime.m7a_runner
+        if item.script == "M7A" and runner is not None:
+            recent = runner.recent_output_lines
+            if find_m7a_self_game_stop(recent) is not None:
+                cause = (
+                    "长时间未识别出游戏界面"
+                    if any("获取当前界面超时" in line for line in recent)
+                    else "启动或检查游戏时出错"
+                )
+                detail = "\n".join(select_failure_summary_lines(recent))
+                return (
+                    f"M7A {cause}，已自行关闭游戏；"
+                    "MAS 已终止本次 M7A，补跑前会重新启动游戏。M7A 最后的报错："
+                    f"\n{detail}"
+                )
+        return (
+            "检测到星穹铁道进程已退出，已终止当前外部脚本；"
+            "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
+        )
 
     def _format_queue_failures(
         self,
@@ -1554,6 +1603,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await run_script_before_task(user_cfg)
 
         failed_items: list[HSRRunItem] = []
+        permanent_failures: list[HSRRunItem] = []
         current_items = full_queue
         for attempt in range(1, retry_limit + 1):
             if not current_items:
@@ -1612,7 +1662,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 await run_script_after_task(user_cfg)
                 return
 
-            if attempt < retry_limit:
+            # 不可重试的失败（配置或代码错误）只记结果, 不进补跑队列
+            permanent_failures.extend(i for i in failed_items if not i.retryable)
+            retryable_failures = [i for i in failed_items if i.retryable]
+            if attempt < retry_limit and retryable_failures:
                 retry_action = (
                     "将重新启动游戏后补跑"
                     if is_game_management_enabled(self.script_config)
@@ -1620,11 +1673,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
-                    f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
+                    f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"
                 )
                 self._finish_current_user_log(status, user_status="运行")
                 current_items = self._build_retry_queue_items(
-                    failed_items,
+                    retryable_failures,
                     user_item=user_item,
                     user_cfg=user_cfg,
                     user_name=user_name,
@@ -1635,6 +1688,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
             else:
                 self._finish_current_user_log(status, user_status="异常")
+                failed_items = permanent_failures + retryable_failures
                 for failed_item in failed_items:
                     if failed_item.module_key == "StartGame":
                         continue

@@ -153,9 +153,11 @@ async def update_engine_if_needed(
     assert candidate is not None  # installable 为真时必然存在
 
     # ── 前置门：任一不过就跳过本轮，目录一动不动 ──
+    # 进程扫描要遍历整张进程表（实测 ~250ms），API 手动更新走的是事件循环，
+    # 得丢线程；写探针是同步 IO，顺手一起。
     for failure in (
-        check_no_process_running(install_root),
-        check_writable(install_root),
+        await asyncio.to_thread(check_no_process_running, install_root),
+        await asyncio.to_thread(check_writable, install_root),
     ):
         if failure:
             log(f"{label} 跳过更新：{failure.reason}")

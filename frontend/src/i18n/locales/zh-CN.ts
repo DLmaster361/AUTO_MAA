@@ -299,6 +299,9 @@ export default {
     maaCustomInfrastPlan: '自定义基建排班',
     maaCustomInfrastPlanHint: '从已导入的配置中选择当前使用的排班',
     maaDaily: '日常任务',
+    maaSwitchTheme: '更换主题',
+    maaSwitchThemeHint:
+      '主题名称在 MAA 的「更换主题」任务里配置，可填多个，每次运行随机切换一个，为空时自动跳过；需要 MAA v6.17.3 及以上版本',
     maaRoguelike: '自动肉鸽',
     maaRoguelikeHint: '长时间运行可能被误判超时',
     maaGreenTicketStore: '绿票商店',
@@ -337,6 +340,7 @@ export default {
     item: '物品',
     extractFieldsFromWindow: '由起始/结束正则划定窗口后提取字段',
     targetStock: '目标库存',
+    stock: '库存',
     customBaseLayout: '自定义基建',
     resource: '资源',
     preset: '预设',
@@ -1104,7 +1108,7 @@ export default {
     hsrUpdateSectionHint:
       '三月七助手与 SRA 是您自行安装的第三方工具，MAS 默认不会改写它们的目录。自动更新只在本轮任务全部跑完后进行，不会让当前任务等待下载；首次开启后要跑满一轮才会生效，想马上更新请用下方的手动按钮。',
     hsrUpdateModeTip:
-      '关闭：从不自动更新；任务完成后：本轮全部用户跑完再检查并更新，更新失败不影响任务结果',
+      '关闭：从不自动更新；任务完成后：本轮全部用户正常跑完再检查并更新——任务被取消、出错或配置检查未通过时不会更新。更新失败会自动还原并跳过，不影响本轮结果；只有还原也失败时才会把本轮标为异常',
     hsrUpdateModeOff: '关闭',
     hsrUpdateModeAfterRun: '任务完成后',
     hsrUpdateChannel: '更新渠道',
@@ -2500,12 +2504,8 @@ export default {
       networkFailed: '网络请求失败，请检查连接',
     },
     quickStart: {
-      mockDaily: '队列 - 每日自动化',
-      mockGeneral: '脚本 - 通用巡检',
-      mockNightly: '队列 - 夜间批处理',
-      listUnavailable: '任务列表暂不可用，已显示占位任务',
+      listUnavailable: '任务列表暂不可用，重新展开下拉可重试',
       selectTask: '请选择任务项',
-      mockNotStartable: '当前为首页占位任务，接入真实任务列表后可直接启动',
       fallbackLabel: '首页快速任务',
       started: '任务已开始',
       startedCount: '已开始 {p0}/{p1} 个任务',
@@ -2840,6 +2840,7 @@ export default {
       created: '已创建新的调度队列，建议您修改为更有意义的名称',
       createFailed: '队列创建失败: {error}',
       addQueueFailed: '添加队列失败: {error}',
+      loadQueueFailed: '加载队列详情失败',
       deleted: '队列删除成功',
       deleteFailed: '删除队列失败: {error}',
       saveFailed: '保存失败',

@@ -57,6 +57,7 @@
             :command-author="commandAuthor"
             :scheduler-task-options="schedulerTaskOptions"
             :scheduler-tasks-loading="schedulerTasksLoading"
+            :scheduler-tasks-unavailable="schedulerTasksUnavailable"
             :starting-home-task="startingHomeTask"
             @update:selected-task-ids="updateSelectedHomeTaskIds"
             @dropdown-visible-change="onSchedulerDropdownVisibleChange"
@@ -179,6 +180,7 @@ import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useSraActivitySource } from '@/views/home/useSraActivitySource'
 import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
 import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
+import type { HomeModuleKey } from '@/types/home'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 
@@ -206,6 +208,7 @@ const {
   commandTitle,
   commandAuthor,
   schedulerTasksLoading,
+  schedulerTasksUnavailable,
   startingHomeTask,
   schedulerTaskOptions,
   selectedHomeTaskIds,
@@ -236,6 +239,25 @@ const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wuthering
 const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
 const reverse1999Source = useReverse1999ActivitySource()
 const endfieldSource = useEndfieldActivitySource()
+
+// 只有模块可见时才拉活动数据；布局要等 loadHomeLayout 读回来才知道哪些模块被隐藏，
+// 所以以 layoutReady 为闸；隐藏时停掉重试定时器，卸载时由各源的 onScopeDispose 收尾
+const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: () => void }]> = [
+  ['starrail', starRailSource],
+  ['genshin', genshinSource],
+  ['zenless', zenlessSource],
+  ['wutheringwaves', wutheringWavesSource],
+  ['nte', nevernessToEvernessSource],
+  ['reverse1999', reverse1999Source],
+  ['endfield', endfieldSource],
+]
+for (const [moduleKey, source] of activitySourcesByModule) {
+  watch(
+    () => layoutReady.value && isHomeModuleVisible(moduleKey),
+    visible => (visible ? source.start() : source.stop()),
+    { immediate: true }
+  )
+}
 
 const greeting = computed(() => {
   const hour = new Date().getHours()

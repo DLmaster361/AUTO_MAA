@@ -48,7 +48,7 @@
 
 ### 修复
 
-- 模拟器 2.0 修复雷电实例在关机或启动中时被误判为「别家模拟器」、上线后 ADB 地址被清空、MAA 直接报 ADB 连接异常的问题（beta.5 首日生产实测）
+- 模拟器 2.0 修复雷电实例在关机或启动中时被误判为「别家模拟器」、上线后 ADB 地址被清空、MAA 直接报 ADB 连接异常的问题（beta.5 首日生产实测） by [@qiyinxi](https://github.com/qiyinxi)
 - 模拟器 2.0 雷电的 VBox 服务卡住时（窗口开了、虚拟机起不来、MAA 报 ADB 连接异常且反复重试），启动会自动关掉空窗口并重启该服务再试一次；只在所有实例都异常时才动手，只要还有任何一台实例在运行或正在启动就不碰，改为明确提示先关闭它们或运行雷电修复工具 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 - 模拟器 2.0 的 MuMu 实例启动失败或超时时，报错里附上 MuMu 自己给出的启动错误码、错误信息和实例状态，不再只有一句「启动超时」 by [@qiyinxi](https://github.com/qiyinxi) by [@HarcoChen](https://github.com/HarcoChen)
 - 修复社区通知重复发送、标题重复及同名 Webhook 漏发签到摘要的问题。 by [@HarcoChen](https://github.com/HarcoChen)

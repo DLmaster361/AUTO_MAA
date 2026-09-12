@@ -59,9 +59,13 @@ from .tools import (
 
 logger = get_logger("BAAH 自动代理")
 
-## BAAH 日志行格式为「{版本} - {分:秒} - {级别} : {消息}」，按空格分词后
-## 时间戳位于第 3 个字段，此处使用 0 基切片区间
-BAAH_LOG_TIME_RANGE = (2, 3)
+## BAAH 日志行格式为「{版本} - {分:秒} - {级别} : {消息}」，例如：
+##   2.4.13 - 24:19 - INFO : 执行任务EnterGame
+## ⚠️ 该区间是 LogMonitor 直接对这一整行做的**字符切片**（line[start:end]），
+## 不是按分隔符分词后的字段下标。版本号占 6 个字符、其后是「 - 」共 3 个字符，
+## 因此时间戳「24:19」落在 [9, 14)。
+## ⚠️ 若 BAAH 版本号位数变化（如 2.4.13 → 2.4.130），此区间会失配，须同步调整。
+BAAH_LOG_TIME_RANGE = (9, 14)
 
 ## BAAH 只输出「分:秒」，不带日期与小时
 BAAH_LOG_TIME_FORMAT = "%M:%S"
@@ -319,11 +323,18 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_info.log = "正在等待 BAAH 日志文件生成"
         log_path: Path | None = None
-        deadline = time.monotonic() + _LOG_FILE_WAIT_SECONDS
+        wait_started_at = time.monotonic()
+        deadline = wait_started_at + _LOG_FILE_WAIT_SECONDS
         while time.monotonic() < deadline:
             log_path = latest_log_file(self.log_dir, launch_at)
             if log_path is not None:
                 break
+            ## 状态带上已等待秒数：否则界面在整个等待窗口里都是一句静止的
+            ## 文案，用户无法区分「正在等」与「已经卡死」
+            self.script_info.log = (
+                f"正在等待 BAAH 日志文件生成（已等待 "
+                f"{int(time.monotonic() - wait_started_at)} 秒）"
+            )
             await asyncio.sleep(1)
 
         if log_path is None:
@@ -332,6 +343,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_log_path = log_path
         logger.success(f"成功定位到日志文件: {self.script_log_path}")
+        ## 定位成功后立刻改写状态：日志监控要等 BAAH 写出首批日志行才会回调，
+        ## 不改写的话界面会继续停在「正在等待日志文件生成」，看起来像没进展
+        self.script_info.log = f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
 
         await self.log_monitor.start_monitor_file(
             self._resolve_log_file_path, self.log_start_time

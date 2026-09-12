@@ -27,6 +27,7 @@
 import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -156,3 +157,49 @@ class TestLatestLogFile:
 
     def test_returns_none_for_missing_dir(self, tmp_path: Path) -> None:
         assert latest_log_file(tmp_path / "missing", 0.0) is None
+
+
+class TestLogTimestampRange:
+    """日志时间戳切片
+
+    ``BAAH_LOG_TIME_RANGE`` 是 LogMonitor 对整行做的**字符切片**，不是按分隔符
+    分词后的字段下标。切片写错会让每一行的时间戳都解析失败，LogMonitor 会因此
+    丢弃全部日志行：任务照常运行，但界面收不到任何日志，也永远判不出成功标记。
+    """
+
+    # 真实日志行（BAAH 2.4.13 实测输出）
+    REAL_LINE = "2.4.13 - 24:19 - INFO : 执行任务EnterGame"
+
+    def test_slices_timestamp_from_real_line(self) -> None:
+        from app.task.BAAH.AutoProxy import (
+            BAAH_LOG_TIME_FORMAT,
+            BAAH_LOG_TIME_RANGE,
+        )
+
+        start, end = BAAH_LOG_TIME_RANGE
+        raw = self.REAL_LINE[start:end]
+
+        assert raw == "24:19"
+
+        parsed = datetime.strptime(raw, BAAH_LOG_TIME_FORMAT)
+        assert (parsed.minute, parsed.second) == (24, 19)
+
+    def test_logmonitor_start_filter_accepts_line(self) -> None:
+        """模拟 LogMonitor 的起始过滤：真实日志行必须能被判为「晚于启动时刻」"""
+
+        from app.task.BAAH.AutoProxy import (
+            BAAH_LOG_TIME_FORMAT,
+            BAAH_LOG_TIME_RANGE,
+        )
+        from app.utils.LogMonitor import strptime as monitor_strptime
+
+        start, end = BAAH_LOG_TIME_RANGE
+        log_start_time = datetime(2026, 9, 12, 17, 24, 16)
+
+        parsed = monitor_strptime(
+            self.REAL_LINE[start:end],
+            BAAH_LOG_TIME_FORMAT,
+            datetime(2026, 9, 12, 17, 24, 20),
+        )
+
+        assert parsed > log_start_time

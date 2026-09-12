@@ -232,60 +232,77 @@ def apply_managed_config(
 
     Returns:
         ManagedConfigBackup: 运行结束后交回 ``restore_managed_config`` 的快照。
+
+    Raises:
+        Exception: 写入任一配置文件失败。抛出前已把两份配置回滚到调用前的状态。
     """
 
     backup = ManagedConfigBackup(user_config_path=user_config_path)
 
-    backup.user_config_existed = user_config_path.exists()
+    ## 先把两份配置全部读完再开始写：读取阶段不改动任何文件，中途失败也就不会
+    ## 留下「用户配置已改、软件配置没改」的半托管状态
     user_config = read_json(user_config_path)
+    backup.user_config_existed = user_config_path.exists()
     backup.user_config = dict(user_config)
+
+    software_config: dict[str, Any] = {}
+    if software_config_path is not None:
+        software_config = read_json(software_config_path)
+        backup.software_config_path = software_config_path
+        backup.software_config_existed = software_config_path.exists()
+        backup.software_config = dict(software_config)
 
     managed_values = dict(MANAGED_USER_VALUES)
     if runtime_values:
         managed_values.update(runtime_values)
 
-    changed = False
+    user_changed = False
     for key, value in managed_values.items():
         if user_config.get(key) != value:
             user_config[key] = value
-            changed = True
+            user_changed = True
 
-    if changed:
-        write_json(user_config_path, user_config)
-        logger.info(f"已写入 BAAH 托管配置项: {user_config_path}")
-
+    software_changed = False
     if software_config_path is not None:
-        backup.software_config_path = software_config_path
-        backup.software_config_existed = software_config_path.exists()
-        software_config = read_json(software_config_path)
-        backup.software_config = dict(software_config)
-
-        software_changed = False
         for key, value in MANAGED_SOFTWARE_VALUES.items():
             if software_config.get(key) != value:
                 software_config[key] = value
                 software_changed = True
 
-        if software_changed:
+    ## 两份配置要么都写好、要么都不写：任一写入失败就立刻回滚已经落盘的那份。
+    ## 调用方拿到异常时不会有备份对象，等到收尾阶段也就无从恢复，只能靠这里兜住
+    try:
+        if user_changed:
+            write_json(user_config_path, user_config)
+            logger.info(f"已写入 BAAH 托管配置项: {user_config_path}")
+
+        if software_changed and software_config_path is not None:
             write_json(software_config_path, software_config)
             logger.info(f"已写入 BAAH 托管软件配置项: {software_config_path}")
+    except Exception as e:
+        logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败, 正在回滚: {e}")
+        _restore_files(backup)
+        raise
 
-    backup.applied = True
+    ## applied 表示「确实改动过文件」：两份都没变时收尾阶段无需恢复
+    backup.applied = user_changed or software_changed
     return backup
 
 
-def restore_managed_config(backup: ManagedConfigBackup | None) -> None:
-    """把托管项恢复为运行前的取值。
+def _restore_files(backup: ManagedConfigBackup) -> list[str]:
+    """把两份配置恢复为备份内容。
 
-    每步独立容错：恢复失败只记录日志，不向调用方抛出，避免影响任务收尾。
-    快照为 None 表示本次运行尚未写入过托管项（任务在托管前就被停止），直接返回。
+    每步独立容错：失败只记录日志并汇总，不向调用方抛出，避免影响任务收尾。
+    写入阶段回滚与收尾阶段恢复共用这一份逻辑。
 
     Args:
-        backup: ``apply_managed_config`` 返回的快照，允许为 None。
+        backup: 托管前的快照。
+
+    Returns:
+        list[str]: 恢复失败的描述，空列表表示全部恢复成功。
     """
 
-    if backup is None or not backup.applied:
-        return
+    failures: list[str] = []
 
     try:
         if backup.user_config_existed:
@@ -295,18 +312,41 @@ def restore_managed_config(backup: ManagedConfigBackup | None) -> None:
             backup.user_config_path.unlink()
     except Exception as e:
         logger.opt(exception=True).warning(f"恢复 BAAH 用户配置失败: {e}")
+        failures.append(f"用户配置 {backup.user_config_path.name}({e})")
 
     software_config_path = backup.software_config_path
-    if software_config_path is None:
-        return
+    if software_config_path is not None:
+        try:
+            if backup.software_config_existed:
+                write_json(software_config_path, backup.software_config)
+            elif software_config_path.exists():
+                software_config_path.unlink()
+        except Exception as e:
+            logger.opt(exception=True).warning(f"恢复 BAAH 软件配置失败: {e}")
+            failures.append(f"软件配置 {software_config_path.name}({e})")
 
-    try:
-        if backup.software_config_existed:
-            write_json(software_config_path, backup.software_config)
-        elif software_config_path.exists():
-            software_config_path.unlink()
-    except Exception as e:
-        logger.opt(exception=True).warning(f"恢复 BAAH 软件配置失败: {e}")
+    return failures
+
+
+def restore_managed_config(backup: ManagedConfigBackup | None) -> list[str]:
+    """把托管项恢复为运行前的取值。
+
+    每步独立容错：恢复失败只记录日志，不向调用方抛出，避免影响任务收尾。
+    快照为 None 表示本次运行尚未写入过托管项（任务在托管前就被停止），直接返回。
+    但失败必须让调用方看得见——静默返回会让用户的配置一直带着托管值，
+    而任务却显示为正常完成。
+
+    Args:
+        backup: ``apply_managed_config`` 返回的快照，允许为 None。
+
+    Returns:
+        list[str]: 恢复失败的描述，空列表表示全部恢复成功。
+    """
+
+    if backup is None or not backup.applied:
+        return []
+
+    return _restore_files(backup)
 
 
 def latest_log_file(log_dir: Path, not_before: float) -> Path | None:

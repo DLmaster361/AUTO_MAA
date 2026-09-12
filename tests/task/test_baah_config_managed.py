@@ -132,6 +132,75 @@ class TestManagedConfigRoundTrip:
         """任务在托管配置写入前被中止时，收尾阶段会拿到 None，不应抛异常"""
         restore_managed_config(None)
 
+    def test_applied_is_false_when_nothing_needed_changing(
+        self, tmp_path: Path
+    ) -> None:
+        """配置本来就是托管值时不写文件，收尾阶段也无需恢复"""
+
+        user_path = tmp_path / "BAAH_CONFIGS" / "已托管.json"
+        user_path.parent.mkdir(parents=True)
+        user_path.write_text(json.dumps(dict(MANAGED_USER_VALUES)), encoding="utf-8")
+
+        backup = apply_managed_config(user_path, None)
+
+        assert backup.applied is False
+        assert restore_managed_config(backup) == []
+
+    def test_rolls_back_user_config_when_software_write_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """软件配置写入失败时，已经落盘的用户配置必须回滚
+
+        调用方只在写入成功后才会拿到备份对象；这里不回滚的话，用户配置就会
+        带着托管值留下来，而收尾阶段已经无从恢复。
+        """
+
+        user_path = tmp_path / "BAAH_CONFIGS" / "国服2.json"
+        user_path.parent.mkdir(parents=True)
+        original = {"SERVER_TYPE": "CN", "KEEP_ME": 7}
+        user_path.write_text(json.dumps(original), encoding="utf-8")
+
+        software_path = tmp_path / "DATA" / "CONFIGS" / "software_config.json"
+
+        import app.task.BAAH.tools.config_manager as config_manager
+
+        real_write = config_manager.write_json
+
+        def flaky_write(path: Path, data: dict) -> None:
+            if path == software_path:
+                raise OSError("模拟软件配置不可写")
+            real_write(path, data)
+
+        monkeypatch.setattr(config_manager, "write_json", flaky_write)
+
+        with pytest.raises(OSError):
+            apply_managed_config(user_path, software_path)
+
+        assert json.loads(user_path.read_text(encoding="utf-8")) == original
+
+    def test_reports_restore_failure_instead_of_swallowing_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """恢复失败必须回传给调用方：静默返回会让用户配置一直带着托管值"""
+
+        user_path = tmp_path / "BAAH_CONFIGS" / "国服2.json"
+        user_path.parent.mkdir(parents=True)
+        user_path.write_text(json.dumps({"KEEP_ME": 7}), encoding="utf-8")
+
+        backup = apply_managed_config(user_path, None)
+
+        import app.task.BAAH.tools.config_manager as config_manager
+
+        def boom(path: Path, data: dict) -> None:
+            raise OSError("模拟配置文件只读")
+
+        monkeypatch.setattr(config_manager, "write_json", boom)
+
+        failures = restore_managed_config(backup)
+
+        assert len(failures) == 1
+        assert "国服2.json" in failures[0]
+
 
 class TestLatestLogFile:
     """日志文件定位"""

@@ -111,6 +111,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.managed_backup: ManagedConfigBackup | None = None
         self.process_manager: ProcessManager | None = None
         self.log_monitor: LogMonitor | None = None
+        ## 两个总开关在 prepare() 里按脚本配置初始化，这里给出保守默认值
+        self.if_manage_config = True
+        self.push_log_enabled = True
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
 
@@ -174,6 +177,15 @@ class AutoProxyTask(TaskExecuteBase):
             BAAH_LOG_TIME_RANGE,
             BAAH_LOG_TIME_FORMAT,
             self.check_log,
+        )
+
+        ## 配置托管总开关：关闭时照常启动 BAAH，但不改动它的任何配置文件
+        self.if_manage_config = bool(
+            self.script_config.get("Script", "IfManageConfig")
+        )
+        ## 日志推送开关：关闭时仍监控日志用于判定结果，但不写进任务记录与报告
+        self.push_log_enabled = bool(
+            self.script_config.get("Script", "PushLogEnabled")
         )
 
         config_name = resolve_config_name(
@@ -285,22 +297,47 @@ class AutoProxyTask(TaskExecuteBase):
         if not await self._ensure_emulator_online():
             return
 
-        try:
-            self.managed_backup = apply_managed_config(
-                self.user_config_path,
-                self.software_config_path,
-                self._emulator_runtime_values(),
-            )
-        except Exception as e:
-            logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败: {e}")
-            await self.handle_pre_script_error("写入 BAAH 托管配置失败", e)
-            return
+        if self.if_manage_config:
+            try:
+                self.managed_backup = apply_managed_config(
+                    self.user_config_path,
+                    self.software_config_path,
+                    self._emulator_runtime_values(),
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败: {e}")
+                await self.handle_pre_script_error("写入 BAAH 托管配置失败", e)
+                return
+        else:
+            ## 用户关闭了配置托管：模拟器地址等运行期取值也不再注入，
+            ## BAAH 完全按它自己的配置文件运行
+            logger.info("未开启「托管 BAAH 运行配置」, 跳过配置托管")
 
         try:
             await self._run_launched()
         finally:
-            restore_managed_config(self.managed_backup)
-            self.managed_backup = None
+            await self._restore_managed_config()
+
+    async def _restore_managed_config(self) -> None:
+        """恢复托管配置，并把恢复失败明确告知用户。
+
+        恢复失败不能让整个任务失败（此时任务往往已经跑完），但也绝不能静默：
+        用户的配置文件会一直带着本次运行写入的托管值，界面却显示一切正常。
+        """
+
+        failures = restore_managed_config(self.managed_backup)
+        self.managed_backup = None
+
+        if not failures:
+            return
+
+        message = "恢复 BAAH 配置失败, 请检查配置文件是否可写: " + "; ".join(failures)
+        logger.error(message)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=message),
+        )
 
     async def _run_launched(self) -> None:
         """启动 BAAH 进程并等待日志给出结果"""
@@ -367,7 +404,10 @@ class AutoProxyTask(TaskExecuteBase):
         """日志回调：判定本次运行的结果"""
 
         log = "".join(log_content)
-        self.cur_user_log.content = log_content
+        ## 日志内容只在开启推送时写入任务记录：结果判定始终依赖完整日志，
+        ## 关闭推送只是不让它进报告
+        if self.push_log_enabled:
+            self.cur_user_log.content = log_content
         self.script_info.log = log
 
         if self.success_log.search(log) is not None:
@@ -448,8 +488,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.kill_managed_process()
 
-        restore_managed_config(self.managed_backup)
-        self.managed_backup = None
+        await self._restore_managed_config()
 
         for t, log_item in self.cur_user_item.log_record.items():
             log_path = Config.build_history_log_path(
@@ -462,8 +501,12 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "任务被用户手动中止"
 
             if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+                if self.push_log_enabled:
+                    log_item.content = ["未捕获到任何日志内容"]
+                    log_item.status = "未捕获到日志"
+                else:
+                    ## 用户主动关闭推送与「没采集到」不是一回事，不能据此改判状态
+                    log_item.content = ["未开启日志推送, 本次未保留日志内容"]
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
 
@@ -485,8 +528,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning(f"清理 BAAH 进程失败: {kill_error}")
 
         try:
-            restore_managed_config(self.managed_backup)
-            self.managed_backup = None
+            await self._restore_managed_config()
         except Exception as restore_error:
             logger.opt(exception=True).warning(
                 f"恢复 BAAH 托管配置失败: {restore_error}"

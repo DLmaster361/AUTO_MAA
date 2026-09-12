@@ -1664,8 +1664,9 @@ export default {
     baahManageConfig: 'Manage key settings',
     baahManageConfigHint:
       'When on, this app writes the settings BAAH needs before the run (exit when finished, write logs to disk) and restores your original values afterwards',
-    baahPushLogEnabled: 'Show task node details',
-    baahPushLogEnabledHint: 'When on, the task report shows the BAAH task node details',
+    baahPushLogEnabled: 'Keep run logs',
+    baahPushLogEnabledHint:
+      'When on, this run is written to the task record and report; when off the result is still decided from the logs, they are just not kept',
     baahEmulatorHint:
       'Pick the emulator this app should schedule; it starts the emulator and waits for the device before the run, so BAAH only connects and you need no emulator path or port inside BAAH',
     baahCloseEmulatorOnFinish: 'Close the emulator when finished',

@@ -53,7 +53,6 @@ from app.utils.paths import SOURCE_ROOT
 
 from .game_package import resolve_game_package
 from .project_path import release_project_path, try_reserve_project_path
-from .runtime_route import MaaFWManagedExecutionRoute, managed_execution_route
 
 logger = get_logger("MaaFW 插件自动代理")
 
@@ -345,10 +344,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._cached_adb_profile: MaaFWAdbControlProfile | None = None
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
-        self.maafw_managed_execution = False
-        self.maafw_managed_project: Mapping[str, Any] | None = None
-        self.maafw_managed_runtime_binding: Mapping[str, Any] | None = None
-        self.maafw_managed_route: MaaFWManagedExecutionRoute | None = None
 
     async def check(self) -> str:
         proxy_times = (
@@ -1117,17 +1112,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise RuntimeError(
                 "MaaFW 运行任务缺少由 maafw.runtime_pool.v1 注入的 root/poolId"
             )
-        if self.maafw_managed_execution:
-            managed_route = self.maafw_managed_route
-            if managed_route is None:
-                raise RuntimeError("MaaFW Managed 执行缺少已预校验的可信 runtime route")
-        else:
-            managed_route = managed_execution_route(
-                managed_execution=False,
-                project=self.maafw_managed_project,
-                runtime_binding=self.maafw_managed_runtime_binding,
-                expected_pool_id=runtime_pool_id,
-            )
         native_debug_log_path = self.project_path / "debug" / "maafw.log"
         (
             native_debug_log_offset,
@@ -1145,17 +1129,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 service.prepare_environment,
                 self.project_path,
                 runtime_pool_root=runtime_pool_root,
-                runtime_requirements=(
-                    managed_route.runtime_requirements if managed_route else None
-                ),
-                runtime_requirement=(
-                    managed_route.maafw_requirement if managed_route else None
-                ),
-                runtime_id=managed_route.runtime_id if managed_route else None,
                 runtime_pool_id=runtime_pool_id,
-                runtime_python_constraint=(
-                    managed_route.python_constraint if managed_route else None
-                ),
                 lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
                 lease_ttl_seconds=max(
                     600,
@@ -1189,16 +1163,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         worker_id: str | None = None
         try:
             runner_plan = self.run_plan
-            if runner_environment.maafw_version or managed_route is not None:
-                runner_plan = self.run_plan.model_copy(deep=True)
-            if managed_route is not None:
-                runner_plan.managedSharedAgentDependenciesComplete = (
-                    managed_route.shared_agent_dependencies_complete
-                )
-                runner_plan.managedPythonAgentIndexes = list(
-                    managed_route.managed_python_agent_indexes
-                )
             if runner_environment.maafw_version:
+                runner_plan = self.run_plan.model_copy(deep=True)
                 runner_plan.piEnv["PI_CLIENT_MAAFW_VERSION"] = (
                     f"v{runner_environment.maafw_version.lstrip('v')}"
                 )

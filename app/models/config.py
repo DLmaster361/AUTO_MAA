@@ -25,10 +25,10 @@ import json
 import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
+from app.utils import get_logger
 from app.utils.constants import (
     CYCLE_EMPTY_TIME,
     MAA_STAGE_KEY,
@@ -80,6 +80,8 @@ from .ConfigBase import (
     VirtualConfigValidator,
 )
 from .schema import TagItem
+
+logger = get_logger("配置模型")
 
 
 def init_maaend_task_config(config) -> None:
@@ -1380,22 +1382,6 @@ class MaaEndConfig(ConfigBase):
             return
         for user_config in self.UserData.values():
             user_config.cache_maaend_resource(resource)
-
-    async def load_resource(self, force_reload: bool = False) -> dict[str, Any]:
-        """加载并缓存 MaaEnd 动态资源。"""
-
-        from app.task.MaaEnd.resource_loader import load_maaend_options
-
-        resource = await asyncio.to_thread(
-            partial(
-                load_maaend_options,
-                Path(self.get("Info", "Path")),
-                force_reload=force_reload,
-            )
-        )
-        for user_config in self.UserData.values():
-            user_config.cache_maaend_resource(resource)
-        return resource
 
     def get_loaded_resource(self) -> dict[str, Any]:
         """读取已经载入内存的 MaaEnd 动态资源。"""
@@ -4136,21 +4122,9 @@ class ToolsConfig(ConfigBase):
         self.GameSign_ActivityEnabled = ConfigItem(
             "GameSign", "ActivityEnabled", True, BoolValidator()
         )
-        ## GameSign - 旧版签到窗口起点（保留用于读取历史配置，不参与调度）
-        self.GameSign_WindowStart = ConfigItem(
-            "GameSign", "WindowStart", "08:00", DateTimeValidator("%H:%M")
-        )
-        ## GameSign - 旧版签到窗口终点（保留用于读取历史配置，不参与调度）
-        self.GameSign_WindowEnd = ConfigItem(
-            "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
-        )
         ## GameSign - 启动时运行
         self.GameSign_RunOnStartup = ConfigItem(
             "GameSign", "RunOnStartup", False, BoolValidator()
-        )
-        ## GameSign - 旧版自动签到开关（保留用于读取历史配置，不参与调度）
-        self.GameSign_ScheduledRun = ConfigItem(
-            "GameSign", "ScheduledRun", True, BoolValidator()
         )
         ## GameSign - 是否立即开始
         self.GameSign_AutoStart = ConfigItem(
@@ -4161,10 +4135,6 @@ class ToolsConfig(ConfigBase):
         ## GameSign - 上次签到日期 (防止重复触发)
         self.GameSign_LastSignDate = ConfigItem(
             "GameSign", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## GameSign - 旧版今日随机签到时间（保留用于读取历史配置，不参与调度）
-        self.GameSign_ScheduledTime = ConfigItem(
-            "GameSign", "ScheduledTime", "", StringValidator()
         )
         ## GameSign - 签到状态标签 (虚拟字段)
         self.GameSign_Status = ConfigItem(
@@ -4595,7 +4565,10 @@ class GlobalConfig(ConfigBase):
                     )
 
                 all_stage_data[server] = stage_data
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(
+                f"解析活动关卡信息失败, 按空关卡处理: {type(e).__name__}: {e}"
+            )
             return "{ }"
 
         return json.dumps(all_stage_data, ensure_ascii=False)

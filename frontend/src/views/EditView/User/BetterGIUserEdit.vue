@@ -1187,11 +1187,6 @@ const ONE_DRAGON_GROUPS = [
   { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
 ]
 
-// 切换语言时标签要跟着变，故必须是 computed 而非常量数组
-const oneDragonGroupOptions = computed(() =>
-  ONE_DRAGON_GROUPS.map(group => ({ label: t(group.labelKey), value: group.value }))
-)
-
 const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Info: {
     Name: '',
@@ -1218,7 +1213,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     Groups: ONE_DRAGON_GROUPS.map(group => group.value),
     DailyRewardPartyName: '',
     PartyName: '',
-    AutoBossStrategyName: '根据队伍自动选择',
+    AutoBossStrategyName: '',
     IfUseCustomGroups: false,
     CustomGroups: '[]',
     Queue: '[]',
@@ -2584,38 +2579,27 @@ const loadDragonGroupSettings = async () => {
   if (!hasGroupSettingFields.value) return
   dragonSettingsLoading.value = true
   try {
-    dragonSettings.value = await fetchOneDragonSettings(
-      scriptId,
-      userId.value,
-      dragonConfigName.value,
-      stepNameOf(sel)
-    )
+    // 四份数据互不依赖，并行拉取
+    const globalUserId = formData.Info.IfUseMasConfig ? userId.value : undefined
+    const [dragon, globalDomain, globalStygian, catalog] = await Promise.all([
+      fetchOneDragonSettings(scriptId, userId.value, dragonConfigName.value, stepNameOf(sel)),
+      needGlobalDomainSettings.value
+        ? fetchGlobalDomainSettings(scriptId, globalUserId, stepNameOf(sel))
+        : Promise.resolve<Record<string, unknown>>({}),
+      needGlobalStygianSettings.value
+        ? fetchGlobalStygianSettings(scriptId, globalUserId, stepNameOf(sel))
+        : Promise.resolve<Record<string, unknown>>({}),
+      needDomainCatalog.value
+        ? fetchDomainCatalog(scriptId)
+        : Promise.resolve<BetterGIDomainCatalogItem[]>([]),
+    ])
+    dragonSettings.value = dragon
     dragonSettingsDirty.value = false
-    if (needGlobalDomainSettings.value) {
-      globalDomainSettings.value = await fetchGlobalDomainSettings(
-        scriptId,
-        formData.Info.IfUseMasConfig ? userId.value : undefined,
-        stepNameOf(sel)
-      )
-    } else {
-      globalDomainSettings.value = {}
-    }
+    globalDomainSettings.value = globalDomain
     globalDomainSettingsDirty.value = false
-    if (needGlobalStygianSettings.value) {
-      globalStygianSettings.value = await fetchGlobalStygianSettings(
-        scriptId,
-        formData.Info.IfUseMasConfig ? userId.value : undefined,
-        stepNameOf(sel)
-      )
-    } else {
-      globalStygianSettings.value = {}
-    }
+    globalStygianSettings.value = globalStygian
     globalStygianSettingsDirty.value = false
-    if (needDomainCatalog.value) {
-      domainCatalog.value = await fetchDomainCatalog(scriptId)
-    } else {
-      domainCatalog.value = []
-    }
+    domainCatalog.value = catalog
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsLoadFailed'))
@@ -3724,10 +3708,11 @@ const loadUser = async () => {
     syncCustomGroupsFromForm()
     if (formData.OneDragon.IfUseCustomGroups && customGroupsTable.value.length === 0) {
       await loadCustomGroupsFromBettergi()
+      // 刷新配置组候选（含该用户 per-user ScriptGroup 副本名），使复制出的新组
+      // 在 initDragonList/右栏编辑器里能被识别为可编辑的 scriptgroup；
+      // 没有复制时 onMounted 里那一次已经拉过，不重复请求
+      await loadScriptGroups()
     }
-    // 刷新配置组候选（含该用户 per-user ScriptGroup 副本名），使复制出的新组
-    // 在 initDragonList/右栏编辑器里能被识别为可编辑的 scriptgroup
-    await loadScriptGroups()
     // 初始化一条龙队列（8 内置 + 体力作战 + 已启用自定义组）
     initDragonList()
   } catch (e) {
@@ -3749,11 +3734,11 @@ onMounted(async () => {
       loadScriptGroups(),
       loadBettergiDirs(),
       loadPathingTree(),
+      loadStrategyOptions(),
+      loadOneDragonConfigs(),
     ])
     await loadUser()
   }
-  await loadStrategyOptions()
-  await loadOneDragonConfigs()
 })
 
 onUnmounted(() => {

@@ -68,10 +68,6 @@ if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 
 
 logger = get_logger("MFW 内置运行")
 
-# Store checkout 的 sidecar：存在即说明版本由 Project Store 管理（source hash
-# 绑定），原地改文件会破坏这层绑定，第三层要求走「下载 → 导入新版本 → 切换」。
-MANAGED_PROJECT_SIDECAR_NAME = ".auto_mas_maafw_project.json"
-
 # 取消运行环境准备后等线程收尾的上限，与 ``runner_task`` 里那条准备路径的
 # ``_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS`` 取同一个值（那边导入即打开
 # maa DLL，不为一个常数把它拉进来）。
@@ -488,10 +484,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         phase_zh = "运行前" if phase == "BeforeRun" else "运行后"
         project_path = Path(str(self.script_config.get("Info", "Path") or "")).resolve()
 
-        if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
-            self._append_update_log("受管项目由 Store 管理版本，跳过原地更新")
-            return
-
         credentials = resolve_update_credentials(self.script_config)
         self._append_update_log(
             f"开始{phase_zh}检查 MFW 项目更新：下载源 {credentials.source}，"
@@ -608,10 +600,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         project_path = Path(
             str(self.script_config.get("Info", "Path") or "")
         ).resolve()
-
-        if (project_path / MANAGED_PROJECT_SIDECAR_NAME).is_file():
-            # 受管项目的环境由 Store/Gateway 那条链自己准备，别在这里插一脚。
-            return
 
         # 更新已经放掉了项目锁。拿不到说明另有准备/运行在跑，那份准备一样管用。
         reservation_key = await try_reserve_project_path(project_path)

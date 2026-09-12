@@ -4,19 +4,14 @@ from app.utils.emulator2.stability import (
     LDPLAYER_ITEMS,
     MUMU_ITEMS,
     evaluate,
-    items_for,
     safe_writes,
 )
 
 
 class SpecTest(unittest.TestCase):
     def test_both_families_are_covered(self) -> None:
-        self.assertTrue(items_for("ldplayer"))
-        self.assertTrue(items_for("mumu"))
-
-    def test_unknown_family_has_no_items(self) -> None:
-        """认不出的模拟器不该被硬塞一套别家的键。"""
-        self.assertEqual(items_for("nox"), ())
+        self.assertTrue(LDPLAYER_ITEMS)
+        self.assertTrue(MUMU_ITEMS)
 
     def test_keep_alive_is_only_a_mumu_concept(self) -> None:
         """后台保活是 MuMu 的设置；雷电这边没有对应键，不能凭空造一个。"""

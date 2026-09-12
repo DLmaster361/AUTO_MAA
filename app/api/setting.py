@@ -47,7 +47,6 @@ from app.models.schema import (
     WebhookGetIn,
     WebhookGetOut,
     WebhookIndexItem,
-    WebhookReorderIn,
     WebhookTestIn,
     WebhookUpdateIn,
 )
@@ -112,6 +111,7 @@ async def get_scripts() -> SettingGetOut:
     try:
         data = await Config.get_setting()
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_scripts失败: {type(e).__name__}: {e}")
         return SettingGetOut(
             code=500,
             status="error",
@@ -136,6 +136,9 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
         await Config.update_setting(data)
 
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_script失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -155,6 +158,7 @@ async def test_notify() -> OutBase:
     try:
         result = await send_test_notification()
     except Exception as e:
+        logger.opt(exception=True).warning(f"test_notify失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -185,6 +189,9 @@ async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
             req.pattern.model_dump(exclude_none=True), req.logText
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"debug_pattern_api失败: {type(e).__name__}: {e}"
+        )
         return PatternDebugOut(
             code=500,
             status="error",
@@ -213,6 +220,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
         index = [WebhookIndexItem(**_) for _ in index]
         data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_webhook失败: {type(e).__name__}: {e}")
         return WebhookGetOut(
             code=500,
             status="error",
@@ -235,6 +243,7 @@ async def add_webhook() -> WebhookCreateOut:
         uid, config = await Config.add_webhook(None, None)
         data = Webhook(**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
             code=500,
             status="error",
@@ -258,6 +267,9 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
             None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_webhook失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -275,23 +287,9 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_webhook(None, None, webhook.webhookId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        logger.opt(exception=True).warning(
+            f"delete_webhook失败: {type(e).__name__}: {e}"
         )
-    return OutBase()
-
-
-@router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_webhook(None, None, webhook.indexList)
-    except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -317,6 +315,7 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
             webhook_config,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"test_webhook失败: {type(e).__name__}: {e}")
         return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
     return OutBase()
 
@@ -341,6 +340,9 @@ async def check_virtual_display() -> VirtualDisplayCheckOut:
     try:
         return await check_virtual_display_driver()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"check_virtual_display失败: {type(e).__name__}: {e}"
+        )
         return VirtualDisplayCheckOut(
             code=500,
             status="error",
@@ -372,6 +374,9 @@ async def virtual_display_status() -> VirtualDisplayCheckOut:
     try:
         return await probe_virtual_display_driver()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"virtual_display_status失败: {type(e).__name__}: {e}"
+        )
         return VirtualDisplayCheckOut(
             code=500,
             status="error",

@@ -208,6 +208,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_name_map: dict[str, str] = {}
         self.unique_task: dict[str, str] = {}
         self.maaend_config_file: Path | None = None
+        # 一轮运行内 check/prepare 会多次读同一份 mxu-MaaEnd.json，按文件签名缓存解析结果
+        self._source_tasks_cache: (
+            tuple[tuple, list[dict[str, object]] | None] | None
+        ) = None
         self.account_switch_mode: str | None = None
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
@@ -448,8 +452,25 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
     def _source_maaend_tasks(self) -> list[dict[str, object]] | None:
-        """读取当前用户所选 MaaEnd 实例的任务列表。"""
+        """读取当前用户所选 MaaEnd 实例的任务列表（文件未变时复用上次解析结果）。"""
 
+        if self.maaend_config_file is None:
+            return None
+        try:
+            stat = self.maaend_config_file.stat()
+            signature = (str(self.maaend_config_file), stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None
+        if (
+            self._source_tasks_cache is not None
+            and self._source_tasks_cache[0] == signature
+        ):
+            return self._source_tasks_cache[1]
+        tasks = self._parse_source_maaend_tasks()
+        self._source_tasks_cache = (signature, tasks)
+        return tasks
+
+    def _parse_source_maaend_tasks(self) -> list[dict[str, object]] | None:
         if self.maaend_config_file is None:
             return None
         try:
@@ -849,15 +870,18 @@ class AutoProxyTask(TaskExecuteBase):
                 # 中止相关程序
                 await self.kill_managed_process()
 
-                await Notify.push_plyer(
-                    "用户自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
-                )
+                try:
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"{self.cur_user_item.name}的自动代理出现异常",
+                        3,
+                    )
+                except Exception:
+                    pass
 
                 if not self.retryable:
-                    logger.info("检测到游戏画面参数错误，跳过后续重试")
+                    logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
 
         if self.cur_user_config.get("Info", "IfScriptAfterTask"):
@@ -891,12 +915,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
-        )
+        try:
+            await Notify.push_plyer(
+                "用户自动代理出现异常！",
+                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                f"{self.cur_user_item.name}的自动代理出现异常",
+                3,
+            )
+        except Exception:
+            pass
 
     async def kill_managed_process(self, kill_game: bool = True) -> None:
         """中止关联进程
@@ -1343,7 +1370,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
         if "资源加载失败" in log:
+            # 资源文件损坏/缺失，重启脚本也不会好：不再重试
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+            self.retryable = False
         elif "快捷键开始任务：失败" in log or "任务启动失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif "resolution check failed" in log:
@@ -1403,7 +1432,10 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         self.cur_user_log.status = "Success!"
-                except Exception:
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"MaaEnd 任务执行情况解析失败: {e}"
+                    )
                     self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif self.is_log_stalled(

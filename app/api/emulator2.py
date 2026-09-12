@@ -46,15 +46,15 @@ from app.models.schema import (
     Emulator2SettingsApplyAllOut,
     Emulator2SettingsApplyIn,
     Emulator2SettingsApplyOut,
-    Emulator2SettingsIn,
-    Emulator2SettingsOut,
     Emulator2StableModeIn,
     Emulator2StoreOpenIn,
     Emulator2StoreOpenOut,
 )
+from app.utils import get_logger
 from app.utils.emulator2 import service
 
 router = APIRouter(prefix="/api/emulator2", tags=["Emulator 2.0"])
+logger = get_logger("Emulator 2.0 API")
 
 
 def _error(error: BaseException | str) -> dict:
@@ -81,6 +81,9 @@ async def search_emulators(
     try:
         items = await service.search(payload.emulatorId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"search_emulators失败: {type(e).__name__}: {e}"
+        )
         return Emulator2SearchOut(**_error(e), emulators=[])
     return Emulator2SearchOut(emulators=[item.to_dict() for item in items])
 
@@ -102,6 +105,7 @@ async def add_path(payload: Emulator2PathAddIn = Body(...)) -> Emulator2PathAddO
             payload.emulatorId, payload.installPath, payload.alias
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_path失败: {type(e).__name__}: {e}")
         return Emulator2PathAddOut(**_error(e))
     return Emulator2PathAddOut(**result)
 
@@ -120,6 +124,9 @@ async def preview_remove_path(
     try:
         result = await service.preview_remove_path(payload.emulatorId, payload.pathId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"preview_remove_path失败: {type(e).__name__}: {e}"
+        )
         return Emulator2PathRemovePreviewOut(**_error(e))
     return Emulator2PathRemovePreviewOut(**result)
 
@@ -138,6 +145,7 @@ async def remove_path(
     try:
         result = await service.remove_path(payload.emulatorId, payload.pathId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"remove_path失败: {type(e).__name__}: {e}")
         return Emulator2PathRemoveOut(**_error(e))
     return Emulator2PathRemoveOut(**result)
 
@@ -158,6 +166,7 @@ async def list_devices(payload: Emulator2DevicesIn = Body(...)) -> Emulator2Devi
     try:
         result = await service.list_devices(payload.emulatorId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"list_devices失败: {type(e).__name__}: {e}")
         return Emulator2DevicesOut(**_error(e))
     return Emulator2DevicesOut(**result)
 
@@ -182,6 +191,9 @@ async def create_instance(
             payload.emulatorId, payload.pathId, payload.name
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"create_instance失败: {type(e).__name__}: {e}"
+        )
         return Emulator2InstanceCreateOut(**_error(e))
     return Emulator2InstanceCreateOut(**result)
 
@@ -200,6 +212,9 @@ async def preview_delete_instance(
     try:
         result = await service.preview_delete_instance(payload.emulatorId, payload.slot)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"preview_delete_instance失败: {type(e).__name__}: {e}"
+        )
         return Emulator2InstanceDeletePreviewOut(**_error(e))
     return Emulator2InstanceDeletePreviewOut(**result)
 
@@ -222,6 +237,9 @@ async def delete_instance(
     try:
         result = await service.delete_instance(payload.emulatorId, payload.slot)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"delete_instance失败: {type(e).__name__}: {e}"
+        )
         return Emulator2InstanceDeleteOut(**_error(e))
     return Emulator2InstanceDeleteOut(**result)
 
@@ -244,30 +262,9 @@ async def open_store(
     try:
         result = await service.open_store(payload.emulatorId, payload.slot)
     except Exception as e:
+        logger.opt(exception=True).warning(f"open_store失败: {type(e).__name__}: {e}")
         return Emulator2StoreOpenOut(**_error(e))
     return Emulator2StoreOpenOut(**result)
-
-
-@router.post(
-    "/settings/get",
-    tags=["Get"],
-    summary="查询实例设置",
-    response_model=Emulator2SettingsOut,
-    status_code=200,
-)
-async def get_settings(
-    payload: Emulator2SettingsIn = Body(...),
-) -> Emulator2SettingsOut:
-    """读一台设备的四项设置。
-
-    每项都带状态：``.config`` 里有的才是用户保存过的，没有而从模拟器默认读到的
-    标 ``default``，两边都没有标 ``unset``。
-    """
-    try:
-        result = await service.get_settings(payload.emulatorId, payload.slot)
-    except Exception as e:
-        return Emulator2SettingsOut(**_error(e))
-    return Emulator2SettingsOut(**result)
 
 
 @router.post(
@@ -290,6 +287,9 @@ async def apply_settings(
             payload.emulatorId, payload.slot, payload.changes, payload.expected
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"apply_settings失败: {type(e).__name__}: {e}"
+        )
         return Emulator2SettingsApplyOut(**_error(e))
     return Emulator2SettingsApplyOut(**result)
 
@@ -314,6 +314,9 @@ async def apply_settings_to_all(
             payload.emulatorId, payload.changes
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"apply_settings_to_all失败: {type(e).__name__}: {e}"
+        )
         return Emulator2SettingsApplyAllOut(**_error(e))
     return Emulator2SettingsApplyAllOut(**result)
 
@@ -336,6 +339,9 @@ async def apply_stable_mode(
     try:
         result = await service.apply_stable_mode(payload.emulatorId, payload.slots)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"apply_stable_mode失败: {type(e).__name__}: {e}"
+        )
         return Emulator2SettingsApplyAllOut(**_error(e))
     return Emulator2SettingsApplyAllOut(**result)
 
@@ -358,5 +364,8 @@ async def capture_baselines(
     try:
         result = await service.capture_baselines(payload.emulatorId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"capture_baselines失败: {type(e).__name__}: {e}"
+        )
         return Emulator2GuardCaptureOut(**_error(e))
     return Emulator2GuardCaptureOut(**result)

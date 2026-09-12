@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -466,8 +467,15 @@ M7A_CURRENCY_WARS_FAST_MODE: bool = False
 M7A_CURRENCY_WARS_BONUS_ENABLE: bool = True  # 积分奖励启用
 
 
+# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每用户一轮会读同一份十余次
+_NATIVE_CONFIG_CACHE: dict[Path, tuple[int, dict[str, Any]]] = {}
+
+
 def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
-    """Load the M7A config.yaml referenced by old-dev Info.M7APath."""
+    """Load the M7A config.yaml referenced by old-dev Info.M7APath.
+
+    结果按文件 mtime 缓存, 返回深拷贝, 调用方可放心修改。
+    """
 
     if script_config is None:
         raise ValueError("缺少 HSR 脚本配置")
@@ -482,6 +490,10 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"三月七助手原生配置不存在：{path}")
     try:
+        mtime_ns = path.stat().st_mtime_ns
+        cached = _NATIVE_CONFIG_CACHE.get(path)
+        if cached is not None and cached[0] == mtime_ns:
+            return copy.deepcopy(cached[1])
         data = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
     except OSError as exc:
         raise FileNotFoundError(f"无法读取三月七助手原生配置：{path}") from exc
@@ -489,7 +501,8 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
         raise ValueError(f"三月七助手原生配置不是有效 YAML：{path}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
-    return data
+    _NATIVE_CONFIG_CACHE[path] = (mtime_ns, data)
+    return copy.deepcopy(data)
 
 
 def resolve_m7a_managed_options(
@@ -639,10 +652,7 @@ def build_divergent_universe_patch(
     native_options = resolve_m7a_managed_options(
         script_config, user_config, "DivergentUniverse"
     )
-    try:
-        low_perf_value = script_config.get("Run", "LowPerformanceMode")
-    except (AttributeError, KeyError, TypeError):
-        low_perf_value = None
+    low_perf_value = script_config.get("Run", "LowPerformanceMode")
     low_perf_mode = (
         M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT
         if low_perf_value is None

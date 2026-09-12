@@ -46,11 +46,6 @@ _JS_SCRIPT_REL_DIR = Path("User") / "JsScript"
 _RES_TEMPLATE_DIR = resource_path("templates", "BetterGI")
 _SCRIPT_ASSET_DIR = _RES_TEMPLATE_DIR / "MASOneDragon"
 
-# 内置战斗 4 项（路径 B 下由本配置组直连执行层；其余由随后一条龙承接）
-BUILTIN_COMBAT_STEPS: frozenset[str] = frozenset(
-    {"自动秘境", "自动地脉花", "自动幽境危战", "自动首领讨伐"}
-)
-
 
 def ensure_script_assets(root_path: Path) -> None:
     """把 MASOneDragon 脚本资产（main.js / manifest.json）复制到 BGI 的

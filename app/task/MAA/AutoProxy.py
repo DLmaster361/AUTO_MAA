@@ -853,10 +853,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "Routine" and self.cur_user_config.get(
             "Task", "IfActivityFirst"
         ):
+            # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
             stage_info = await Config.get_stage_info(
                 "Info",
                 server=self.cur_user_config.get("Info", "Server"),
-                refresh=True,
             )
             activity_stage = _resolve_activity_stage(
                 stage_info.get("Activity", []),

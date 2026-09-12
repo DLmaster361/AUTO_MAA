@@ -187,22 +187,6 @@ def read_script_group(root: Path, name: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def write_script_group(root: Path, name: str, data: dict[str, Any]) -> Path:
-    """把配置组 json 全文写回 {RootPath}/User/ScriptGroup/{name}.json。
-
-    同步顶层 ``name``（组名即文件名）与 ``index`` 之外的结构字段一律原样保留；
-    ``data`` 传入的 projects 数组将整体替换（顺序即 BGI 执行顺序）。
-    """
-    name = resolve_script_group_name(name)
-    data = dict(data or {})
-    data["name"] = name
-    sg_dir = root / _SCRIPT_GROUP_REL_DIR
-    sg_dir.mkdir(parents=True, exist_ok=True)
-    out_path = sg_dir / f"{name}.json"
-    write_file(out_path, data)
-    return out_path
-
-
 def resolve_script_group_name(name: str) -> str:
     """解析配置组名：去首尾空白，拒绝路径穿越与空名。"""
     name = (name or "").strip()

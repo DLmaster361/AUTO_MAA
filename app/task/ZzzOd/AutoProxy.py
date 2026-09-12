@@ -49,7 +49,7 @@ import json
 import shlex
 import uuid
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -147,23 +147,9 @@ _ZZZOD_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("指令[ 一条龙 ] 执行失败", "ZZZ-OD 一条龙运行失败"),
 )
 
-# 重跑关键应用名单（节点失败维度）：运行记录 diff 中仅名单内的应用
-# 失败才把本轮判为异常并触发重跑；名单外的应用失败只记录进任务报告、不
-# 重跑（次日运行时 zzz-od 会按运行记录自行重试失败节点）。名单为空 = 任何
-# 节点失败都不重跑（运行失败由致命日志关键词 + check_log 超时态
-# 走 main_task 现有「用户运行失败 → 重试」分支，与本名单无关）。
-# 维护范围：仅节点失败；运行级失败（启动器/登录/配置）走其他路径。
-# 按需解开注释维护。
-_ZZZOD_CRITICAL_APPS: frozenset[str] = frozenset({
-    # "charge_plan",        # 体力刷本
-    # "daily_signin",       # 每日签到
-    # "engagement_reward",  # 活跃度奖励
-    # "ridu_weekly",        # 丽都周纪（领奖励）
-    # "notorious_hunt",     # 恶名狩猎
-    # "coffee",             # 咖啡店
-    # "email",              # 邮件
-    # "redemption_code",    # 兑换码
-})
+# 节点失败不触发重跑：运行记录 diff 里的应用失败只记录进任务报告（次日运行
+# 时 zzz-od 会按运行记录自行重试失败节点）。运行级失败（启动器/登录/配置）
+# 由致命日志关键词 + check_log 超时态走 main_task 的「用户运行失败 → 重试」分支。
 
 # 一条龙应用终态成功标志（每次运行恰好出现一次）：出现即代表全部实例执行
 # 完毕（对齐 ok-ww 的成功标志行行为）。出现后立即结束日志等待，不等启动器
@@ -195,10 +181,17 @@ def _failed_apps(diffs: list) -> list[str]:
     ]
 
 
-def _has_critical_failure(failed: list[str]) -> bool:
-    """失败名单中是否包含重跑关键名单内的应用。"""
+def _find_pids_by_name(process_name: str) -> list[int]:
+    """按进程名收集 PID（同步全进程扫描，调用方放到线程里跑）。"""
 
-    return any(app_id in _ZZZOD_CRITICAL_APPS for app_id in failed)
+    pids: list[int] = []
+    for process in psutil.process_iter(["name"]):
+        try:
+            if process.info["name"] == process_name:
+                pids.append(process.pid)
+        except psutil.Error:
+            continue
+    return pids
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -605,8 +598,10 @@ class AutoProxyTask(TaskExecuteBase):
         # 归档点：一条龙原生配置快照（one_dragon.yml + 原生实例目录）——
         # 必须在 ensure_user_slot（可能注册新槽）与合成视图写入之前，
         # 捕获的是未被本次 MAS 操作触碰的原生状态；MAS 槽快照在下方循环内逐槽归档
-        with suppress(Exception):
+        try:
             archive_onedragon_backup(self.script_info.script_id, self.script_root_path)
+        except Exception as e:
+            logger.opt(exception=True).warning(f"归档 ZZZ-OD 原生配置快照失败: {e}")
         used_idxs = collect_used_slot_idxs(
             exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users}
         )
@@ -1066,14 +1061,8 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs)
-            # 仅关键名单内的失败触发重跑；非关键失败只记录不重跑
-            if _has_critical_failure(failed_apps):
-                failed_names = "、".join(
-                    self._app_display_name(app_id) for app_id in failed_apps
-                )
-                log_status = f"ZZZ-OD 部分任务执行失败: {failed_names}"
-                user_status = "异常"
-            elif failed_apps:
+            # 节点失败只记录不重跑（次日 zzz-od 按运行记录自行重试）
+            if failed_apps:
                 failed_names = "、".join(
                     self._app_display_name(app_id) for app_id in failed_apps
                 )
@@ -1174,15 +1163,10 @@ class AutoProxyTask(TaskExecuteBase):
             before = self._slot_records_before.get(slot, {})
             after = snapshot_run_records(self.script_root_path, slot)
             diffs = diff_run_records(before, after)
-            # 仅关键名单内的失败把该用户判异常并触发重跑；非关键失败只记录
+            # 节点失败只记录不判异常（次日 zzz-od 按运行记录自行重试）
             failed_apps = _failed_apps(diffs)
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
-            ok = (
-                fatal is None
-                and not runtime_failed
-                and success
-                and not _has_critical_failure(failed_apps)
-            )
+            ok = fatal is None and not runtime_failed and success
             all_ok = all_ok and ok
 
             user_item.status = "完成" if ok else "异常"
@@ -1279,6 +1263,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         restore_instance_view(self.script_root_path)
         slots, self._injected_slots = self._injected_slots, []
+        slot_user_items = [user_item for user_item, _ in self._slot_users.values()]
         self._slot_users = {}
         self._slot_records_before = {}
         self._multi_uids = set()
@@ -1291,6 +1276,17 @@ class AutoProxyTask(TaskExecuteBase):
                     restore_instance(self.script_root_path, slot, backup_dir)
         except Exception as e:
             logger.opt(exception=True).warning(f"恢复 ZZZ-OD 注入现场失败: {e}")
+            # 槽里留着 MAS 注入内容：本轮不能按成功收尾，参与用户一律置异常
+            for user_item in slot_user_items or [self.cur_user_item]:
+                user_item.status = "异常"
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"恢复 ZZZ-OD 注入现场失败，原生配置可能残留 MAS 内容: {e}",
+                ),
+            )
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """按内置日志监控运行；致命错误与超时立即终止，进程退出触发统一终判。"""
@@ -1318,8 +1314,8 @@ class AutoProxyTask(TaskExecuteBase):
                 # 启动器进程退出 = 一条龙运行结束（正常路径也如此），
                 # 终态成败由 main_task 的运行记录 diff 统一判定
                 need_stop = True
-            elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", "RunTimeLimit")
+            elif self.is_log_stalled(
+                latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
                 log_status = "ZZZ-OD 运行超时"
                 user_item_status = "异常"
@@ -1524,17 +1520,13 @@ class AutoProxyTask(TaskExecuteBase):
         """按进程名结束游戏本体（对齐 ok-nte 的 MAS 侧关闭）。"""
 
         try:
-            for process in psutil.process_iter(["name"]):
+            # 全进程扫描放到线程里，不阻塞事件循环
+            for pid in await asyncio.to_thread(_find_pids_by_name, _ZZZ_GAME_PROCESS):
                 try:
-                    if process.info["name"] != _ZZZ_GAME_PROCESS:
-                        continue
-                except psutil.Error:
-                    continue
-                try:
-                    await System.kill_process_by_pid(process.pid)
+                    await System.kill_process_by_pid(pid)
                 except Exception as e:
                     logger.opt(exception=True).warning(
-                        f"结束游戏进程失败 PID: {process.pid}, {e}"
+                        f"结束游戏进程失败 PID: {pid}, {e}"
                     )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")

@@ -268,6 +268,9 @@ def _extract(package: Path, stage: Path, *, seven_zip: Path | None) -> None:
 
 
 def _extract_7z(package: Path, stage: Path, seven_zip: Path) -> None:
+    # 解包前先列一遍：和 zip 路径同一套上限，外加拒绝符号链接。7za 只读头部，
+    # 170MB 的包实测 0.03 秒。
+    _inspect_7z(package, seven_zip)
     completed = subprocess.run(
         [str(seven_zip), "x", "-aoa", f"-o{stage}", str(package)],
         capture_output=True,
@@ -278,6 +281,72 @@ def _extract_7z(package: Path, stage: Path, seven_zip: Path) -> None:
     if completed.returncode != 0:
         tail = (completed.stdout or completed.stderr or "").strip()[-500:]
         raise HSRUpdateError(f"7z 解包失败（退出码 {completed.returncode}）：{tail}")
+    _reject_symlinks(stage)
+
+
+def _inspect_7z(package: Path, seven_zip: Path) -> None:
+    """按 ``7za l -slt`` 的技术列表做解包前检查。
+
+    正式版后端是提权跑的，7za 遇到符号链接条目**会真的建出链接**（未提权时
+    只会报"privilege not held"），随后被 ``os.replace`` 搬进安装目录——所以
+    符号链接必须在解包前就拒掉，不能指望之后再清。
+    """
+
+    completed = subprocess.run(
+        [str(seven_zip), "l", "-slt", "-sccUTF-8", str(package)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if completed.returncode != 0:
+        tail = (completed.stdout or completed.stderr or "").strip()[-500:]
+        raise HSRUpdateError(f"7z 包无法读取（退出码 {completed.returncode}）：{tail}")
+
+    # 输出格式：档案头 → "----------" → 每个条目一块，块间空行，块内 "键 = 值"。
+    _, _, listing = completed.stdout.partition("----------")
+    entries = 0
+    total = 0
+    for block in listing.split("\n\n"):
+        fields: dict[str, str] = {}
+        for line in block.splitlines():
+            key, sep, value = line.partition(" = ")
+            if sep:
+                fields[key.strip()] = value.strip()
+        name = fields.get("Path")
+        if not name:
+            continue
+        entries += 1
+        if entries > _MAX_ENTRIES:
+            raise HSRUpdateError(f"更新包条目过多（超过 {_MAX_ENTRIES}），拒绝解包")
+        total += int(fields.get("Size") or 0)
+        if total > _MAX_EXPANDED_BYTES:
+            raise HSRUpdateError(f"更新包展开体积异常（超过 {total} 字节），拒绝解包")
+        if fields.get("Symbolic Link"):
+            raise HSRUpdateError(f"更新包中存在符号链接，拒绝解包：{name}")
+        if _escapes_stage(name):
+            raise HSRUpdateError(f"更新包中存在越界路径：{name}")
+
+
+def _escapes_stage(name: str) -> bool:
+    """包内路径是否可能逃出 stage：绝对路径、盘符、或任一段是 ``..``。"""
+
+    normalized = name.replace("\\", "/")
+    if normalized.startswith("/") or (len(normalized) > 1 and normalized[1] == ":"):
+        return True
+    return ".." in normalized.split("/")
+
+
+def _reject_symlinks(stage: Path) -> None:
+    """解包后的兜底：stage 里不允许有任何符号链接，不管是谁解出来的。"""
+
+    for path in stage.rglob("*"):
+        if path.is_symlink():
+            raise HSRUpdateError(
+                f"解包结果中存在符号链接，拒绝继续：{path.relative_to(stage)}"
+            )
 
 
 def _extract_zip(package: Path, stage: Path) -> None:
@@ -295,6 +364,7 @@ def _extract_zip(package: Path, stage: Path) -> None:
             if destination != anchor and anchor not in destination.parents:
                 raise HSRUpdateError(f"更新包中存在越界路径：{item.filename}")
         archive.extractall(stage)
+    _reject_symlinks(stage)
 
 
 def _strip_single_root(stage: Path, executable: str) -> Path:

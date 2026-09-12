@@ -91,7 +91,7 @@ from app.utils.constants import (
     UTC4,
     UTC8,
 )
-from app.utils.io import write_file
+from app.utils.io import force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
@@ -1161,10 +1161,10 @@ class AppConfig(GlobalConfig):
         try:
             shutil.copytree(source_config_dir, temporary_path)
             target_config_dir.parent.mkdir(parents=True, exist_ok=True)
-            shutil.rmtree(target_config_dir, ignore_errors=True)
+            force_rmtree(target_config_dir)
             temporary_path.rename(target_config_dir)
         finally:
-            shutil.rmtree(temporary_path, ignore_errors=True)
+            force_rmtree(temporary_path)
 
         logger.info(f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {owner}")
         return target_config_dir

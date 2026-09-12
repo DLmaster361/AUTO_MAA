@@ -1572,7 +1572,7 @@ export default {
     baahCloseEmulatorOnFinishHint: '开启后，本次任务结束时由本软件关闭所选的模拟器实例',
     baahNotBaahScript: '脚本类型不是 BAAH',
     baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
-    baahRunTimeLimitHint: '单次运行的最长等待时间（分钟）；超时按运行失败处理',
+    baahRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
     baahConfigName: 'BAAH 配置文件名',
     baahConfigNameHint:
       '填写 BAAH 界面里已有的配置文件名（例如发行版自带的 example），本软件会用它启动 BAAH.exe example.json',

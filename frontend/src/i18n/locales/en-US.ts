@@ -1663,7 +1663,7 @@ export default {
     baahNotBaahScript: 'This script is not a BAAH script',
     baahRunTimesLimitHint: 'Stop the run when this many attempts still fail',
     baahRunTimeLimitHint:
-      'Longest wait for a single run, in minutes; a timeout counts as a failed run',
+      'Longest the run may go without new log output, in minutes; exceeding it counts as a failed run',
     baahConfigName: 'BAAH config file name',
     baahConfigNameHint:
       'Enter an existing config file name from the BAAH UI (for example the bundled example); this app launches it as BAAH.exe example.json',

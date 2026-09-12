@@ -84,6 +84,10 @@ _LOG_FILE_WAIT_SECONDS = 60
 ## 一次运行结束后等待相关进程退出的时间（秒）
 _PROCESS_EXIT_WAIT_SECONDS = 10
 
+## 命中成功标记后留给 BAAH 自行收尾的宽限时间（秒）。
+## BAAH 跑完还要执行自动退出与用户配置的 POST_COMMAND，立即强杀会把后置命令截断。
+_PROCESS_GRACE_SECONDS = 60
+
 
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
@@ -262,7 +266,9 @@ class AutoProxyTask(TaskExecuteBase):
             return True
 
         self.script_info.log = "正在启动模拟器"
-        self.cur_user_item.status = "运行 - 启动模拟器"
+        ## 状态必须落在后端既有枚举（等待/运行/完成/异常）里：调度台与前端
+        ## 都用 `=== '运行'` 判断任务是否在跑，自造后缀会让这些比较全部失效
+        self.cur_user_item.status = "运行"
 
         try:
             device_info = await self.emulator_manager.open(
@@ -280,14 +286,23 @@ class AutoProxyTask(TaskExecuteBase):
     def _emulator_runtime_values(self) -> dict[str, object]:
         """把模拟器调度结果折算成 BAAH 侧的托管项。
 
-        BAAH 的目标设备由 ``TARGET_IP_PATH`` 与 ``TARGET_PORT`` 拼成，
-        这里直接写入 MAS 解析出的地址，用户无需在 BAAH 侧维护端口。
+        BAAH 的目标设备有两种表达：``TARGET_IP_PATH:TARGET_PORT`` 拼成地址，
+        或由 ``ADB_SEIAL_NUMBER`` 直接给串号（键名沿用上游既有拼写）。这里按
+        MAS 解析出的实际地址择一写入，用户无需在 BAAH 侧维护任何一项。
         """
 
         address = self.emulator_adb_address.strip()
+        if not address:
+            return {}
+
         host, separator, port = address.rpartition(":")
         if not separator or not host:
-            return {}
+            ## 形如 emulator-5554 的串号（雷电等）：按串号直连。
+            ## 落回地址写法会让 BAAH 用它自己那份手填端口，静默连错设备
+            return {
+                "ADB_SEIAL_NUMBER": address,
+                "ADB_DIRECT_USE_SERIAL_NUMBER": True,
+            }
 
         return {
             "TARGET_IP_PATH": host,
@@ -412,8 +427,29 @@ class AutoProxyTask(TaskExecuteBase):
         await self.wait_event.wait()
         await self.log_monitor.stop()
 
+        ## 命中成功标记只说明任务跑完了，BAAH 还要执行收尾（自动退出与用户的
+        ## POST_COMMAND）：先给它时间自己走完，超时才强制结束
+        if self.cur_user_log.status == "Success!":
+            await self._wait_process_exit()
+
         await self.kill_managed_process()
         await asyncio.sleep(_PROCESS_EXIT_WAIT_SECONDS)
+
+    async def _wait_process_exit(self) -> None:
+        """等待 BAAH 自行退出，给它执行收尾命令的机会。"""
+
+        if self.process_manager is None:
+            return
+
+        deadline = time.monotonic() + _PROCESS_GRACE_SECONDS
+        while time.monotonic() < deadline:
+            if not await self.process_manager.is_running():
+                return
+            await asyncio.sleep(1)
+
+        logger.warning(
+            f"BAAH 进程在 {_PROCESS_GRACE_SECONDS} 秒内未自行退出, 将强制结束"
+        )
 
     def _resolve_log_file_path(self) -> Path:
         """返回当前会话的日志文件路径"""

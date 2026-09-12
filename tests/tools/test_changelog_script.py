@@ -347,6 +347,11 @@ def test_signatures_split_join_and_merge() -> None:
 
     assert changelog.split_signatures(entry) == ("甲", ["a", "b"])
     assert changelog.join_signatures("甲", ["a", "a", "b"]) == entry
+    # 旧机器人给多人条目补的署名只有第一个带 by，后面用空格连着；正文中间的链接不算署名
+    legacy = "甲 by [@a](https://github.com/a) [@b](https://github.com/b)"
+    assert changelog.split_signatures(legacy) == ("甲", ["a", "b"])
+    mention = "甲 by [@a](https://github.com/a) 报告的问题"
+    assert changelog.split_signatures(mention) == (mention, [])
 
     target = {"修复": [entry]}
     changelog.merge_entries(
@@ -401,7 +406,8 @@ def test_compile_stable_rolls_up_the_whole_beta_cycle(tmp_path) -> None:
     sections, dates = _sections(
         "## [v5.5.0-beta.2] - 2026-09-02\n\n### 修复\n\n"
         "- 甲 by [@a](https://github.com/a)\n- 乙\n\n"
-        "## [v5.5.0-beta.1] - 2026-09-01\n\n### 新增\n\n- 丙\n\n### 修复\n\n- 甲\n\n"
+        "## [v5.5.0-beta.1] - 2026-09-01\n\n### 新增\n\n- 丙\n\n### 修复\n\n"
+        "- 己\n- 甲\n\n"
         "## [v5.4.0] - 2026-08-26\n\n### 新增\n\n- 丁\n"
     )
     fragment = _fragment(tmp_path, "9.fix.md", "戊\n")
@@ -417,10 +423,11 @@ def test_compile_stable_rolls_up_the_whole_beta_cycle(tmp_path) -> None:
     )
 
     assert list(new_sections) == ["v5.5.0", "v5.4.0"]
-    # 从旧到新并入：beta.1 的条目在前；甲在两个 beta 里都有，只留一条且署名保留
+    # 从旧到新并入：beta.1 独有的己排最前，倒过来并入的话乙会跑到己前面；
+    # 甲在两个 beta 里都有，只留一条且署名保留
     assert new_sections["v5.5.0"] == {
         "新增": ["丙"],
-        "修复": ["甲 by [@a](https://github.com/a)", "乙", "戊"],
+        "修复": ["己", "甲 by [@a](https://github.com/a)", "乙", "戊"],
     }
     assert new_dates == {"v5.5.0": "2026-09-13", "v5.4.0": "2026-08-26"}
 
@@ -745,6 +752,10 @@ def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
     _commit(repo, "fix: b", author="Carol <carol@example.com>")
     _write(repo, "changelog.d/3.fix.md", "丙\n")
     _commit(repo, "fix: c", author="Carol <carol@example.com>")
+    _write(repo, "changelog.d/4.fix.md", "丁\n")
+    _commit(repo, "fix: d", author="Carol Chen <carol@example.com>")
+    _write(repo, "changelog.d/5.fix.md", "戊\n")
+    _commit(repo, "fix: e", author="寒风 <hanfeng@example.com>")
     fragments = {
         f.identifier: f for f in changelog.list_fragments(repo / "changelog.d")
     }
@@ -752,8 +763,11 @@ def test_fragment_author_comes_from_the_commit_that_added_it(repo) -> None:
     author = changelog.fragment_author
     assert author(fragments["1"], root=repo, resolve_online=False) == "alice"
     assert author(fragments["2"], root=repo, resolve_online=False) == "bob"
-    # 解析不到登录名就退回 git 里的作者名
+    # 解析不到登录名时，git 作者名长得像登录名才拿来用
     assert author(fragments["3"], root=repo, resolve_online=False) == "Carol"
+    # 带空格的全名、中文昵称都不是登录名，签进去会变成坏链接，宁可不署名
+    assert author(fragments["4"], root=repo, resolve_online=False) is None
+    assert author(fragments["5"], root=repo, resolve_online=False) is None
 
 
 def test_fragment_author_follows_the_latest_addition_after_reuse(repo) -> None:

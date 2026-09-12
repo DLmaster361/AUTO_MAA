@@ -390,6 +390,36 @@ async def preview_delete_instance(emulator_id: str, slot: str) -> dict:
     }
 
 
+#: 「打开游戏中心」各种结局对应的一句话，直接给界面用。键是 ``AppLaunchResult.reason``。
+_STORE_OPEN_MESSAGES: dict[str, str] = {
+    "launched": "游戏中心已打开",
+    "already-running": "游戏中心已在前台",
+    "no-store": "这个模拟器没有游戏中心",
+    "not-installed": "这台模拟器里没有游戏中心",
+    "no-adb": "设备没有可用的 ADB 地址，无法打开游戏中心",
+    "boot-timeout": "系统还没启动完成，稍后再试",
+    "launch-timeout": "游戏中心没有进入前台，可能已被禁用",
+}
+
+
+async def open_store(emulator_id: str, slot: str) -> dict:
+    """打开某台设备所属模拟器的游戏中心。
+
+    雷电开启「大雷主人模式」之后 launcher 会把游戏中心从桌面和应用列表里过滤掉，
+    用户在模拟器里没有入口；这个接口就是给界面上那个按钮用的。
+
+    拉不起来是「这次没成」，返回 ``ok=False`` 加一句能照做的话，不抛异常——
+    和 :meth:`Emulator2Manager.launch_app` 的口径一致。
+    """
+    manager = await build_manager(emulator_id)
+    result = await manager.open_store(str(slot))
+    return {
+        "ok": result.ok,
+        "reason": result.reason,
+        "message": _STORE_OPEN_MESSAGES.get(result.reason, result.reason),
+    }
+
+
 async def delete_instance(emulator_id: str, slot: str) -> dict:
     """删除一个实例，并把它的设备号退役。
 

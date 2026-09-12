@@ -2508,10 +2508,37 @@ class HSRConfig_TaskMapping(BaseModel):
     )
 
 
+class HSRConfig_Update(BaseModel):
+    AutoUpdateMode: Optional[Literal["Off", "AfterRun"]] = Field(
+        default=None,
+        description="外部脚本自动更新时机：Off 不更新 / AfterRun 全部用户跑完后",
+    )
+    Channel: Optional[Literal["stable", "beta"]] = Field(
+        default=None, description="外部脚本更新渠道：稳定版 / 测试版，两个引擎共用"
+    )
+    M7ASource: Optional[Literal["GitHub", "MirrorChyan"]] = Field(
+        default=None,
+        description="三月七助手更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
+    )
+    SRASource: Optional[Literal["AutoSite", "GitHub", "MirrorChyan"]] = Field(
+        default=None,
+        description=(
+            "SRA 更新包下载源：AUTO-MAS 下载站（免 CDK，默认）/ GitHub / "
+            "Mirror 酱（需自行填写 CDK）"
+        ),
+    )
+    MirrorChyanCDK: Optional[str] = Field(
+        default=None, description="Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填"
+    )
+
+
 class HSRConfig(BaseModel):
     Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[HSRConfig_Run] = Field(default=None, description="运行配置")
+    Update: Optional[HSRConfig_Update] = Field(
+        default=None, description="外部脚本更新配置"
+    )
     TaskMapping: Optional[HSRConfig_TaskMapping] = Field(
         default=None, description="模块脚本分配"
     )
@@ -2751,6 +2778,31 @@ class HSRCapabilitiesData(BaseModel):
 
 class HSRCapabilitiesOut(OutBase):
     data: Optional[HSRCapabilitiesData] = Field(default=None, description="HSR 能力")
+
+
+class HSRUpdateIn(BaseModel):
+    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    engine: Literal["M7A", "SRA"] = Field(..., description="要操作的外部脚本引擎")
+    action: Literal["check", "apply"] = Field(
+        default="check", description="check 只查版本；apply 查完就装"
+    )
+
+
+class HSRUpdateData(BaseModel):
+    engine: Literal["M7A", "SRA"] = Field(..., description="外部脚本引擎")
+    checked: bool = Field(default=False, description="是否成功查到版本信息")
+    updated: bool = Field(default=False, description="本次是否真的完成了更新")
+    current_version: Optional[str] = Field(default=None, description="当前已安装版本")
+    latest_version: Optional[str] = Field(default=None, description="可用的最新版本")
+    update_available: bool = Field(default=False, description="是否有新版本")
+    installable: bool = Field(
+        default=False, description="新版本能否从当前下载源安装（CDK 失效时为假）"
+    )
+    message: str = Field(default="", description="面向用户的结果说明")
+
+
+class HSRUpdateOut(OutBase):
+    data: Optional[HSRUpdateData] = Field(default=None, description="更新结果")
 
 
 class HSRManagedField(BaseModel):
@@ -4059,6 +4111,22 @@ class Emulator2InstanceCreateOut(OutBase):
 class Emulator2InstanceDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="配置ID")
     slot: str = Field(..., description="要删除的设备号")
+
+
+class Emulator2StoreOpenIn(BaseModel):
+    emulatorId: str = Field(..., description="配置ID")
+    slot: str = Field(..., description="要打开游戏中心的设备号")
+
+
+class Emulator2StoreOpenOut(OutBase):
+    ok: bool = Field(default=False, description="游戏中心是否已在前台")
+    reason: str = Field(
+        default="",
+        description=(
+            "结局原因码: launched / already-running / no-store / not-installed"
+            " / no-adb / boot-timeout / launch-timeout"
+        ),
+    )
 
 
 class Emulator2InstanceDeletePreviewOut(OutBase):

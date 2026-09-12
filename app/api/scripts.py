@@ -779,6 +779,46 @@ async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut
 
 
 @router.post(
+    "/maa/depot/stage/candidates",
+    tags=["Get"],
+    summary="MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_depot_stage_candidates(
+    script: ScriptDeleteIn = Body(...), itemId: str = Body(...)
+) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_depot_stage_candidates(script.scriptId, itemId)
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/depot/inventory",
+    tags=["Get"],
+    summary="MAA 仓库库存（label=数量字符串，value=物品ID）",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_depot_inventory(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_depot_inventory(script.scriptId)
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
     "/webhook/get",
     tags=["Get"],
     summary="查询 webhook 配置",

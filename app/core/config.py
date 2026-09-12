@@ -2534,6 +2534,49 @@ class AppConfig(GlobalConfig):
         self._maa_depot_items_cache[item_index_path] = (mtime_ns, options)
         return options
 
+    async def get_maa_depot_stage_candidates(
+        self, script_id: str, item_id: str
+    ) -> list[dict[str, str]]:
+        """获取掉落指定材料的关卡候选（按单件期望理智升序，即 xx 理智/件）。
+
+        编排逻辑在 task 域（cultivate.service）；本方法只做脚本解析与转发，
+        保持既有对外契约不变。
+        """
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        # 惰性导入：避免 core 层在模块加载期依赖 task 域
+        from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+        return await depot_cultivate_service.stage_candidates(
+            config_path=self.config_path,
+            item_id=item_id,
+            proxy=self.proxy,
+        )
+
+    async def get_maa_depot_inventory(self, script_id: str) -> list[dict[str, str]]:
+        """获取 MAA 仓库库存（安装级 DepotData；label=数量，value=物品ID）。"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本")
+
+        from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+        data_dir = Path(script_config.get("Info", "Path")) / "data"
+        inventory = await depot_cultivate_service.inventory(maa_data_dir=data_dir)
+        if inventory is None:
+            raise FileNotFoundError(
+                f"未找到 MAA 仓库数据: {data_dir / 'DepotData.json'}，"
+                "请先在 MAA 中执行一次仓库识别"
+            )
+        return [
+            {"label": str(count), "value": item_id}
+            for item_id, count in sorted(inventory.items())
+        ]
+
     async def add_plan(
         self, script: Literal["MaaPlan", "MaaEndPlan"]
     ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig]:

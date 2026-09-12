@@ -344,6 +344,7 @@ export default {
     item: 'Item',
     extractFieldsFromWindow: 'Extract fields from a window bounded by the start and end patterns',
     targetStock: 'Target stock',
+    stock: 'Stock',
     customBaseLayout: 'Custom base layout',
     resource: 'Resource',
     preset: 'Preset',

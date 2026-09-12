@@ -346,6 +346,7 @@ export default {
     item: 'アイテム',
     extractFieldsFromWindow: '開始／終了の正規表現で囲んだ範囲からフィールドを抽出します',
     targetStock: '目標在庫',
+    stock: '在庫',
     customBaseLayout: 'カスタム基地',
     resource: 'リソース',
     preset: 'プリセット',

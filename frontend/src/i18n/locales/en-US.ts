@@ -2563,6 +2563,7 @@ export default {
     },
     bluearchive: {
       serverLabel: 'Server',
+      serverDragHint: 'Drag to reorder servers',
       server: {
         jp: 'JP',
         global: 'Global',

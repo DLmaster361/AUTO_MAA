@@ -23,7 +23,24 @@
     <!-- 三个服的数据在数据源里已并行拉好，这里只切显示，不重新请求 -->
     <div class="server-switch" role="group" :aria-label="t('home.bluearchive.serverLabel')">
       <span class="server-switch-label">{{ t('home.bluearchive.serverLabel') }}</span>
-      <a-segmented :value="selected" :options="serverOptions" @change="onServerChange" />
+      <!-- 拖动即可调整顺序，顺序记在本地 -->
+      <div class="server-tabs" :title="t('home.bluearchive.serverDragHint')">
+        <button
+          v-for="(server, index) in orderedServers"
+          :key="server.key"
+          type="button"
+          class="server-tab"
+          :class="{ 'is-active': server.key === selected, 'is-dragging': dragIndex === index }"
+          draggable="true"
+          @click="emit('select', server.key)"
+          @dragstart="onDragStart(index, $event)"
+          @dragover.prevent="onDragOver(index)"
+          @dragend="onDragEnd"
+          @drop.prevent="onDragEnd"
+        >
+          {{ server.label }}
+        </button>
+      </div>
     </div>
 
     <!-- 当前服的失败提示：只影响这一个服，切到其它服照常显示 -->
@@ -173,15 +190,65 @@ watch(
   }
 )
 
-const serverOptions = computed(() =>
-  props.servers.map(server => ({ label: server.label, value: server.key }))
-)
+/** 服务器显示顺序的本地记忆键；顺序只影响展示，不影响各自取数 */
+const SERVER_ORDER_STORAGE_KEY = 'auto-mas.home.bluearchive-server-order'
 
-const onServerChange = (value: string | number) => {
-  const matched = props.servers.find(server => server.key === value)
-  if (matched) {
-    emit('select', matched.key)
+const readStoredOrder = (): BlueArchiveServerKey[] => {
+  try {
+    const raw = localStorage.getItem(SERVER_ORDER_STORAGE_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    if (Array.isArray(parsed)) {
+      return parsed.filter((key): key is BlueArchiveServerKey => typeof key === 'string')
+    }
+  } catch {
+    // 记忆损坏时退回默认顺序即可，不影响卡片显示
   }
+  return []
+}
+
+const serverOrder = ref<BlueArchiveServerKey[]>(readStoredOrder())
+const dragIndex = ref<number | null>(null)
+
+/** 按用户拖出来的顺序排列；顺序里还没有的（例如以后新增服务器）接在末尾 */
+const orderedServers = computed(() => {
+  const byKey = new Map(props.servers.map(server => [server.key, server]))
+  const ordered = serverOrder.value
+    .map(key => byKey.get(key))
+    .filter((server): server is BlueArchiveServerOverview => server !== undefined)
+  const listed = new Set(ordered.map(server => server.key))
+  return [...ordered, ...props.servers.filter(server => !listed.has(server.key))]
+})
+
+const persistServerOrder = () => {
+  try {
+    localStorage.setItem(SERVER_ORDER_STORAGE_KEY, JSON.stringify(serverOrder.value))
+  } catch {
+    // 存储不可用时只保留本次会话的顺序
+  }
+}
+
+const onDragStart = (index: number, event: DragEvent) => {
+  dragIndex.value = index
+  event.dataTransfer?.setData('text/plain', String(index))
+}
+
+/** 拖到哪一格就实时插到哪一格，松手才算数（dragend 统一落盘） */
+const onDragOver = (index: number) => {
+  const from = dragIndex.value
+  if (from === null || from === index) return
+
+  const keys = orderedServers.value.map(server => server.key)
+  const [moved] = keys.splice(from, 1)
+  keys.splice(index, 0, moved)
+  serverOrder.value = keys
+  dragIndex.value = index
+}
+
+const onDragEnd = () => {
+  if (dragIndex.value === null) return
+  dragIndex.value = null
+  serverOrder.value = orderedServers.value.map(server => server.key)
+  persistServerOrder()
 }
 
 const activeActivities = computed(() => {
@@ -207,7 +274,7 @@ const versionCover = computed(() => {
 
 const remainingCountdownStyle = computed<CSSProperties>(() => ({
   color: ACCENT,
-  fontSize: '34px',
+  fontSize: '28px',
   fontWeight: 700,
   lineHeight: 1.1,
   fontVariantNumeric: 'tabular-nums',
@@ -276,6 +343,46 @@ const formatTime = (value: string) =>
   font-size: 13px;
 }
 
+/* 自己做分段控件而不用 a-segmented：那一排要能拖动排序 */
+.server-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--ant-color-fill-tertiary);
+}
+
+.server-tab {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.server-tab:hover {
+  color: var(--bluearchive-accent);
+}
+
+.server-tab.is-active {
+  background: var(--ant-color-bg-container);
+  color: var(--bluearchive-accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.server-tab.is-dragging {
+  opacity: 0.5;
+}
+
 .status-alert {
   margin-bottom: 16px;
 }
@@ -290,7 +397,7 @@ const formatTime = (value: string) =>
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  min-height: 300px;
+  min-height: 380px;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -413,18 +520,19 @@ const formatTime = (value: string) =>
 }
 
 /* ---------- 剩余时间 ---------- */
+/* 贴右下角、压成一行：封面里的人物多在画面中部，浮层居中会挡脸 */
 .version-remaining {
   position: relative;
   z-index: 1;
-  align-self: center;
-  margin-right: 28px;
-  padding: 18px 28px;
+  align-self: flex-end;
+  margin: 0 28px 20px 0;
+  padding: 12px 22px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
   border: 1px solid color-mix(in srgb, var(--bluearchive-accent) 35%, transparent);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(11, 18, 32, 0.6);
   backdrop-filter: blur(10px);
   box-shadow:
@@ -442,7 +550,7 @@ const formatTime = (value: string) =>
 
 .version-remaining :deep(.ant-statistic-content) {
   color: var(--bluearchive-accent);
-  font-size: 34px;
+  font-size: 28px;
   font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
@@ -507,6 +615,7 @@ const formatTime = (value: string) =>
 @media (max-width: 800px) {
   .version-banner {
     flex-direction: column;
+    min-height: 320px;
   }
 
   .version-name {
@@ -515,8 +624,8 @@ const formatTime = (value: string) =>
 
   .version-remaining {
     align-self: stretch;
-    align-items: flex-start;
-    margin: 0 28px 24px;
+    justify-content: flex-end;
+    margin: 0 24px 20px;
   }
 
   .version-info {

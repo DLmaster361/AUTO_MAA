@@ -2457,6 +2457,7 @@ export default {
     },
     bluearchive: {
       serverLabel: '服务器',
+      serverDragHint: '拖动可调整服务器顺序',
       server: {
         jp: '日服',
         global: '国际服',

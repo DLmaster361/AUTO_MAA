@@ -43,7 +43,8 @@ const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, BlueArchiveActivityIn.line
   cn: BlueArchiveActivityIn.line_type.CN,
 }
 
-const SERVER_KEYS: BlueArchiveServerKey[] = ['jp', 'global', 'cn']
+/** 默认展示顺序：国服优先（国服玩家最多），三个服的先后不影响各自独立取数 */
+const SERVER_KEYS: BlueArchiveServerKey[] = ['cn', 'jp', 'global']
 
 /**
  * 固定 +08:00 偏移（Asia/Shanghai 无夏令时）。
@@ -228,7 +229,7 @@ export const useBlueArchiveActivitySource = () => {
     global: false,
     cn: false,
   })
-  const selectedServer = ref<BlueArchiveServerKey>('jp')
+  const selectedServer = ref<BlueArchiveServerKey>(SERVER_KEYS[0])
 
   let active = false
   let started = false

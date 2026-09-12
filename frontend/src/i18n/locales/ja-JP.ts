@@ -2246,6 +2246,7 @@ export default {
     },
     bluearchive: {
       serverLabel: 'サーバー',
+      serverDragHint: 'ドラッグでサーバーの順番を変更できます',
       server: {
         jp: '日本版',
         global: 'グローバル版',

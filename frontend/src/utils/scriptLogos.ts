@@ -1,5 +1,6 @@
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
+import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
@@ -13,8 +14,7 @@ import zzzOdIcon from '@/assets/zzz-od.ico'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
 export const SCRIPT_LOGOS: Record<ScriptType, string> = {
-  // BAAH 暂无专属图标资源，先复用通用图标占位
-  BAAH: generalIcon,
+  BAAH: baahIcon,
   BetterGI: bettergiIcon,
   General: generalIcon,
   HSR: hsrIcon,

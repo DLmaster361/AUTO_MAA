@@ -100,7 +100,6 @@ MUMU_ITEMS: tuple[StabilityItem, ...] = (
 )
 
 
-
 def evaluate(
     items: tuple[StabilityItem, ...], current: dict[str, str | None]
 ) -> tuple[bool, list[str]]:

@@ -2459,6 +2459,7 @@ export default {
       title: '快速开始',
       placeholder: '选择任务',
       start: '开始',
+      refresh: '换一句',
     },
     proxy: {
       aria: '代理状态',

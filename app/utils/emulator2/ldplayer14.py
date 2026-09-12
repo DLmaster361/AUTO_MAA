@@ -171,42 +171,72 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         logger.info(f"雷电实例 {idx} 在重启 {VBOX_SERVICE_PROCESS} 后已正常启动")
         return info
 
-    async def _vm_missing(self, idx: str) -> bool:
-        """这台实例是不是「有窗口没虚拟机」。查不到 list2 时按不缺处理，不扩大事故。"""
+    async def _probe_instances(self) -> dict[str, VmProbe]:
+        """给这条安装的每台实例做一次「虚拟机在不在」探测。查不到 list2 时返回空表。"""
         try:
             devices = await self.get_device_info(None)
-            device = devices[idx]
         except Exception as e:  # noqa: BLE001 - 探测本身失败就不做自愈判断
-            logger.debug(f"探测雷电实例 {idx} 的虚拟机状态失败: {e}")
-            return False
+            logger.debug(f"探测雷电实例状态失败: {e}")
+            return {}
 
         # 越过 adb devices 的缓存：这里要的是「现在」有没有，不是几秒前的视图
         self._adb_cache = None
         serials = await self._list_adb_serials()
-        others = [i for i in devices if str(i) != str(idx)]
-        outcome = resolve_serial(idx, serials, others)
-        probe = VmProbe(
-            in_android=device.in_android,
-            vbox_pid=device.vbox_pid,
-            serial_online=outcome.source != "formula",
-        )
-        return vm_is_missing(probe)
+        probes: dict[str, VmProbe] = {}
+        for idx, device in devices.items():
+            others = [i for i in devices if str(i) != str(idx)]
+            outcome = resolve_serial(idx, serials, others)
+            probes[str(idx)] = VmProbe(
+                in_android=device.in_android,
+                vbox_pid=device.vbox_pid,
+                serial_online=outcome.source != "formula",
+            )
+        return probes
+
+    async def _vm_missing(self, idx: str) -> bool:
+        """这台实例是不是「有窗口没虚拟机」。查不到时按不缺处理，不扩大事故。"""
+        probe = (await self._probe_instances()).get(str(idx))
+        return probe is not None and vm_is_missing(probe)
 
     async def _recover_vbox_service(self, idx: str, reason: str) -> None:
-        """关掉僵尸窗口并重启 VBox 服务。有别的虚拟机在跑时拒绝，改为报错。"""
-        # 进程级探测分不清这几个虚拟机是谁的：list2 的 VBox pid 在启动早期也可能是 -1，
-        # 数进去的可能正是本实例自己还没就绪的虚拟机。所以这里只陈述事实，不断言归属。
+        """关掉僵尸窗口并重启 VBox 服务。
+
+        只在**所有开着的实例都已经是僵尸**时才动手：服务一重启，它名下所有虚拟机一起死，
+        任何一台还好好的（或正在启动、状态说不清的）实例都会被强关。两道闸门：
+
+        - 整机没有任何 ``Ld9BoxHeadless.exe``——这条不分安装、不分归属，
+          启动早期 list2 的 VBox pid 也可能是 -1，进程在就当它活着
+        - 这条安装里其他开着的实例都是「Android 已启动但没虚拟机」的僵尸态；
+          「正在启动」（in_android=2）说不清是刚起还是卡住，一律按还活着处理
+        """
         running = live_vm_pids()
         if running:
             raise RuntimeError(
                 f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
                 f"但整机仍有 {len(running)} 个雷电虚拟机进程在运行（可能包括本实例尚未就绪的），"
-                f"重启该服务会把它们一起关掉。请关闭所有雷电实例后再重试，或{_REPAIR_HINT}"
+                f"重启该服务会把它们一起关掉。只有所有实例都异常时才会自动修复，"
+                f"请关闭所有雷电实例后再重试，或{_REPAIR_HINT}"
+            )
+
+        probes = await self._probe_instances()
+        healthy_others = sorted(
+            other
+            for other, probe in probes.items()
+            if other != str(idx)
+            and probe.in_android != 0
+            and not (probe.in_android == 1 and vm_is_missing(probe))
+        )
+        if healthy_others:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
+                f"但实例 {', '.join(healthy_others)} 还在运行或正在启动，"
+                f"重启该服务会把它们一起关掉。只有所有实例都异常时才会自动修复，"
+                f"请关闭它们后再重试，或{_REPAIR_HINT}"
             )
 
         logger.warning(
-            f"雷电实例 {idx} 启动异常（{reason}），整机没有其他虚拟机在运行，"
-            f"关闭该实例并重启 {VBOX_SERVICE_PROCESS} 后重试"
+            f"雷电实例 {idx} 启动异常（{reason}），整机没有任何雷电虚拟机在运行、"
+            f"其他开着的实例也都是僵尸窗口，关闭该实例并重启 {VBOX_SERVICE_PROCESS} 后重试"
         )
         await self._quit_zombie_instance(idx)
         try:

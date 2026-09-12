@@ -1,8 +1,8 @@
-"""MuMu 启动失败时把 ``info`` 里的自带诊断带进报错。记录形状抄自 MuMu 6.6.4.0 的 ``info -v all``。"""
+"""Emulator 2.0 的 MuMu 实例启动失败时把 ``info`` 里的自带诊断带进报错。记录形状抄自 MuMu 6.6.4.0 的 ``info -v all``。"""
 
 import unittest
 
-from app.utils.emulator.mumu import format_launch_diagnosis
+from app.utils.emulator2.mumu6 import format_launch_diagnosis
 
 #: 关机状态的真实记录：这些字段在没出错时都是 0 / false / 空，一个都不该出现在报错里。
 IDLE = {

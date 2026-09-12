@@ -591,6 +591,23 @@ export function useScriptApi() {
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
                             : '',
+                        AutoEssenceMenu:
+                          maaEndUserData.Task?.AutoEssenceMenu === 'Random' ||
+                          maaEndUserData.Task?.AutoEssenceMenu === 'Target'
+                            ? maaEndUserData.Task.AutoEssenceMenu
+                            : 'Location',
+                        AutoEssenceTargetWeapons: Array.isArray(
+                          maaEndUserData.Task?.AutoEssenceTargetWeapons
+                        )
+                          ? Array.from(
+                              new Set(
+                                maaEndUserData.Task.AutoEssenceTargetWeapons.filter(
+                                  (item): item is string =>
+                                    typeof item === 'string' && item.length > 0
+                                )
+                              )
+                            )
+                          : [],
                         IfSanity:
                           maaEndUserData.Task?.IfSanity != null
                             ? maaEndUserData.Task.IfSanity

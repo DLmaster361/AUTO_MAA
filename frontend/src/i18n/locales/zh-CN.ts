@@ -1563,9 +1563,9 @@ export default {
     baahManageConfig: '托管关键配置项',
     baahManageConfigHint:
       '开启后，本软件会在运行前自动写入 BAAH 运行所需的设置（运行结束自动退出、打开日志落盘），运行结束后恢复你的原值',
-    baahPushLogEnabled: '保留运行日志',
+    baahPushLogEnabled: '推送任务节点详情',
     baahPushLogEnabledHint:
-      '开启后，本次运行的日志会写入任务记录与报告；关闭后仍会依据日志判定任务结果，只是不再保留日志内容',
+      '开启后，本次运行的 BAAH 任务节点（执行成功/跳过/失败）会随任务报告一起推送；关闭后不采集任务节点，任务日志记录与结果判定不受影响',
     baahEmulatorHint:
       '选择本软件要调度的模拟器；运行前由本软件启动它并等待设备就绪，BAAH 只负责连接，无需在 BAAH 内填写模拟器路径与端口',
     baahCloseEmulatorOnFinish: '结束后关闭模拟器',

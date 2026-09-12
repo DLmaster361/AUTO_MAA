@@ -31,13 +31,16 @@ from .config_manager import (
     restore_managed_config,
 )
 from .notify import push_notification
+from .push_log import BAAH_PUSH_RULES, baah_resolve
 
 __all__ = [
+    "BAAH_PUSH_RULES",
     "CONFIG_DIR_NAME",
     "LOG_DIR_RELATIVE",
     "SOFTWARE_CONFIG_RELATIVE",
     "ManagedConfigBackup",
     "apply_managed_config",
+    "baah_resolve",
     "latest_log_file",
     "push_notification",
     "resolve_config_name",

@@ -18,10 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""BAAH 配置托管的最小回归测试。
+"""BAAH 配置托管与推送日志采集的最小回归测试。
 
-覆盖 BAAH 专项最容易出错的两处契约：配置名的解析与校验、
-运行前托管写入与运行后恢复的完整往返（含配置文件原本不存在的情况）。
+覆盖 BAAH 专项最容易出错的三处契约：配置名的解析与校验、运行前托管写入与
+运行后恢复的完整往返（含配置文件原本不存在的情况）、任务节点采集规则能否
+从真实日志行里取到任务名。
 """
 
 import json
@@ -370,3 +371,118 @@ class TestLogTimestampRange:
         )
 
         assert parsed > log_start_time
+
+
+class TestPushLogNodeRules:
+    """任务节点采集规则
+
+    行取自 BAAH 2.4.13 的真实运行日志。BAAH 每次运行都新建日志文件，MAS 在定位
+    到该文件之后才开始采集，所以这里先写入「会话开始之前就有的内容」，再用追加
+    写入模拟会话内新增的日志行，走完整链路（日志源 → 规则 → baah_resolve → sink）。
+    """
+
+    # 真实日志行（BAAH 2.4.13 实测输出）
+    TRY_ENTER = "2.4.13 - 24:33 - INFO : 判断任务EnterGame是否可以执行"
+    RUN_ENTER = "2.4.13 - 24:33 - INFO : 执行任务EnterGame"
+    DONE_LOGIN = "2.4.13 - 26:01 - INFO : 任务Loginin执行结束"
+    DONE_ENTER = "2.4.13 - 26:22 - INFO : 任务EnterGame执行结束"
+    SKIP_CLOSE = (
+        "2.4.13 - 26:21 - WARN : 任务CloseInform执行前条件不成立或超时，跳过此任务"
+    )
+    CRASH = (
+        "2.4.13 - 26:24 - ERROR : 运行出错: 由于卡顿或其他原因，"
+        "截图文件损坏，请尝试清理电脑内存后重启程序"
+    )
+    # 失败原因里带任务名（BAAH 2.2.14 的真实日志）
+    CRASH_IN_TASK = (
+        "2.2.14 - 43:46 - ERROR : 运行出错: 任务InCafe执行后条件不成立或超时，"
+        "且无法正确返回主页，程序退出"
+    )
+    # 会话开始之前就写在日志里的任务行：采集从文件末尾起算，它不该进入结果
+    BEFORE_SESSION = "2.4.13 - 24:19 - INFO : 执行任务CollectPower"
+
+    @staticmethod
+    def _write_log(tmp_path: Path, head: str) -> Path:
+        log_path = tmp_path / "log_2026-09-12-17-24-19.txt"
+        log_path.write_text(head, encoding="utf-8")
+        return log_path
+
+    @staticmethod
+    def _collect(log_path: Path, new_lines: list[str]) -> list[tuple[str, str, float]]:
+        """采集会话内新增的日志行并返回 sink 收到的结果"""
+
+        from app.log_box import log_box
+        from app.task.BAAH.tools import BAAH_PUSH_RULES, baah_resolve
+
+        collected: list[tuple[str, str, float]] = []
+        collect = log_box.get_collect(
+            paths=[log_path],
+            sink=lambda *item: collected.append(item),
+            start_from_end=True,
+        )
+        collect.open()
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write("\n".join(new_lines) + "\n")
+        for rule in BAAH_PUSH_RULES:
+            collect.collect(*rule)
+        collect.close(baah_resolve)
+        return collected
+
+    def _nodes(self, log_path: Path, new_lines: list[str]) -> list[str]:
+        return [item[1] for item in self._collect(log_path, new_lines)]
+
+    def test_extracts_task_nodes_from_real_lines(self, tmp_path: Path) -> None:
+        """执行/结束/跳过三类行各自成节点，会话前的内容不进结果"""
+
+        log_path = self._write_log(tmp_path, self.BEFORE_SESSION + "\n")
+
+        collected = self._collect(
+            log_path,
+            [
+                self.TRY_ENTER,
+                self.RUN_ENTER,
+                self.DONE_LOGIN,
+                self.SKIP_CLOSE,
+                self.DONE_ENTER,
+            ],
+        )
+
+        ## 只钉「哪些节点、什么状态」：节点顺序按最后一次出现排列（BAAH 会把同一
+        ## 任务重跑多次，报告呈现的是最后一次的流程顺序），顺序本身不是这里的契约。
+        ## 「判断任务X是否可以执行」不产出节点；条目类型保持普通——节点级失败由文本
+        ## 体现，不参与未完成用户过滤
+        assert {(item[0], item[1]) for item in collected} == {
+            ("普通", "✅ 成功: EnterGame"),
+            ("普通", "✅ 成功: Loginin"),
+            ("普通", "⏭ 跳过: CloseInform"),
+        }
+        assert all(item[2] > 0 for item in collected)
+
+    def test_running_task_marked_failed_on_runtime_error(self, tmp_path: Path) -> None:
+        """运行出错时仍在执行的任务按失败呈现，而不是开始标记的默认成功"""
+
+        log_path = self._write_log(tmp_path, "")
+
+        assert self._nodes(log_path, [self.RUN_ENTER, self.CRASH]) == [
+            "❌ 失败: EnterGame"
+        ]
+
+    def test_error_becomes_node_when_no_task_running(self, tmp_path: Path) -> None:
+        """一个任务都没进去就出错时，没有可归属的任务，输出上游给的原因"""
+
+        log_path = self._write_log(tmp_path, "")
+
+        assert self._nodes(log_path, [self.CRASH]) == [
+            "❌ 失败: 由于卡顿或其他原因，截图文件损坏，请尝试清理电脑内存后重启程序"
+        ]
+
+    def test_error_reason_with_task_name_is_not_taken_as_task(
+        self, tmp_path: Path
+    ) -> None:
+        """失败原因里含「任务X执行后…」时不能被任务正则当成正常节点行吞掉"""
+
+        log_path = self._write_log(tmp_path, "")
+
+        assert self._nodes(log_path, [self.CRASH_IN_TASK]) == [
+            "❌ 失败: 任务InCafe执行后条件不成立或超时，且无法正确返回主页，程序退出"
+        ]

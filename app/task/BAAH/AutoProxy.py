@@ -36,6 +36,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
+from app.log_box import LogCollect, LogType, log_box
 from app.models.config import BAAHConfig, BAAHUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
@@ -46,11 +47,13 @@ from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils.constants import UTC4
 
 from .tools import (
+    BAAH_PUSH_RULES,
     CONFIG_DIR_NAME,
     LOG_DIR_RELATIVE,
     SOFTWARE_CONFIG_RELATIVE,
     ManagedConfigBackup,
     apply_managed_config,
+    baah_resolve,
     latest_log_file,
     push_notification,
     resolve_config_name,
@@ -120,6 +123,8 @@ class AutoProxyTask(TaskExecuteBase):
         ## 两个总开关在 prepare() 里按脚本配置初始化，这里给出保守默认值
         self.if_manage_config = True
         self.push_log_enabled = True
+        ## log_box：任务节点采集（受「推送任务节点详情」开关控制，关闭时不创建）
+        self.log_collect: LogCollect | None = None
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
         ## 本用户的开始时刻，用于统计信息通知
@@ -187,10 +192,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_manage_config = bool(
             self.script_config.get("Script", "IfManageConfig")
         )
-        ## 日志推送开关：关闭时仍监控日志用于判定结果，但不写进任务记录与报告
+        ## 推送任务节点详情开关：关闭时**不创建 log_box**（不读日志、不匹配），
+        ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
+        ## 与结果判定都不受它影响，照常进行
         self.push_log_enabled = bool(
             self.script_config.get("Script", "PushLogEnabled")
         )
+        self.log_collect = None
 
         config_name = resolve_config_name(
             str(self.cur_user_config.get("Info", "ConfigName"))
@@ -340,6 +348,11 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             await self._run_launched()
         finally:
+            ## 本次运行的进程此时已经结束、日志不再增长，正是收尾采集的时机。
+            ## 先于配置恢复执行，是因为恢复失败会向上抛出，采集不能因此漏掉；
+            ## 放在 finally 里则是因为 BAAH 每次运行各有自己的日志文件，采集
+            ## 会话必须随着本次运行一起收尾（close 幂等）
+            self._close_log_collect()
             await self._restore_managed_config()
 
     async def _restore_managed_config(self) -> None:
@@ -404,6 +417,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_log_path = log_path
         logger.success(f"成功定位到日志文件: {self.script_log_path}")
+        ## 采集会话必须建在文件定位之后：日志源从当前文件末尾起只取新增内容，
+        ## 这里记录下的起点正好是 BAAH 写出任务节点之前的位置
+        self._start_log_collect()
         ## 定位成功后立刻改写状态：日志监控要等 BAAH 写出首批日志行才会回调，
         ## 不改写的话界面会继续停在「正在等待日志文件生成」，看起来像没进展
         self.script_info.log = f"已定位 BAAH 日志文件 {log_path.name}, 正在读取日志"
@@ -458,14 +474,59 @@ class AutoProxyTask(TaskExecuteBase):
             raise RuntimeError("尚未定位到 BAAH 日志文件")
         return self.script_log_path
 
+    def _start_log_collect(self) -> None:
+        """按本次运行的日志文件开始采集 BAAH 的任务节点。
+
+        BAAH 每次运行都新建一个日志文件，因此采集会话只能建在文件定位之后，
+        且每次运行各建一个：日志源从文件末尾起采集（``start_from_end=True``），
+        只取会话内新增的行，运行前已有的启动信息不会混进结果。
+
+        上一次运行采集到的节点在这里丢弃：``RunTimesLimit`` 重试会让同名任务
+        在报告里重复出现，而报告要呈现的是最终一次运行的流程。
+        """
+
+        self.cur_user_item.push_log.clear()
+        if not self.push_log_enabled or self.script_log_path is None:
+            return
+
+        self.log_collect = log_box.get_collect(
+            paths=[self.script_log_path],
+            sink=self._append_push_log,
+            start_from_end=True,
+        )
+        self.log_collect.open()
+        for rule in BAAH_PUSH_RULES:
+            self.log_collect.collect(*rule)
+
+    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
+        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
+        self.cur_user_item.push_log.append((log_type, text, ts))
+
+    def _close_log_collect(self) -> None:
+        """结束采集会话：冲刷本次运行剩余日志、解析任务节点并写入推送日志。
+
+        采集失败时既记日志也写入报告，避免节点详情缺失却仍呈现为正常结果；
+        ``close`` 幂等，收尾与异常路径都可以重复调用，未创建会话时直接返回。
+        """
+
+        if self.log_collect is None:
+            return
+
+        try:
+            self.log_collect.close(baah_resolve)
+        except Exception:
+            logger.opt(exception=True).warning("BAAH log_box 收尾推送失败（baah_resolve）")
+            self.cur_user_item.push_log.append(
+                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
+            )
+
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调：判定本次运行的结果"""
 
         log = "".join(log_content)
-        ## 日志内容只在开启推送时写入任务记录：结果判定始终依赖完整日志，
-        ## 关闭推送只是不让它进报告
-        if self.push_log_enabled:
-            self.cur_user_log.content = log_content
+        ## 日志内容始终写入任务记录：结果判定与任务记录都是基础能力，
+        ## 与「是否推送任务节点详情」无关，开关只决定要不要采集节点
+        self.cur_user_log.content = log_content
         self.script_info.log = log
 
         if self.success_log.search(log) is not None:
@@ -559,12 +620,8 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "任务被用户手动中止"
 
             if len(log_item.content) == 0:
-                if self.push_log_enabled:
-                    log_item.content = ["未捕获到任何日志内容"]
-                    log_item.status = "未捕获到日志"
-                else:
-                    ## 用户主动关闭推送与「没采集到」不是一回事，不能据此改判状态
-                    log_item.content = ["未开启日志推送, 本次未保留日志内容"]
+                log_item.content = ["未捕获到任何日志内容"]
+                log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
 
@@ -639,6 +696,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.opt(exception=True).warning(
                 f"恢复 BAAH 托管配置失败: {restore_error}"
             )
+
+        ## 异常可能发生在 run_once 的 finally 之前，这里兜底收尾采集（close 幂等）
+        self._close_log_collect()
 
         await Publisher.send(
             id=self.task_info.task_id,

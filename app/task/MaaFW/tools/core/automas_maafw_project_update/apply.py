@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import os
 import shutil
 import uuid
@@ -24,6 +25,8 @@ from .state import DEFAULT_OPERATION_ROOT, UpdateOperationStore, project_lock
 ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
 MANIFEST_NAME = "resource-manifest.json"
+
+logger = logging.getLogger("automas.maafw.project_update.apply")
 PROJECT_STATE_DIR_NAME = "maafw_project_state"
 
 
@@ -151,19 +154,12 @@ def apply_package_transaction(
         raise UpdateApplyError(f"MaaFW project directory does not exist: {root}")
     if not archive.is_file():
         raise UpdateApplyError(f"MaaFW update package does not exist: {archive}")
-    before = project_fingerprint(root)
-    if before is None:
-        raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
     expected = str(expected_fingerprint or "").strip().lower()
-    if expected and before != expected:
-        raise UpdateApplyError(
-            "MaaFW project changed after update plan; apply rejected"
-        )
 
     store = operation or UpdateOperationStore.create(
         root=operation_root or DEFAULT_OPERATION_ROOT,
         projectPath=str(root),
-        expectedFingerprint=expected or before,
+        expectedFingerprint=expected,
         planId=plan_id or uuid.uuid4().hex,
         targetVersion=target_version or "",
     )
@@ -182,9 +178,15 @@ def apply_package_transaction(
     send_update_log = send_log or (lambda _message: None)
 
     with project_lock(root, project_lock_already_held=project_lock_already_held):
+        # 指纹要 rglob + sha256 整个项目，锁内只算这一次：锁外先算一遍再进锁比对
+        # 等于白哈希一轮，锁内这次已经足以拒绝「计划之后项目被改过」。
         current = project_fingerprint(root)
-        if current != before or (expected and current != expected):
-            raise UpdateApplyError("MaaFW project changed before apply; apply rejected")
+        if current is None:
+            raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
+        if expected and current != expected:
+            raise UpdateApplyError(
+                "MaaFW project changed after update plan; apply rejected"
+            )
         expanded_size = _zip_expanded_size(archive)
         _check_disk_space(
             state_dir,
@@ -298,7 +300,12 @@ def apply_package_transaction(
             for relative, source in plan.files.items():
                 target = _project_target(root, relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+                # 暂存区已经是解压好的完整副本，回滚只看 backup/，所以同盘
+                # 直接挪过去；跨盘 os.replace 会报 OSError，再退回复制。
+                try:
+                    os.replace(source, target)
+                except OSError:
+                    shutil.copy2(source, target)
 
             store.update("post_validating")
             _emit(progress, "post_validating", {"planId": effective_plan_id})
@@ -484,76 +491,6 @@ def build_package_plan(
         base_fingerprint=base_fingerprint,
         target_version=declared_target or target_version,
     )
-
-
-def recover_update_operation(
-    operation: UpdateOperationStore,
-    *,
-    send_log: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
-    """Recover a staged/applying operation after a process restart."""
-
-    try:
-        state = operation.read()
-    except Exception as exc:
-        try:
-            operation.mark_recovery_required(str(exc))
-        except Exception:
-            pass
-        raise UpdateApplyError(
-            f"MaaFW update journal recovery is required: {exc}",
-            unsafe_to_continue=True,
-        ) from exc
-    status = str(state.get("status") or "")
-    if status not in {"staged", "applying", "post_validating"}:
-        return state
-    raw_project = str(state.get("projectPath") or "").strip()
-    raw_state_root = str(state.get("stateRoot") or "").strip()
-    raw_work_dir = str(state.get("workDir") or "").strip()
-    if not raw_project or not raw_state_root or not raw_work_dir:
-        operation.mark_recovery_required("update journal has incomplete owned paths")
-        raise UpdateApplyError(
-            "MaaFW update journal has incomplete owned paths",
-            unsafe_to_continue=True,
-        )
-    root = Path(raw_project).expanduser().resolve(strict=False)
-    state_dir = Path(raw_state_root).expanduser().resolve(strict=False)
-    host_state_root = (
-        operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME
-    ).resolve(strict=False)
-    expected_key = hashlib.sha256(str(root).casefold().encode("utf-8")).hexdigest()[:24]
-    if (
-        not state_dir.is_absolute()
-        or not state_dir.is_relative_to(host_state_root)
-        or state_dir.name != expected_key
-    ):
-        operation.mark_recovery_required(
-            "update journal state root is outside host state"
-        )
-        raise UpdateApplyError(
-            "MaaFW update journal state root is outside host state",
-            unsafe_to_continue=True,
-        )
-    try:
-        work_dir = _owned_state_path(Path(raw_work_dir), state_dir)
-    except UpdateApplyError as exc:
-        operation.mark_recovery_required(str(exc))
-        raise UpdateApplyError(str(exc), unsafe_to_continue=True) from exc
-    if not root.is_dir():
-        return operation.update(
-            "recovery_required", recoveryRequired=True, error="project path is missing"
-        )
-    try:
-        _rollback_from_state(root, state, state_dir=state_dir)
-    except Exception as exc:
-        operation.update(
-            "recovery_required", recoveryRequired=True, rollbackError=str(exc)[:500]
-        )
-        raise UpdateApplyError(str(exc), unsafe_to_continue=True) from exc
-    if send_log:
-        send_log(f"MaaFW update operation recovered: {operation.operation_id}")
-    _remove_owned_path(work_dir, state_dir)
-    return operation.update("rolled_back", recovered=True)
 
 
 def _validate_plan_base(
@@ -1043,7 +980,9 @@ def _emit(
     try:
         progress(stage, payload)
     except Exception:
-        return
+        # 进度只是旁观者，不能拖垮事务；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW 更新进度回调失败: stage=%s", stage, exc_info=True)
 
 
 __all__ = [
@@ -1052,5 +991,4 @@ __all__ = [
     "UpdateApplyError",
     "apply_package_transaction",
     "build_package_plan",
-    "recover_update_operation",
 ]

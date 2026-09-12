@@ -144,6 +144,24 @@ export interface HSRDirectConfigImportResult {
   size?: number
 }
 
+/** `check` 只查版本；`apply` 查完就地安装（目录被任务占用时后端回 409）。 */
+export type HSRUpdateAction = 'check' | 'apply'
+
+/**
+ * 后端 `/hsr/update` 的结果。`message` 是后端给的面向用户说明，直接展示；
+ * `installable` 为假表示有新版但当前下载源装不了（多半是 Mirror 酱 CDK 问题）。
+ */
+export interface HSRUpdateResult {
+  engine: HSREngine
+  checked: boolean
+  updated: boolean
+  current_version?: string | null
+  latest_version?: string | null
+  update_available: boolean
+  installable: boolean
+  message: string
+}
+
 export interface HSRCapabilitySnapshot {
   revision: number | string
   available: boolean
@@ -345,6 +363,21 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 手动检查或安装 M7A / SRA 的更新；这是唯一不必等一轮任务跑完就能更新的入口。 */
+  const runEngineUpdate = async (
+    scriptId: string,
+    engine: HSREngine,
+    action: HSRUpdateAction
+  ): Promise<HSRUpdateResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRUpdateResult>>(url('/update'), {
+        scriptId,
+        engine,
+        action,
+      })
+    )
+  }
+
   return {
     getCapabilities,
     getStageOptions,
@@ -352,5 +385,6 @@ export function useHSRPluginApi() {
     getSraProfiles,
     importDirectConfig,
     clearDirectConfig,
+    runEngineUpdate,
   }
 }

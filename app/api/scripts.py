@@ -3020,10 +3020,121 @@ async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabiliti
         script_config = _hsr_script_config(scriptId)
         from app.task.HSR.tools.api import build_capabilities
 
-        data = HSRCapabilitiesData(**build_capabilities(script_config))
+        # 走线程：里面要起一次 SRA-cli.exe --version 读版本号，正常 0.09 秒，
+        # 但异常构建或杀毒扫描时能卡到超时，直接调会连 WebSocket 一起冻住。
+        data = HSRCapabilitiesData(
+            **await asyncio.to_thread(build_capabilities, script_config)
+        )
         return HSRCapabilitiesOut(data=data)
     except Exception as e:
         return HSRCapabilitiesOut(
+            code=400
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/hsr/update",
+    tags=["HSR"],
+    summary="检查或执行 HSR 外部脚本更新",
+    response_model=HSRUpdateOut,
+    status_code=200,
+)
+async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
+    """手动检查或安装 M7A / SRA 的更新。
+
+    自动更新只在任务正常跑完后触发（``Update.AutoUpdateMode = AfterRun``），
+    这个接口是唯一不必等一轮任务就能更新的入口。
+    """
+
+    try:
+        script_config = _hsr_script_config(data.scriptId)
+        from app.task.HSR.tools.native_control import resolve_script_path
+        from app.task.HSR.tools.update import (
+            check_engine_update,
+            update_engine_if_needed,
+        )
+
+        root = resolve_script_path(script_config, data.engine)
+        if not root:
+            return HSRUpdateOut(
+                code=400, status="error", message=f"未配置 {data.engine} 路径"
+            )
+
+        source = str(script_config.get("Update", f"{data.engine}Source") or "")
+        channel = str(script_config.get("Update", "Channel") or "stable")
+        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
+
+        if data.action == "check":
+            result = await check_engine_update(
+                data.engine,
+                Path(root),
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=Config.proxy,
+            )
+            return HSRUpdateOut(
+                data=HSRUpdateData(
+                    engine=data.engine,
+                    checked=True,
+                    updated=False,
+                    current_version=result.current_version,
+                    latest_version=result.latest_version,
+                    update_available=result.update_available,
+                    installable=result.installable,
+                    message=result.blocked_reason or "",
+                )
+            )
+
+        # apply：目录锁必须以非阻塞方式拿，正在跑任务时立刻告诉用户，
+        # 而不是把 HTTP 请求挂在那里等。
+        from app.task.HSR.tools.external_locks import (
+            HSRExternalPathBusyError,
+            acquire_external_path_locks,
+            resolve_external_lock_paths,
+        )
+
+        try:
+            lease = await acquire_external_path_locks(
+                resolve_external_lock_paths(script_config, (data.engine,)),
+                wait=False,
+            )
+        except HSRExternalPathBusyError as e:
+            return HSRUpdateOut(code=409, status="error", message=str(e))
+
+        try:
+            outcome = await update_engine_if_needed(
+                data.engine,
+                Path(root),
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=Config.proxy,
+                download_dir=Path.cwd() / "data" / "hsr_update",
+            )
+        finally:
+            lease.release()
+
+        return HSRUpdateOut(
+            data=HSRUpdateData(
+                engine=data.engine,
+                checked=outcome.checked,
+                updated=outcome.updated,
+                current_version=outcome.current_version,
+                latest_version=outcome.latest_version,
+                update_available=outcome.update_available,
+                installable=outcome.updated or not outcome.message,
+                message=outcome.message,
+            )
+        )
+    except Exception as e:
+        return HSRUpdateOut(
             code=400
             if isinstance(
                 e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)

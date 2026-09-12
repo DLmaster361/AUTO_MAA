@@ -37,6 +37,7 @@
 - MFW专项 同一个任务可以重复加入任务队列，每一份各自配置选项与排序；设了「每日/每周/每月仅一次」的任务仍按任务计，一轮只跑一次 by [@qiyinxi](https://github.com/qiyinxi)
 - 模拟器 2.0 支持由原有全局开关控制的「大雷主人模式」，并新增「打开游戏中心」按钮 by [@qiyinxi](https://github.com/qiyinxi)
 - 初始化 下载前先对各下载源测速并按最快的顺序使用，安装 Python 与依赖时显示当前文件、进度、速度与来源
+- 星铁专项 可以自动更新三月七助手与 SRA 了：默认关闭，开启后在任务全部跑完时检查并安装新版，配置页也能随时手动检查或立即更新；三月七助手走 GitHub 或 Mirror 酱，SRA 还多一个免 CDK 的 AUTO-MAS 下载站。更新采用可回滚的事务方式，中途失败会还原到原版本，你自己的配置和自定义策略文件不会被动到；脚本正开着窗口时会跳过本轮而不是强行关掉它 by [@qiyinxi](https://github.com/qiyinxi)
 
 ### 变更
 
@@ -61,6 +62,7 @@
 - MFW专项 修复 agent 运行环境装到与项目自带 MaaFramework 不匹配的 maafw 版本，导致每次运行都卡在「AgentClient 连接超时」的问题；已经装错的环境会自动重建一次
 - MFW专项 修复首次更新「自己解压好、再指给 MAS」的项目时不清理资源目录里的旧版残留文件，新版挪走或删掉的文件留在原地导致资源加载失败、项目彻底跑不起来的问题 by [@qiyinxi](https://github.com/qiyinxi)
 - 修复应用启动过程中后台弹出无意义的 Network Error 提示、且启动后首页卫星动画不显示的问题 by [@1w1w11w1](https://github.com/1w1w11w1)
+- MFW专项 修复运行环境准备与脚本运行会被电脑上的全局 uv 配置文件和 PYTHON 系环境变量带偏的问题：依赖解析只按 MAS 自己选定的下载源进行，脚本与 Agent 不再继承宿主的 PYTHONPATH、PYTHONWARNINGS 等变量 by [@qiyinxi](https://github.com/qiyinxi)
 
 ### 开发流程
 

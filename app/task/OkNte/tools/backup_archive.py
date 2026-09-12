@@ -27,7 +27,8 @@
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_oknte``）：
   ``mas`` 归档 MAS 用户 ConfigFile（下发源，运行回写与会话保存会覆盖它，
   按用户各归各的）；
-- 编辑界面进入 / 退出（前端 ensure）：``mas`` 池夹住动态表单的编辑会话包络。
+- 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
+  原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
 ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留

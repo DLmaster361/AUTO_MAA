@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | 进入编辑页 | 脚本**原生配置**原始态（MAS 触碰前） | 前端 `onMounted` → ensure(native) |
 | 退出编辑页 | **MAS 侧配置终态**（编辑会话包络） | 前端 `onUnmounted` → ensure(mas) |
-| 运行/会话下发前 | 双池（mas 下发源 + native 原生现状） | 专项 `set_<script>` 最前面（后端钩子） |
+| 运行/会话下发前 | 双池（mas 下发源 + native 原生现状） | OkNte：native 在 `manager.prepare` 任务级一次、mas 在专项 `set_<script>` 最前面（按用户）；ZzzOd：`_prepare_injection` 单处双归档（后端钩子） |
 | 导入/恢复等覆盖性操作前 | 将被覆盖的目标配置 | 专项操作函数内，`force=True` |
 
 - 全部**指纹去重**：与最近一份一致则跳过（读档列表里不重复出现）。

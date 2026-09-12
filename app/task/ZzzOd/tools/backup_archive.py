@@ -164,7 +164,7 @@ def _onedragon_files(root: Path) -> dict[str, Path]:
 
     注册表源走 :func:`native_registry_file`（视图在盘时读 sidecar 原件）；
     实例目录按「一条龙原生注册表」逐 idx 收集，MAS- 前缀槽排除——与 final
-    架构一致：脚本级备份只含一条龙自己的内容，绝不带上 MAS 注入的槽。
+    架构一致：项目级池只含一条龙自己的内容，绝不带上 MAS 注入的槽。
     """
 
     files: dict[str, Path] = {}

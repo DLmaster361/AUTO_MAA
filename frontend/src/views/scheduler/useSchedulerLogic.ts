@@ -1293,7 +1293,9 @@ export function useSchedulerLogic() {
       task_info: state.taskInfo,
       cycleNextList: state.cycleNextList,
     })
-    subscribeToTask(tab)
+    // 这里只同步状态，不订阅：任务运行期每秒都会推送状态，在这里调用 subscribeToTask
+    // 只会每次都命中「订阅已存在」分支刷日志。订阅由建台、启动与恢复路径
+    // （createSchedulerTabForTask、trackStartedTask、startTask、initialize）负责。
   }
 
   const applyRuntimeTaskSnapshot = (state: TaskRuntimeState): void => {

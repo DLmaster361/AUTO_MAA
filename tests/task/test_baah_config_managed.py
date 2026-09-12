@@ -127,6 +127,10 @@ class TestManagedConfigRoundTrip:
 
         restore_managed_config(ManagedConfigBackup(user_config_path=tmp_path / "x.json"))
 
+    def test_restore_accepts_none_backup(self) -> None:
+        """任务在托管配置写入前被中止时，收尾阶段会拿到 None，不应抛异常"""
+        restore_managed_config(None)
+
 
 class TestLatestLogFile:
     """日志文件定位"""

@@ -262,16 +262,17 @@ def apply_managed_config(
     return backup
 
 
-def restore_managed_config(backup: ManagedConfigBackup) -> None:
+def restore_managed_config(backup: ManagedConfigBackup | None) -> None:
     """把托管项恢复为运行前的取值。
 
     每步独立容错：恢复失败只记录日志，不向调用方抛出，避免影响任务收尾。
+    快照为 None 表示本次运行尚未写入过托管项（任务在托管前就被停止），直接返回。
 
     Args:
-        backup: ``apply_managed_config`` 返回的快照。
+        backup: ``apply_managed_config`` 返回的快照，允许为 None。
     """
 
-    if not backup.applied:
+    if backup is None or not backup.applied:
         return
 
     try:

@@ -46,6 +46,7 @@ logger = get_logger("通知服务")
 Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
+DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
 
 # Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
 # UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
@@ -311,10 +312,7 @@ class Notification:
             raise ValueError("Webhook URL 不能为空")
 
         # 解析模板
-        template = (
-            webhook.get("Data", "Template")
-            or '{"title": "{title}", "content": "{content}"}'
-        )
+        template = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
 
         # 替换模板变量
         try:
@@ -346,8 +344,7 @@ class Notification:
                             not image_base64
                             and obj.get("type") == "image"
                             and isinstance(obj.get("data"), dict)
-                            and obj["data"].get("file")
-                            == "base64://{image_base64}"
+                            and obj["data"].get("file") == "base64://{image_base64}"
                         ):
                             return {
                                 "type": "text",
@@ -422,7 +419,7 @@ class Notification:
                 response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
-        if response.status_code == 200:
+        if response.is_success:
             logger.success(
                 f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
             )

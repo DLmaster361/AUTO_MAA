@@ -342,9 +342,18 @@ class MumuManager(DeviceBase):
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
+            diagnosis = await self._describe_launch_failure(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
-            raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
+                raise RuntimeError(
+                    f"模拟器 {idx} 启动失败, 状态码: {status}{diagnosis}"
+                )
+            raise RuntimeError(
+                f"模拟器 {idx} 启动超时, 当前状态码: {status}{diagnosis}"
+            )
+
+    async def _describe_launch_failure(self, idx: str) -> str:
+        """启动失败 / 超时报错的附加说明。旧配置不加，Emulator 2.0 的后端覆盖它。"""
+        return ""
 
     async def close(self, idx: str) -> DeviceStatus:
         try:

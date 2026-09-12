@@ -70,7 +70,13 @@ const snapshotKey = (server: BlueArchiveServerKey) => 'auto-mas.home.bluearchive
 
 const pad = (value: number) => String(value).padStart(2, '0')
 
-/** Unix 秒 → 北京时间的 ISO 串（不带时区标记，与 SRA 现有字段惯例一致） */
+/**
+ * Unix 秒 → 带 +08:00 偏移的北京时间 ISO 串。
+ *
+ * 偏移不能省：卡片的消费端一律 `new Date(值)` 解析，没有时区标记的裸字符串
+ * 会被当成本地时间，在北京时间以外的设备上活动状态与倒计时会整体偏掉
+ * （1999 活动源也踩过同一个坑）。
+ */
 const formatTime = (seconds: number): string => {
   const shifted = new Date(seconds * 1000 + TIMEZONE_OFFSET_MS)
   return (
@@ -84,7 +90,8 @@ const formatTime = (seconds: number): string => {
     ':' +
     pad(shifted.getUTCMinutes()) +
     ':' +
-    pad(shifted.getUTCSeconds())
+    pad(shifted.getUTCSeconds()) +
+    '+08:00'
   )
 }
 
@@ -136,19 +143,38 @@ const buildActivities = (items: KivoTimelineItem[], nowSeconds: number) => {
     }))
 }
 
+/**
+ * 横幅的起始 / 结束取**当前这批活动**的区间。
+ *
+ * 直接拿整份数据里最晚的结束时间是不对的：Kivo 会提前放出后面的活动，
+ * 于是「剩余时间」倒数的会是还没开始的那一期。所以先看正在进行中的活动，
+ * 没有进行中的就退回最近结束的那一次（横幅如实显示「已结束」），
+ * 两者都没有才用还没开始的活动。
+ */
 const buildOverview = (
   items: KivoTimelineItem[],
   versionName: string
 ): BlueArchiveActivityOverview => {
   const activities = buildActivities(items, Date.now() / 1000)
+  const now = Date.now()
+  const toTimestamp = (value: string) => new Date(value).getTime()
+
+  // activities 已按开始时间升序，所以取首尾即可
+  const running = activities.filter(
+    activity => toTimestamp(activity.startTime) <= now && toTimestamp(activity.endTime) > now
+  )
+  const ended = activities.filter(activity => toTimestamp(activity.endTime) <= now)
+  const upcoming = activities.filter(activity => toTimestamp(activity.startTime) > now)
+  const current = running.length ? running : ended.length ? ended : upcoming
+
   return {
     Available: true,
     Stale: false,
     Message: '',
     version: currentMonth(),
     versionName,
-    startTime: activities[0]?.startTime ?? '',
-    endTime: activities[activities.length - 1]?.endTime ?? '',
+    startTime: current[0]?.startTime ?? '',
+    endTime: current[current.length - 1]?.endTime ?? '',
     activities,
   }
 }

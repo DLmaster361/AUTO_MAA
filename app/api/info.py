@@ -41,7 +41,22 @@ KIVO_TIMELINE_URL = "https://api.kivo.wiki/api/v1/timeline/"
 
 ## 活动排期变化很慢，缓存十分钟，避免每个前端反复打这个第三方接口
 BLUEARCHIVE_CACHE_TTL = 600
+
+## 缓存条数上限：参数组合本来就有限（3 个服 × 页数 × 每页条数），
+## 但接口对调用方是开放的，给个上限免得异常调用把进程内存撑大
+BLUEARCHIVE_CACHE_MAX_ENTRIES = 32
 _bluearchive_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _prune_bluearchive_cache(now: float) -> None:
+    """先清掉过期项，仍超出上限时按写入时间淘汰最旧的。"""
+
+    for key in [k for k, v in _bluearchive_cache.items() if now - v[0] >= BLUEARCHIVE_CACHE_TTL]:
+        _bluearchive_cache.pop(key, None)
+
+    while len(_bluearchive_cache) >= BLUEARCHIVE_CACHE_MAX_ENTRIES:
+        oldest = min(_bluearchive_cache, key=lambda key: _bluearchive_cache[key][0])
+        _bluearchive_cache.pop(oldest, None)
 
 
 @router.post(
@@ -383,5 +398,6 @@ async def get_bluearchive_activity(
             data={},
         )
 
+    _prune_bluearchive_cache(time.time())
     _bluearchive_cache[cache_key] = (time.time(), data)
     return InfoOut(data=data)

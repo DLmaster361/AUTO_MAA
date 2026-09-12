@@ -96,8 +96,8 @@ class BlueArchiveActivityIn(BaseModel):
     line_type: Literal["JP", "Globle", "CN"] = Field(
         ..., description="服务器：JP 日服 / Globle 国际服 / CN 国服（原文拼写如此）"
     )
-    page: int = Field(default=1, description="页码，从 1 开始")
-    page_size: int = Field(default=50, description="每页条数")
+    page: int = Field(default=1, ge=1, le=20, description="页码，从 1 开始")
+    page_size: int = Field(default=50, ge=1, le=100, description="每页条数")
 
 
 class BetterGICustomGroupOut(BaseModel):

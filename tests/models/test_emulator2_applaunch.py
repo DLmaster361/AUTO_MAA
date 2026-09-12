@@ -4,6 +4,7 @@ from app.utils.emulator2.applaunch import (
     ensure_app_running,
     is_package_foreground,
     is_package_missing,
+    is_package_present,
     parse_launch_component,
 )
 
@@ -84,6 +85,27 @@ class MissingPackageTest(unittest.TestCase):
         self.assertFalse(
             is_package_missing("adb.exe: device '127.0.0.1:9999' not found")
         )
+
+
+class PresentTest(unittest.TestCase):
+    """「装了」和「没装」之间还有第三态：设备根本没连上。"""
+
+    def test_package_line_means_present(self) -> None:
+        self.assertTrue(
+            is_package_present(
+                "package:/system/system_ext/priv-app/Settings/Settings.apk"
+            )
+        )
+
+    def test_empty_output_is_not_present(self) -> None:
+        self.assertFalse(is_package_present(""))
+
+    def test_offline_device_error_is_not_present(self) -> None:
+        """2026-09-12 生产：关着的雷电实例被这行判成「装着 MuMu 商店」。"""
+        self.assertFalse(
+            is_package_present("adb.exe: device 'emulator-5562' not found")
+        )
+        self.assertFalse(is_package_present("error: device offline"))
 
 
 class ResolveComponentTest(unittest.TestCase):
